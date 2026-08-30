@@ -1,9 +1,10 @@
 # DecodeForge V1 schemas
 
-This directory contains six semantic JSON Schema Draft 2020-12 contracts:
+This directory contains seven semantic JSON Schema Draft 2020-12 contracts:
 
 - `compiler-request.schema.json`;
 - `quant-fixture.schema.json`;
+- `fixture-manifest.schema.json`;
 - `schedule.schema.json`;
 - `diagnostic.schema.json`;
 - `host-manifest.schema.json`;
@@ -16,9 +17,9 @@ schema from the network. Parsers reject duplicate JSON keys before schema
 validation.
 
 `schema_version` is the integer major version and is exactly `1`. Semantic
-objects reject unknown properties. Only an explicit `metadata` object admits
-additive metadata, which readers may ignore. Human diagnostic summaries are not
-compatibility keys.
+objects reject unknown properties. Quant fixtures and their manifests are
+closed vocabularies with no free-form metadata; their fixed format and numeric
+mode are `DFQ8_B32_V1` and `strict_f32_v1`.
 
 Run the complete offline contract check with:
 

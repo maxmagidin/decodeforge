@@ -4,12 +4,16 @@
   "operator_version": "q8_linear_v1",
   "format": "DFQ8_B32_V1",
   "numeric_mode": "strict_f32_v1",
+  "case_id": "invalid-zero-dimension",
   "n": 1,
   "k": 0,
+  "blocks": 0,
   "source_fp32_bits": [],
   "expected_scale_bits": [],
   "expected_q_bytes": [],
   "input_fp32_bits": [],
   "expected_output_fp32_bits": [],
-  "error_bound": {"policy": "strict-f32-v1", "comparator": "exact-zero"}
+  "error_bound": {"policy": "strict_f32_v1", "comparator": "dfq8_forward_v1"},
+  "logical_weight_identity": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "fixture_identity": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 }

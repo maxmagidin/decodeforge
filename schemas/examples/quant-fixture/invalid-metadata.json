@@ -4,7 +4,7 @@
   "operator_version": "q8_linear_v1",
   "format": "DFQ8_B32_V1",
   "numeric_mode": "strict_f32_v1",
-  "case_id": "valid-minimal",
+  "case_id": "invalid-metadata",
   "n": 1,
   "k": 1,
   "blocks": 1,
@@ -15,5 +15,6 @@
   "expected_output_fp32_bits": [0],
   "error_bound": {"policy": "strict_f32_v1", "comparator": "dfq8_forward_v1"},
   "logical_weight_identity": "sha256:9112ac7cfea1ecfb8ccc13c29526a82b47b0c45725d27f484f529c008ced0b52",
-  "fixture_identity": "sha256:2a978f931dcc6d62de7e8f029aa74c417695bba4daf425cbb3691ff1f0f2132d"
+  "fixture_identity": "sha256:2a978f931dcc6d62de7e8f029aa74c417695bba4daf425cbb3691ff1f0f2132d",
+  "metadata": {"owner": "forbidden"}
 }

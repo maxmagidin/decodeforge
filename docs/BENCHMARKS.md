@@ -8,7 +8,7 @@ result bundle.
 
 DecodeForge keeps four kinds of claims separate:
 
-1. **Compiler correctness:** generated code implements the `DFQ8_B32` contract.
+1. **Compiler correctness:** generated code implements the `DFQ8_B32_V1` contract.
 2. **Schedule improvement:** one legal schedule outperforms another under the
    same format, inputs, host, and callable boundary.
 3. **Framework integration:** a supported PyTorch region executes through the
@@ -71,10 +71,15 @@ selected; it is not a G0–G3 requirement.
 
 Quantization error and schedule error are different experiments:
 
-- The Q8 oracle is compared with the source FP32/BF16 model to characterize
-  quantization quality.
-- Generated scalar and SIMD schedules are compared with the Q8 oracle to test
-  compiler correctness.
+- Source-vs-Q8 quality compares source FP32/BF16 weight words with
+  `dequantize_f32_bits` output. For nonzero-scale, non-clamped lanes, the
+  deterministic V1 evidence uses the conservative per-weight bound
+  `scale * (0.5 + 255*u) + 2^-150`, where `u = 2^-24`, with exact rational
+  arithmetic in the tests. Zero blocks, padding, and the intentional
+  subnormal-clamp case are reported separately.
+- Generated scalar and NEON schedules are compared with the internally computed
+  canonical Q8 output to test compiler correctness. A future AVX2 candidate is
+  compared the same way only if selected as G4.
 - Fusion is compared with the materialized Q8 graph.
 
 Reports include maximum absolute and relative error, mean squared error, and
@@ -82,6 +87,9 @@ cosine similarity. Model-level reports add top-k/logit agreement, fixed-prompt
 greedy-token agreement, and a pinned perplexity slice when claims cover the
 whole quantized path. The tolerance and its rationale are versioned before
 candidate timing.
+
+The source-vs-Q8 report is a quantization-quality result, not the generated-
+kernel comparator and not evidence that a native kernel has passed.
 
 ## Timing protocol
 

@@ -40,12 +40,14 @@ This sequencing is the accepted owner decision in
 
 ### Build
 
-- Specify `DFQ8_B32`, including rounding, zero blocks, padding, NaN/Inf policy,
+- Specify `DFQ8_B32_V1`, including rounding, zero blocks, padding, NaN/Inf policy,
   and the exact accumulation expression.
 - Implement Python and Rust scalar quantize/dequantize-and-dot references.
 - Define a versioned run manifest before producing benchmark numbers.
 - Create deterministic fixtures for zero, sign-alternating, extreme finite,
   block-boundary, tail, and random cases.
+- Keep the normative bit-level contract in `docs/Q8_FORMAT_V1.md`; fixture
+  checks are read-only unless the generator is invoked with `--write`.
 
 ### Exit evidence
 

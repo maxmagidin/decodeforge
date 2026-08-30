@@ -125,6 +125,7 @@
         },
         "expected": {},
         "actual": {},
+        "reference": {},
         "missing": {
           "type": "array",
           "items": {
@@ -160,6 +161,58 @@
         },
         "expected_sha256": {
           "$ref": "#/$defs/sha256"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "row": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "block": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lane": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "value": {},
+        "maximum_k": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_q": {
+          "type": "integer"
+        },
+        "actual_q": {
+          "type": "integer"
+        },
+        "expected_scales": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_scales": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "t": {
+          "type": "integer",
+          "minimum": 0
         },
         "metadata": {
           "$ref": "#/$defs/metadata"

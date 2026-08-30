@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "format": "DFQ8_B32_V1",
+  "numeric_mode": "strict_f32_v1",
+  "artifacts": [
+    {"path": "../escape.json", "bytes": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
+  ]
+}

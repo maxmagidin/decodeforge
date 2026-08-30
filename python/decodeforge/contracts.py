@@ -19,6 +19,7 @@ SCHEMA_DIR: Final = ROOT / "schemas"
 SCHEMA_FILES: Final = {
     "compiler-request": SCHEMA_DIR / "compiler-request.schema.json",
     "quant-fixture": SCHEMA_DIR / "quant-fixture.schema.json",
+    "fixture-manifest": SCHEMA_DIR / "fixture-manifest.schema.json",
     "schedule": SCHEMA_DIR / "schedule.schema.json",
     "diagnostic": SCHEMA_DIR / "diagnostic.schema.json",
     "host-manifest": SCHEMA_DIR / "host-manifest.schema.json",
@@ -469,7 +470,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         example_count = len(list((SCHEMA_DIR / "examples").glob("*/*.json")))
         print(
-            f"schema-check: ok (6 semantic schemas, {example_count} directed examples)"
+            f"schema-check: ok ({len(SCHEMA_FILES)} semantic schemas, "
+            f"{example_count} directed examples)"
         )
         return 0
 
