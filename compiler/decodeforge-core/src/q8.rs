@@ -46,6 +46,7 @@ pub struct Q8Error {
     /// Small, deterministic context map useful to callers and diagnostics.
     pub context: BTreeMap<String, Value>,
 }
+
 impl Q8Error {
     fn new(code: &'static str, summary: &'static str) -> Self {
         Self {
@@ -420,6 +421,17 @@ pub fn f32_from_int(value: i32) -> u32 {
         BigUint::one(),
         0,
         if value < 0 { -1 } else { 1 },
+    )
+}
+
+/// Convert a positive integer ratio exactly to binary32 for corpus constants.
+pub(crate) fn f32_from_ratio(numerator: u32, denominator: u32, negative: bool) -> u32 {
+    assert!(denominator != 0);
+    round_rational_f32(
+        BigUint::from(numerator),
+        BigUint::from(denominator),
+        0,
+        if negative { -1 } else { 1 },
     )
 }
 
@@ -949,16 +961,6 @@ fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn f32_from_ratio(numerator: u32, denominator: u32, negative: bool) -> u32 {
-        assert!(denominator != 0);
-        round_rational_f32(
-            BigUint::from(numerator),
-            BigUint::from(denominator),
-            0,
-            if negative { -1 } else { 1 },
-        )
-    }
 
     #[test]
     fn arithmetic_and_subnormal_boundaries_match_contract() {
