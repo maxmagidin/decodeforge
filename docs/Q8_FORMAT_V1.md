@@ -7,7 +7,7 @@ executable numeric mode is `strict_f32_v1`.
 ## Shape and storage
 
 An operator has `N > 0` output rows and `K > 0` logical input columns. The
-number of blocks is `B = ceil(K / 32)`. The Python quantizer must accept positive
+number of blocks is `B = ceil(K / 32)`. The Python quantizer accepts positive
 u32 `K` values subject to derived-storage checks. The fixed forward-error
 comparator is defined only through `MAX_COMPARATOR_K = 8,134,399`, where its
 declared reduction bound remains in domain. Storage is row-major:
@@ -36,7 +36,7 @@ q     = 0                          if scale == +0
 
 `RN32` means one correctly rounded binary32 operation (round-to-nearest,
 ties-to-even) with gradual underflow and no flush-to-zero. The division helper
-must use an integer/rational implementation, so its result does not depend on an
+uses an integer/rational implementation, so its result does not depend on an
 accidental binary64 double round. Integer rounding and clamping happen in the
 shown order. The source bit words remain inspectable in fixtures and are never
 mutated.
@@ -46,7 +46,7 @@ mutated.
 Quantization quality is measured separately from generated-kernel correctness.
 The source FP32 words are compared with `dequantize_f32_bits` output, not with
 the generated-kernel comparator. For every nonzero-scale lane that did not hit
-the `[-127, 127]` clamp, deterministic tests must use exact `Fraction`
+the `[-127, 127]` clamp, the deterministic tests use exact `Fraction`
 arithmetic to check the conservative V1 per-weight bound
 
 ```text
@@ -58,7 +58,7 @@ and dequantization-multiply rounding, plus half a minimum-subnormal step. Zero
 blocks and physical padding are checked for exact zero and q-range invariants.
 When a nonzero source block's scale itself underflows to `+0`, every q and
 dequantized value is zero and the separate per-weight error bound is
-`63 * 2**-149`; the required `source=0x0000003f` case must reach that boundary.
+`63 * 2**-149`; the committed `source=0x0000003f` case reaches that boundary.
 The intentional subnormal-clamp case is reported independently: source
 magnitude `190 * 2**-149` rounds its scale to the minimum subnormal, stores
 `q=127`, and has absolute error `63 * 2**-149`; the interior-lane bound does
@@ -109,13 +109,14 @@ and exactly one terminal newline. The manifest root pins `format` to
 `DFQ8_B32_V1` and `numeric_mode` to `strict_f32_v1`; it requires at least one
 artifact and each artifact record contains only a safe relative `path`, `bytes`,
 and SHA-256 value. Hashed artifacts contain no timestamps or free-form
-metadata. The implementation stack will add a closed, sorted corpus manifest
-and a generator with distinct read-only check and explicit write modes; this
-contract PR does not claim those executable gates exist yet.
+metadata. The committed corpus is listed by the closed, sorted
+`tests/fixtures/v1/manifest.json`. Run
+`uv run --frozen python scripts/generate_q8_fixtures.py --check` to verify it
+without writing; `--write` is the explicit regeneration operation.
 
 ## Comparator
 
-The strict comparator must accept finite candidate outputs and compute its
+The strict comparator accepts finite candidate outputs and computes its
 canonical reference internally from the input bits and weights. It sums
 `A = sum(abs(float64(x) * float64(q) * float64(scale)))` in ascending logical
 order, with `u = 2^-24`, `t = 2*K + 2*B + 16`, and
@@ -134,7 +135,7 @@ distance at most two.
 
 ## Stable diagnostics
 
-Implementations must raise structured diagnostic-bearing errors for invalid
+The Python API raises a structured diagnostic-bearing `Q8Error` for invalid
 dimensions (`DFE-QUANT-001`), size overflow (`002`), length mismatch (`003`),
 non-finite source/input (`004`/`005`), invalid scale (`006`), invalid q or
 padding (`007`), identity mismatch (`008`), comparator domain (`009`),

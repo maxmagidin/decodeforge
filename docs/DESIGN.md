@@ -1,6 +1,9 @@
 # DecodeForge design and technical specification
 
-**Status:** Proposed baseline, evidence-first revision
+**Status:** Python half of G0 is implemented and reviewable; Rust parity is
+pending, so G0 is not complete. The normative contract is
+[Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
 M4 using ARM64 NEON. x86-64 AVX2 is a deferred optional portability extension,
@@ -222,8 +225,8 @@ Contract:
 - scales are FP32 initially;
 - activations and accumulation are FP32;
 - block length is exactly 32; a padded tail is zero-filled and guarded;
-- rounding rule is specified here; subsequent implementation PRs must prove
-  Python, Rust, and native parity before claiming the matching gate;
+- rounding rule is specified; Python tests cover the current reference, with
+  Rust and native parity checked as those paths are implemented;
 - NaN/Inf source weights are rejected by default;
 - source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
   separately from generated-kernel comparator correctness.

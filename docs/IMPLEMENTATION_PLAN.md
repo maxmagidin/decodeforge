@@ -56,6 +56,12 @@ This sequencing is the accepted owner decision in
 - The manifest records inputs, source revision, toolchain, CPU, target features,
   numeric mode, and output hashes.
 
+### Current status
+
+Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
+is not complete until independent Rust generation/verifier matches the frozen
+fixture bytes.
+
 ### Stop condition
 
 Do not create SIMD code until rounding and tail behavior are identical across
@@ -200,6 +206,7 @@ Résumé bullets may use these verbs only after the matching evidence exists:
 | integrated with PyTorch | guarded compiled region executes and fallback is tested |
 | achieved `X%` improvement | raw samples, baseline definition, uncertainty, host manifest, and reproduction command |
 
-Until G2 and G3 are complete, the honest project description is “designed a
-cross-target Q8 kernel compiler and implemented its current completed gates,”
-with those gates named explicitly.
+Until G3 is complete, the honest project description is “designed a Mac-first
+Q8 kernel compiler and implemented its current completed gates,” with Python
+G0 status and pending Rust parity named explicitly. Any AVX2 claim waits for a
+G4 evidence bundle.
