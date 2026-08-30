@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "decodeforge"
+version = "0.1.0"
+description = "A shape-specializing compiler for quantized CPU inference kernels."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = []
+
+[project.optional-dependencies]
+# PyTorch is deliberately isolated from the default package. Framework
+# integration can opt into this tested CPU-only baseline explicitly.
+pytorch-cpu = ["numpy==2.4.4", "torch==2.13.0"]
+
+[dependency-groups]
+dev = [
+    "hatchling==1.27.0",
+    "mypy==1.17.1",
+    "pytest==8.4.1",
+    "ruff==0.12.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/decodeforge"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/python/decodeforge",
+    "/README.md",
+    "/pyproject.toml",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+addopts = ["--strict-config", "--strict-markers", "-ra"]
+testpaths = ["python/tests"]
+pythonpath = ["python"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["python/decodeforge", "python/tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+files = ["python/decodeforge", "python/tests", "scripts"]
+python_version = "3.11"
+strict = true
+mypy_path = ["python"]

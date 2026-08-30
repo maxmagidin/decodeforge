@@ -1,0 +1,12 @@
+[package]
+name = "decodeforge-core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Target-independent DecodeForge compiler contract."
+
+[lib]
+path = "src/lib.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
