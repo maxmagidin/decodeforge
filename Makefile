@@ -1,10 +1,11 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
-	validate-contracts verify-bundle
+	validate-contracts verify-bundle fixture-check
 
 UV := uv
 RUST_VERSION := 1.98.0
 PYTHON_VERSION := 3.12.14
 UV_VERSION := 0.12.5
+CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
 
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
@@ -21,17 +22,17 @@ setup:
 		rustup component add --toolchain $(RUST_VERSION) clippy
 	@$(UV) python install $(PYTHON_VERSION)
 	@$(UV) sync --locked
-	@cargo fetch --locked
+	@$(CARGO) fetch --locked
 	@echo "setup: ok (Rust $(RUST_VERSION), Python $(PYTHON_VERSION), uv $(UV_VERSION), Clang detected)"
 
 format:
-	cargo fmt --all
+	$(CARGO) fmt --all
 	$(UV) run --frozen ruff format python scripts
 
 lint:
-	cargo fmt --all --check
-	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+	$(CARGO) fmt --all --check
+	$(CARGO) clippy --workspace --all-targets --all-features --locked -- -D warnings
+	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --workspace --no-deps --locked
 	$(UV) lock --check
 	$(UV) run --frozen ruff format --check python scripts
 	$(UV) run --frozen ruff check python scripts
@@ -41,10 +42,11 @@ lint:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
 
 test:
-	cargo build --workspace --all-features --locked
-	cargo test --workspace --all-features --locked
+	$(CARGO) build --workspace --all-features --locked
+	$(CARGO) test --workspace --all-features --locked
 	$(UV) run --frozen python -m pytest -q
-	cargo run --quiet --locked -p decodeforge -- --version
+	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
+	$(CARGO) run --quiet --locked -p decodeforge -- --version
 
 check: lint test
 
@@ -60,3 +62,6 @@ validate-contracts:
 verify-bundle:
 	@test -n "$(BUNDLE)" || { echo "verify-bundle: BUNDLE=<path> is required" >&2; exit 2; }
 	$(UV) run --frozen python scripts/validate_schemas.py --bundle "$(BUNDLE)"
+
+fixture-check:
+	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check

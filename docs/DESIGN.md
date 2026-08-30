@@ -1,8 +1,13 @@
 # DecodeForge design and technical specification
 
-**Status:** Proposed baseline, evidence-first revision
+**Status:** Python half of G0 is implemented and reviewable; Rust parity is
+pending, so G0 is not complete. The normative contract is
+[Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
-weight-only Q8 LLM linear regions on ARM64 NEON and x86-64 AVX2 CPUs.
+weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
+M4 using ARM64 NEON. x86-64 AVX2 is a deferred optional portability extension,
+as recorded in [ADR 0001](decisions/0001-mac-first-required-path.md).
 
 ## 1. Goals
 
@@ -10,20 +15,22 @@ weight-only Q8 LLM linear regions on ARM64 NEON and x86-64 AVX2 CPUs.
    operations and supported epilogues.
 2. Represent contraction, Q8 dequantization, reductions, layouts, fusion, and
    numeric behavior in a target-independent typed IR.
-3. Enumerate only legal schedules, emit target-specific scalar/NEON/AVX2 code,
-   benchmark a bounded candidate set, and cache the selected result.
+3. Enumerate only legal schedules, emit target-specific scalar/NEON code for the
+   required M4 path, benchmark a bounded candidate set, and cache the result.
+   Keep an x86-64 AVX2 lowering as a deferred extension point.
 4. Integrate compiled regions through a registered `torch.compile` backend and a
    thin PyTorch CPU bridge.
-5. Demonstrate real projection shapes from TinyLlama 1.1B on both available CPU
-   families.
+5. Demonstrate real projection shapes from TinyLlama 1.1B on the Apple M4;
+   evaluate another CPU only if it is selected as a later extension.
 6. Attribute performance to schedule, packing, and fusion choices rather than to
    a simultaneous server/scheduler/KV change.
 7. Produce an inspectable compiler report: normalized graph, IR, rejected and
    selected schedules, generated source, packed layout, guards, code size, build
    time, tuning samples, and runtime metrics.
-8. Tie at least one source-level optimization on each ISA to generated assembly
-   and available hardware counters, so low-level claims are independently
-   inspectable rather than inferred from latency alone.
+8. Tie at least one source-level optimization in the required ARM64 NEON path to
+   generated assembly and available hardware counters, so low-level claims are
+   independently inspectable rather than inferred from latency alone.
+   Apply the same evidence standard to an optional x86 extension if selected.
 
 ## 2. Non-goals
 
@@ -35,6 +42,8 @@ weight-only Q8 LLM linear regions on ARM64 NEON and x86-64 AVX2 CPUs.
   separate future work;
 - integer dot-product code paths while activations remain FP32;
 - custom thread scheduling or work stealing;
+- an x86-64 AVX2 backend in the required first result; it is a deferred optional
+  portability extension after the Mac path works end to end;
 - promising to beat vendor libraries or llama.cpp before measurement.
 
 ### 2.1 Promotion discipline
@@ -43,15 +52,15 @@ Implementation advances through evidence gates rather than component count:
 
 | Gate | Exit evidence |
 |---|---|
-| G0: semantics | Pinned quantization contract, cross-language scalar agreement, edge-case corpus, and manifest schema |
-| G1: one-target slice | One real TinyLlama shape flows through minimal IR, generated scalar code, and NEON code; the bundle contains source, assembly, correctness, timings, and host metadata |
-| G2: cross-target slice | The same IR and corpus drive AVX2; one cross-CPU schedule difference is explained using assembly and measurements |
-| G3: PyTorch slice | A guarded `torch.compile` region runs end to end, demonstrates a guard miss, and reports supported-region coverage |
-| G4: extensions | A fusion or additional `M` value shows a reproducible benefit under unchanged semantics |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree |
+| G1: M4 vertical slice | One real TinyLlama shape flows through minimal IR to generated scalar and ARM64 NEON code on the M4; the bundle contains source, assembly, correctness, timings, and host metadata |
+| G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured |
+| G3: Mac PyTorch slice | A guarded `torch.compile` region runs end to end on the M4, demonstrates a guard miss, and reports supported-region coverage |
+| G4: evidence-selected extension | One measured extension—AVX2 portability, fusion, small batch, or multicore—wins or yields an honest negative result under unchanged semantics |
 
 Work that belongs to a later gate is kept out of the critical path. In
 particular, the visual dashboard, predictive cost-model claims, both fusions,
-multi-core tuning, and `M > 1` cannot delay G0–G2.
+multi-core tuning, `M > 1`, and x86-64 work cannot delay G0–G3.
 
 ## 3. Compiler/runtime boundary
 
@@ -102,7 +111,7 @@ A compiler backend should not quietly change FP32 model semantics. Weight-only
 Q8 is therefore an explicit model transformation:
 
 ```python
-model = decodeforge.quantize(model, format="dfq8_b32")
+model = decodeforge.quantize(model, format="DFQ8_B32_V1")
 compiled = torch.compile(model, backend="decodeforge", fullgraph=False)
 ```
 
@@ -189,7 +198,10 @@ not by a mutable `main` reference.
 
 ## 6. Quantization semantics
 
-Initial logical format: `DFQ8_B32`.
+The normative readable contract, including exact raw-bit identities and the
+fixture/check command, is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+
+Initial logical format: `DFQ8_B32_V1`.
 
 For every consecutive block of 32 weights:
 
@@ -213,9 +225,17 @@ Contract:
 - scales are FP32 initially;
 - activations and accumulation are FP32;
 - block length is exactly 32; a padded tail is zero-filled and guarded;
-- rounding rule is specified and tested across Python/Rust/native code;
+- rounding rule is specified; Python tests cover the current reference, with
+  Rust and native parity checked as those paths are implemented;
 - NaN/Inf source weights are rejected by default;
-- Q8 quality is evaluated separately from compiler schedule correctness.
+- source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
+  separately from generated-kernel comparator correctness.
+
+The complete bit-level contract is frozen in
+[`docs/Q8_FORMAT_V1.md`](Q8_FORMAT_V1.md), including raw-word finite checks,
+strict operation order, gradual underflow, identities, and the generated
+fixture corpus. The q layout is physically `[N][B][32]`; only logical lanes
+participate in `amax` and evaluation, and all tail lanes serialize as zero.
 
 Logical storage is approximately 36 bytes per 32 weights (32 int8 + one FP32
 scale) before target packing, versus 128 bytes in FP32.
@@ -428,16 +448,17 @@ selection, object generation, and linking.
 
 1. **Scalar:** portable semantics oracle; vectorization explicitly disabled for
    compiler validation where necessary.
-2. **ARM64 NEON:** uses AArch64 NEON widening/conversion and FP32 arithmetic
-   primitives supported by the guarded target.
-3. **x86-64 AVX2/FMA:** uses AVX2 widening/conversion and FP32 vector arithmetic;
-   no AVX-512/VNNI assumption on Zen 2.
+2. **ARM64 NEON (required):** uses AArch64 NEON widening/conversion and FP32
+   arithmetic primitives supported by the guarded M4 target.
+3. **x86-64 AVX2/FMA (deferred):** uses AVX2 widening/conversion and FP32 vector
+   arithmetic if selected as the G4 portability extension; no AVX-512/VNNI
+   assumption on Zen 2.
 
 The first kernels dequantize int8 weights into FP32 vectors and accumulate with
 FP32 activations. This contract cannot directly use integer dot-product
 instructions because one operand remains FP32. Dot-product, VNNI, or similar
 claims require a future activation-quantized numeric mode with its own accuracy
-and baseline results; they are not variants of `DFQ8_B32`.
+and baseline results; they are not variants of `DFQ8_B32_V1`.
 
 #### Reference SIMD dataflow
 
@@ -458,15 +479,18 @@ for each native vector group:
 acc[n] += s * horizontal_reduce(block)
 ```
 
-An AVX2 group widens eight int8 values into eight int32 lanes, converts them to
-FP32, and combines them with eight FP32 activations. A NEON group widens through
-int16/int32 and converts four lanes at a time. This semantics-first mapping
-applies the scale after each 32-value block reduction. A separately represented
-schedule may instead scale vector lanes and carry partial sums across blocks if
-the numeric mode permits the changed reduction order. Schedules may keep several
-output-channel or block accumulators live so activation vectors are reused.
+The required NEON group widens through int16/int32 and converts four lanes at a
+time. This semantics-first mapping applies the scale after each 32-value block
+reduction. A separately represented schedule may instead scale vector lanes and
+carry partial sums across blocks if the numeric mode permits the changed
+reduction order. Schedules may keep several output-channel or block accumulators
+live so activation vectors are reused.
 `Ntile` and `K` unroll are therefore constrained by the target register budget;
 the assembly audit verifies whether the estimated budget avoided spills.
+
+The deferred AVX2 design widens eight int8 values into eight int32 lanes,
+converts them to FP32, and combines them with eight FP32 activations. It is
+retained for a possible G4 portability extension and is not a G0–G3 dependency.
 
 The packer pads `K` to the 32-weight block boundary with zero weights, making the
 hot `K` loop full-width. Logical `K`, padded `K`, and byte bounds remain in the
@@ -506,7 +530,7 @@ optimization without fast-math. Target modes:
 
 - portable scalar;
 - explicit ARM64 feature set;
-- explicit x86-64 AVX2/FMA;
+- explicit x86-64 AVX2/FMA (deferred optional G4 extension);
 - optional host-native artifact, labeled non-portable.
 
 macOS emits a `.dylib`; Linux emits a `.so`. Generated source is retained in a
@@ -514,7 +538,7 @@ debug artifact and hash-addressed in normal caches.
 
 ### 11.4 Why C/intrinsics first
 
-This project is about LLM schedule, packing, and cross-target code generation.
+This project is about LLM schedule, packing, and retargetable code generation.
 Using Clang for final machine instruction selection provides native code without
 first taking on MLIR/LLVM build integration. An MLIR backend is a legitimate
 later comparison only after the core compiler works; it is not required to make
@@ -535,10 +559,11 @@ the intended loop. Each selected schedule's evidence bundle includes an
 - alignment assumptions visible in the generated loads;
 - code size and compiler version/flags.
 
-At least one rejected or losing schedule per architecture is audited far enough
-to connect a concrete machine-code difference—such as a spill, extra shuffle,
-or larger tail—to its measured result. Hand-written assembly is not required;
-understanding the emitted assembly is.
+At least one rejected or losing M4 schedule is audited far enough to connect a
+concrete machine-code difference—such as a spill, extra shuffle, or larger tail—
+to its measured result. If AVX2 is selected for G4, the same audit applies to
+that extension. Hand-written assembly is not required; understanding the
+emitted assembly is.
 
 ## 12. Parallel execution
 
@@ -550,10 +575,11 @@ Tests run:
 
 - one thread, which isolates code generation and packing;
 - physical-core sweeps;
-- Ryzen 12-thread SMT as a separate result;
 - M4 worker-count sweeps because performance and efficiency cores differ.
 
-Nested parallelism is disabled. Generated kernels never start threads.
+Ryzen SMT and other second-host measurements are deferred to G4 if AVX2
+portability is selected. Nested parallelism is disabled. Generated kernels
+never start threads.
 
 ## 13. Native bridge and callable
 
@@ -634,8 +660,10 @@ visible; one metric never silently hides another.
 
 ### 15.2 Overfitting controls
 
-- benchmark real TinyLlama shapes and a held-out synthetic shape suite;
-- repeat on both hosts;
+- benchmark real TinyLlama shapes and a held-out synthetic shape suite on the
+  M4;
+- repeat on a second host only if an AVX2 portability extension is selected for
+  G4;
 - keep a simple heuristic schedule as a non-tuned baseline;
 - do not use test-run samples to claim an independent predictive cost model;
 - record every evaluated candidate, including losing schedules.
@@ -670,7 +698,7 @@ The benchmark manifest records, where observable:
 1. Python quantizer/dequantize + PyTorch FP32 matmul;
 2. Rust scalar Q8 implementation;
 3. generated scalar C;
-4. generated NEON/AVX2 candidate;
+4. generated NEON candidate (and AVX2 only if selected for G4);
 5. fused vs materialized Q8 graph.
 
 Each level is compared before end-to-end integration.
@@ -727,7 +755,7 @@ only way to inspect a result.
 | `decodeforge-ir` | IR, type/shape/layout model, verifier, text form |
 | `decodeforge-quant` | DFQ8 semantics, reference quantizer, logical/packed manifests |
 | `decodeforge-schedule` | fusion, schedule enumeration, legality, cost/ranking, tuner data |
-| `decodeforge-codegen` | Loop IR lowering and scalar/NEON/AVX2 source emission |
+| `decodeforge-codegen` | Loop IR lowering and scalar/NEON source emission; deferred AVX2 extension |
 | `decodeforge-runtime` | cache, artifact validation, guards, dynamic loading |
 | Python package | model transformation, backend registration, FX normalization/partition |
 | native bridge | ATen tensors, output allocation, PyTorch CPU parallel runtime, ABI |
@@ -774,15 +802,15 @@ usable without schedule enumeration or code generation.
 - explicit quantized model transformation before backend compilation;
 - TinyLlama 1.1B supplies required real shapes;
 - Rust compiler, generated C/intrinsics, host Clang, thin C++ ATen bridge;
-- scalar → ARM64 NEON → x86 AVX2 order;
+- scalar → ARM64 NEON order for the required path; x86 AVX2 is deferred to G4;
 - one thread before multi-core scaling;
 - PyTorch CPU runtime supplies parallel ranges; no custom scheduler;
 - no KV paging, HTTP server, work stealing, GPU backend, Q4, or generic MLIR
   frontend in the first project;
 - generated-source backend before any MLIR experiment;
-- no integer dot-product claim for the FP32-activation `DFQ8_B32` path;
+- no integer dot-product claim for the FP32-activation `DFQ8_B32_V1` path;
 - checked-in source, disassembly, raw measurements, and manifests are required
   evidence, not optional polish;
-- dashboard, both fusions, multi-core tuning, and small-batch support are locked
-  behind the scalar/NEON/AVX2 vertical slice;
+- dashboard, both fusions, multi-core tuning, small-batch support, and AVX2 are
+  locked behind the Mac scalar/NEON path and an evidence-selected G4 extension;
 - no performance number written into the design.

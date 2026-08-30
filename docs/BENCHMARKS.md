@@ -4,11 +4,17 @@
 variable, preserves the declared numeric contract, and produces a reproducible
 result bundle.
 
+**Current status:** the Python half of G0 is implemented and reviewable; Rust
+parity is pending. No native-kernel or performance claim is made until its
+checked-in evidence bundle exists. The required benchmark path is the Apple M4
+ARM64 NEON slice; Ryzen/AVX2 measurements are deferred to an optional G4
+portability extension.
+
 ## Claim classes
 
 DecodeForge keeps four kinds of claims separate:
 
-1. **Compiler correctness:** generated code implements the `DFQ8_B32` contract.
+1. **Compiler correctness:** generated code implements the `DFQ8_B32_V1` contract.
 2. **Schedule improvement:** one legal schedule outperforms another under the
    same format, inputs, host, and callable boundary.
 3. **Framework integration:** a supported PyTorch region executes through the
@@ -38,7 +44,7 @@ auto-vectorization; the build log and disassembly verify this.
 
 ## Shape suites
 
-### Required real shapes
+### Required real shapes on the M4
 
 All use `M=1` first:
 
@@ -47,6 +53,9 @@ All use `M=1` first:
 - `[5632,2048]`;
 - `[2048,5632]`;
 - `[32000,2048]` after the smaller projections are stable.
+
+The Ryzen 5 3600 shape suite is optional G4 evidence if AVX2 portability is
+selected; it is not a G0–G3 requirement.
 
 ### Held-out shapes
 
@@ -68,11 +77,19 @@ not additional search data.
 
 Quantization error and schedule error are different experiments:
 
-- The Q8 oracle is compared with the source FP32/BF16 model to characterize
-  quantization quality.
-- Generated scalar and SIMD schedules are compared with the Q8 oracle to test
-  compiler correctness.
+- Source-vs-Q8 quality compares source FP32/BF16 weight words with
+  `dequantize_f32_bits` output. For nonzero-scale, non-clamped lanes, the
+  deterministic V1 evidence uses the conservative per-weight bound
+  `scale * (0.5 + 255*u) + 2^-150`, where `u = 2^-24`, with exact rational
+  arithmetic in the tests. Zero blocks, padding, and the intentional
+  subnormal-clamp case are reported separately.
+- Generated scalar and NEON schedules are compared with the internally computed
+  canonical Q8 output to test compiler correctness. A future AVX2 candidate is
+  compared the same way only if selected as G4.
 - Fusion is compared with the materialized Q8 graph.
+
+The source-vs-Q8 report is a quantization-quality result, not the generated-
+kernel comparator and not evidence that a native kernel has passed.
 
 Reports include maximum absolute and relative error, mean squared error, and
 cosine similarity. Model-level reports add top-k/logit agreement, fixed-prompt
@@ -98,9 +115,10 @@ Each run:
 10. reports median, dispersion, p95 when supported by sample count, and the
     effect size versus baseline.
 
-Single-thread results come first. Physical-core sweeps, SMT, and Apple
+M4 single-thread results come first. Physical-core sweeps and Apple
 performance/efficiency-core behavior are separate experiments with explicit
-worker and affinity policies. Nested parallelism is disabled.
+worker and affinity policies. Ryzen SMT and other second-host measurements are
+deferred to G4 if AVX2 portability is selected. Nested parallelism is disabled.
 
 ## Hardware and machine-code evidence
 
@@ -119,9 +137,10 @@ Every selected kernel retains disassembly. The audit identifies:
 - stack frame and spills;
 - unexpected scalarization or extra shuffles.
 
-At least one winning-versus-losing comparison per architecture connects a
-schedule choice to both emitted code and a measurement. Latency alone is not
-used to invent a microarchitectural explanation.
+At least one winning-versus-losing comparison on the M4 connects a schedule
+choice to both emitted code and a measurement. If AVX2 is selected for G4, the
+same evidence standard applies there. Latency alone is not used to invent a
+microarchitectural explanation.
 
 ## Bandwidth and overhead calibration
 
@@ -150,8 +169,10 @@ A selected schedule must:
   limits;
 - be no slower than the untuned vector baseline within the documented noise
   policy on reported required shapes;
-- show a supported improvement on at least one real shape per architecture for
-  the project to claim successful empirical selection.
+- show a supported improvement on at least one required M4 shape for the
+  project to claim successful empirical selection;
+- if an AVX2 extension is selected for G4, report its result separately rather
+  than treating it as a prerequisite for the Mac claim.
 
 If no candidate wins, the result is reported as a negative result and the tuner
 does not claim an optimization. The compiler may still be correct.
@@ -201,12 +222,12 @@ them. A summary table is generated from raw files rather than hand-transcribed.
 
 The first credible public report contains:
 
-- one required shape on both NEON and AVX2;
+- one required shape on M4 ARM64 NEON;
 - scalar and untuned-vector baselines under identical Q8 semantics;
 - a selected schedule and all losing candidates;
 - correctness distributions and raw timing samples;
 - generated source and audited assembly;
 - available counters plus a bandwidth/overhead model;
 - compiler time, tuning time, cache-hit time, code size, and pack size;
-- one honest cross-target explanation, including a negative result if that is
-  what the evidence shows.
+- an honest M4 explanation, including a negative result if that is what the
+  evidence shows; any cross-target explanation is optional G4 evidence.

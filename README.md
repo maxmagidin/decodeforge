@@ -2,19 +2,24 @@
 
 **A shape-specializing compiler for quantized LLM linear layers on commodity CPUs.**
 
-DecodeForge compiles the dominant operations in autoregressive LLM decode—large
-matrix-vector and small matrix-matrix products—into target-specific native
-kernels for ARM64 NEON and x86-64 AVX2. An explicit model pass quantizes frozen
-weights; a `torch.compile` backend then recognizes supported Llama-family linear
-subgraphs, packs constants, searches a bounded schedule space, builds a guarded
-native module, and returns a callable that PyTorch can use in place of the
-captured graph.
+DecodeForge's required path compiles the dominant operation in autoregressive
+LLM decode—large matrix-vector products—into a guarded ARM64 NEON kernel on an
+Apple M4. An explicit model pass quantizes frozen weights; a `torch.compile`
+backend then recognizes supported Llama-family linear subgraphs, packs
+constants, searches a bounded schedule space, builds a guarded native module,
+and returns a callable that PyTorch can use in place of the captured graph.
+An x86-64 AVX2 backend remains a deferred, optional portability extension after
+the local Mac compiler path works end to end.
 
 The project asks one question:
 
-> Can one small schedule compiler produce credible weight-only Q8 decode kernels
-> for both Apple M-series and Zen 2 CPUs, and explain which tiling, packing, and
-> fusion decisions work on each?
+> Can one small schedule compiler produce a credible weight-only Q8 decode
+> kernel on an Apple M4, and explain which tiling, packing, and fusion decisions
+> work on that required local path?
+
+The Ryzen/AVX2 design is retained as a possible later portability extension;
+it is not a G0–G3 acceptance dependency. This owner-approved scope change is
+recorded in [ADR 0001](docs/decisions/0001-mac-first-required-path.md).
 
 This is deliberately not an inference server, work-stealing runtime, KV-cache
 manager, general tensor framework, or GPU compiler. PyTorch/Transformers owns
@@ -41,16 +46,20 @@ FX graph + example shapes + constant weights + CPU target
             calibrate / benchmark / select schedule
                          |
                          v
-        generated scalar / NEON / AVX2 native module
+                generated scalar / NEON native module
+                (AVX2 deferred)
                          |
                          v
               guarded torch.compile callable
 ```
 
-The two computers strengthen the project:
+The required development host is:
 
-- Apple M4 MacBook Air: ARM64 NEON, 10 physical cores;
-- Ryzen 5 3600: x86-64, AVX2/FMA, 6 cores / 12 threads;
+- Apple M4 MacBook Air: ARM64 NEON, 10 physical cores.
+
+The deferred portability host is:
+
+- Ryzen 5 3600: x86-64, AVX2/FMA, 6 cores / 12 threads.
 - Radeon RX 5700 XT: intentionally out of scope.
 
 The initial weight-only format keeps activations in FP32, so its vector kernels
@@ -68,8 +77,9 @@ Supported graph regions, in promotion order:
 4. small batches (`M = 1, 2, 4, 8`) after the decode `M = 1` path is stable.
 
 Only item 1 belongs to the required vertical slice. Fusion, small batches, a
-predictive cost model, and the HTML viewer remain locked until scalar, NEON, and
-AVX2 kernels are correct and measured on real projection shapes.
+predictive cost model, and the HTML viewer remain locked until the scalar and
+NEON kernels are correct and measured on real projection shapes on the M4.
+AVX2 work is deferred until a later evidence-selected extension.
 
 The first reference model is
 [`TinyLlama/TinyLlama-1.1B-Chat-v1.0`](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0),
@@ -80,7 +90,7 @@ only those shapes are required for the first complete result.
 ## What makes it a compiler
 
 - A typed IR represents contraction, quantization, scale, epilogue, layout, and
-  reduction semantics independently of either CPU target.
+  reduction semantics independently of the M4 target; future targets reuse it.
 - A legality layer rejects schedules that violate vector width, alignment,
   reduction, tail, or numeric-contract constraints.
 - A schedule pass chooses loop order, row/output blocking, `K` unroll, vector
@@ -116,21 +126,21 @@ substituting an estimate.
 | Skill signal | Required proof |
 |---|---|
 | compiler construction | typed/verified IR, legal schedule enumeration, deterministic lowering |
-| SIMD and machine code | retained NEON/AVX2 source, disassembly audit, scalarization/spill checks |
+| SIMD and machine code | retained M4 NEON source, disassembly audit, scalarization/spill checks; AVX2 only if selected as G4 extension |
 | memory-system reasoning | packed-layout accounting, bandwidth calibration, cache counters when available |
 | ABI and FFI safety | versioned C ABI, pointer/shape guards, negative tests, corrupt-artifact recovery |
 | performance engineering | raw randomized samples, uncertainty, same-semantics baselines, break-even analysis |
-| cross-target judgment | one measured schedule tradeoff explained separately on M4 and Zen 2 |
+| target judgment | one measured schedule tradeoff explained on M4; a cross-target comparison is optional G4 evidence |
 
 ## Delivery gates
 
 | Gate | Required result | Scope unlocked |
 |---|---|---|
-| G0: semantics | Frozen `DFQ8_B32` specification and matching Python/Rust scalar oracles | native codegen |
-| G1: one vertical slice | One TinyLlama `M=1` projection lowered through IR to generated scalar and NEON, with source, disassembly, correctness, and timings | second ISA |
-| G2: cross-target proof | AVX2 backend passes the same corpus; a measured case study explains why at least one schedule choice differs by CPU | bounded autotuning |
-| G3: framework proof | A guarded `torch.compile` region executes end to end, falls back safely, and reports compiled coverage | optional fusion |
-| G4: extension | RMSNorm or gate/up fusion wins under the same Q8 contract and survives end-to-end validation | second fusion or small batches |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree | generated scalar code |
+| G1: M4 vertical slice | A TinyLlama `M=1` projection lowers to generated scalar and ARM64 NEON on the M4, with source, disassembly, correctness, and timings | bounded Mac schedule evidence |
+| G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured | guarded Mac PyTorch integration |
+| G3: Mac framework proof | A guarded `torch.compile` region executes end to end on the M4, falls back safely, and reports coverage | evidence-selected extension |
+| G4: evidence-selected extension | One measured extension—AVX2 portability, fusion, small batch, or multicore—wins or yields an honest negative result under the same Q8 contract | — |
 
 Failure at a gate causes investigation or a scope cut; it does not unlock more
 surface area. The dashboard is presentation polish and comes after G3.
@@ -152,21 +162,25 @@ dashboard/                optional post-G3 compiler report viewer
 docs/                     design, implementation gates, benchmark methodology
 ```
 
+The AVX2 code-generation entry is retained for the deferred G4 portability
+extension; it is not part of the required Mac-first G0–G3 path.
+
 ## Credible success
 
 The project is résumé-ready when it can demonstrate all of the following:
 
-- scalar, NEON, and AVX2 kernels agree with a dequantize-then-matmul oracle within
-  a documented numeric tolerance;
+- scalar and NEON kernels agree with a dequantize-then-matmul oracle within a
+  documented numeric tolerance on the M4; AVX2 is required only if selected as
+  the G4 portability extension;
 - compiled regions preserve the PyTorch callable contract and reject guard
   violations safely;
 - schedule selection is reproducible and beats the untuned generated schedule
-  on at least one real TinyLlama projection shape on each CPU target;
+  on at least one real TinyLlama projection shape on the M4;
 - compiler time, tuning time, cache behavior, packed-weight size, throughput,
   latency, and quantization error are reported together;
 - a TinyLlama decoder block or generation path uses compiled regions end to end;
-- negative cross-target results are explained—for example, a tile that helps the
-  M4 but hurts Zen 2;
+- any optional G4 cross-target result is explained—for example, a tile that
+  helps the M4 but hurts Zen 2;
 - at least one optimization is supported by annotated disassembly and available
   CPU counters, connecting the source-level schedule to observed machine behavior;
 - comparisons to PyTorch Inductor, llama.cpp, or vendor libraries are labeled as
@@ -184,9 +198,11 @@ analysis.
 - [Design and technical specification](docs/DESIGN.md)
 - [Benchmark and experimental methodology](docs/BENCHMARKS.md)
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
+- [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
 
 ## Status
 
-Design baseline only. No compiler or performance claim exists yet. The next
-accepted milestone is G0; résumé language must continue to say “designed” rather
-than “built” until a checked-in result bundle proves the corresponding claim.
+Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
+is not complete. The compiler and performance paths are not claimed until a
+checked-in result bundle proves them. See [the normative Q8
+contract](docs/Q8_FORMAT_V1.md).

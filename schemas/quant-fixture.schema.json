@@ -10,14 +10,18 @@
     "operator_version",
     "format",
     "numeric_mode",
+    "case_id",
     "n",
     "k",
+    "blocks",
     "source_fp32_bits",
     "expected_scale_bits",
     "expected_q_bytes",
     "input_fp32_bits",
     "expected_output_fp32_bits",
-    "error_bound"
+    "error_bound",
+    "logical_weight_identity",
+    "fixture_identity"
   ],
   "properties": {
     "schema_version": {
@@ -36,14 +40,21 @@
     "numeric_mode": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
     },
+    "case_id": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+    },
     "n": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
     },
     "k": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
     },
+    "blocks": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+    },
     "source_fp32_bits": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "integer",
         "minimum": 0,
@@ -52,6 +63,7 @@
     },
     "expected_scale_bits": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "integer",
         "minimum": 0,
@@ -60,6 +72,7 @@
     },
     "expected_q_bytes": {
       "type": "array",
+      "minItems": 32,
       "items": {
         "type": "integer",
         "minimum": -127,
@@ -68,6 +81,7 @@
     },
     "input_fp32_bits": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "integer",
         "minimum": 0,
@@ -76,6 +90,7 @@
     },
     "expected_output_fp32_bits": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "integer",
         "minimum": 0,
@@ -91,21 +106,20 @@
       ],
       "properties": {
         "policy": {
-          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+          "type": "string",
+          "const": "strict_f32_v1"
         },
         "comparator": {
-          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
-        },
-        "metadata": {
-          "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+          "type": "string",
+          "const": "dfq8_forward_v1"
         }
       }
     },
     "logical_weight_identity": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
     },
-    "metadata": {
-      "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+    "fixture_identity": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
     }
   }
 }

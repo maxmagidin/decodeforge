@@ -23,25 +23,31 @@ Q8 semantics
     -> minimal Region/Loop IR
     -> generated scalar kernel
     -> NEON vertical slice
-    -> AVX2 vertical slice
     -> bounded schedule selection
     -> guarded torch.compile integration
-    -> optional fusion or small-batch extension
+    -> one evidence-selected extension (optional AVX2, fusion, small batch, or multicore)
 ```
 
-The report viewer, predictive cost-model experiments, multi-core tuning, and
-additional graph patterns are off the critical path.
+The Apple M4/ARM64 NEON path is the required resume path. The Ryzen/AVX2
+backend is a deferred optional portability extension after the local Mac
+compiler path works end to end; it is not a G0–G3 dependency. The report
+viewer, predictive cost-model experiments, and additional graph patterns are
+off the critical path. Multi-core tuning is a possible G4 extension.
+This sequencing is the accepted owner decision in
+[`docs/decisions/0001-mac-first-required-path.md`](decisions/0001-mac-first-required-path.md).
 
 ## G0 — Freeze semantics and evidence schema
 
 ### Build
 
-- Specify `DFQ8_B32`, including rounding, zero blocks, padding, NaN/Inf policy,
+- Specify `DFQ8_B32_V1`, including rounding, zero blocks, padding, NaN/Inf policy,
   and the exact accumulation expression.
 - Implement Python and Rust scalar quantize/dequantize-and-dot references.
 - Define a versioned run manifest before producing benchmark numbers.
 - Create deterministic fixtures for zero, sign-alternating, extreme finite,
   block-boundary, tail, and random cases.
+- Keep the normative bit-level contract in `docs/Q8_FORMAT_V1.md`; fixture
+  checks are read-only unless the generator is invoked with `--write`.
 
 ### Exit evidence
 
@@ -50,6 +56,12 @@ additional graph patterns are off the critical path.
 - The manifest records inputs, source revision, toolchain, CPU, target features,
   numeric mode, and output hashes.
 
+### Current status
+
+Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
+is not complete until independent Rust generation/verifier matches the frozen
+fixture bytes.
+
 ### Stop condition
 
 Do not create SIMD code until rounding and tail behavior are identical across
@@ -57,9 +69,9 @@ the references.
 
 ## G1 — Complete one NEON vertical slice
 
-Use the `M=1`, `[N,K]=[2048,2048]` TinyLlama projection first, then add the
-remaining required projection families. The first slice contains only the IR
-needed by Q8 linear.
+Use the `M=1`, `[N,K]=[2048,2048]` TinyLlama projection on the Apple M4 first,
+then add the remaining required projection families. The first slice contains
+only the IR needed by Q8 linear.
 
 ### Build
 
@@ -73,7 +85,8 @@ needed by Q8 linear.
 
 ### Exit evidence
 
-- Generated scalar and NEON output pass the complete correctness corpus.
+- Generated scalar and NEON output pass the complete correctness corpus on the
+  M4.
 - One TinyLlama projection bundle includes Region IR, Loop IR, pack metadata,
   source, build command, disassembly, raw samples, and a Markdown report.
 - The disassembly audit identifies the hot loop, vector instructions, tail path,
@@ -81,18 +94,20 @@ needed by Q8 linear.
 - The vector path is faster than generated scalar for at least one required real
   shape under the same Q8 semantics. Failure triggers analysis, not a new feature.
 
-## G2 — Prove the abstraction on AVX2
+## Deferred portability extension — AVX2 (optional G4 choice)
 
-The x86 backend must consume the same semantic IR and differ only at explicit
-schedule, packing, target-lowering, guard, and target-artifact boundaries. The
-logical kernel call contract remains versioned and stable.
+If selected as the G4 extension, the x86 backend consumes the same semantic IR
+and differs only at explicit schedule, packing, target-lowering, guard, and
+target-artifact boundaries. The logical kernel call contract remains versioned
+and stable. This section is not a G0–G3 acceptance dependency.
 
 ### Build
 
 - Add AVX2/FMA widening/conversion and FP32 accumulation lowering.
 - Add x86 feature detection and negative feature-guard tests.
-- Re-run the same fixture and real-shape suites on the Ryzen 5 3600.
-- Compare at least two legal schedule or packing choices on both CPUs.
+- Re-run the same fixture and real-shape suites on the Ryzen 5 3600 only after
+  the M4 path is complete.
+- Compare at least two legal schedule or packing choices on the second host.
 
 ### Exit evidence
 
@@ -101,11 +116,12 @@ logical kernel call contract remains versioned and stable.
 - The report contains one cross-target case study where a schedule parameter has
   a measurably different effect and connects that effect to layout, assembly,
   counters, or a clearly labeled model.
-- Both selected vector paths beat generated scalar on at least one real shape.
+- The selected AVX2 path beats generated scalar on at least one real shape, or
+  the report records an honest negative result.
 
-## G2.5 — Add bounded schedule selection
+## G2 — Bounded Mac schedule selection and evidence
 
-Only after fixed NEON and AVX2 kernels work:
+Only after the fixed M4 scalar and NEON kernels work:
 
 - expose `N` tile, `K`-block unroll, accumulator count, panel layout, prefetch,
   and tail strategy selectively;
@@ -122,11 +138,11 @@ predictive cost model is not required for the résumé-ready result.
 - Selection is deterministic given a result bundle and policy.
 - The selected schedule is no slower than the designated untuned vector baseline
   within the documented noise policy on reported required shapes.
-- At least one shape on each architecture shows a statistically supported win
-  over that untuned baseline.
+- At least one required M4 shape shows a statistically supported win over that
+  untuned baseline, or the report records a negative result.
 - Tuning time and break-even call count are reported.
 
-## G3 — Integrate through PyTorch
+## G3 — Integrate through PyTorch on Mac
 
 ### Build
 
@@ -138,7 +154,7 @@ predictive cost model is not required for the résumé-ready result.
 ### Exit evidence
 
 - A TinyLlama projection and then one decoder-block path execute through
-  `torch.compile`.
+  `torch.compile` on the M4.
 - Tests demonstrate the successful path, shape/stride/feature guard misses,
   fallback, cache miss, cache hit, corrupt-cache rebuild, and numeric failure.
 - The report separates kernel time, bridge/dispatch time, compiled-region
@@ -148,6 +164,7 @@ predictive cost model is not required for the résumé-ready result.
 
 Choose exactly one first:
 
+- x86-64 AVX2 portability;
 - RMSNorm plus Q8 linear fusion;
 - paired gate/up plus SwiGLU fusion;
 - `M in {2, 4, 8}`;
@@ -170,9 +187,10 @@ If completion risk rises, remove work in this order:
 6. multi-core tuning;
 7. broad FX pattern support.
 
-Do not cut scalar oracles, both ISA backends, generated-source retention,
-assembly inspection, raw measurements, guards, or one end-to-end PyTorch path;
-those are the core evidence.
+Do not cut the scalar oracles, the required M4 scalar/NEON path,
+generated-source retention, assembly inspection, raw measurements, guards, or
+one end-to-end Mac PyTorch path; those are the core evidence. The AVX2 backend
+is optional G4 scope.
 
 ## Résumé promotion checklist
 
@@ -182,12 +200,13 @@ Résumé bullets may use these verbs only after the matching evidence exists:
 |---|---|
 | designed | reviewed specification or checked-in IR/ABI decision |
 | implemented | tests execute the component from a clean checkout |
-| generated NEON/AVX2 | retained source and disassembly confirm vector instructions |
+| generated NEON | retained source and disassembly confirm vector instructions; AVX2 requires the same evidence only if selected for G4 |
 | optimized | controlled before/after result under the same numeric contract |
 | autotuned | recorded candidate set, correctness gating, selection policy, and reproducible winner |
 | integrated with PyTorch | guarded compiled region executes and fallback is tested |
 | achieved `X%` improvement | raw samples, baseline definition, uncertainty, host manifest, and reproduction command |
 
-Until G2 and G3 are complete, the honest project description is “designed a
-cross-target Q8 kernel compiler and implemented its current completed gates,”
-with those gates named explicitly.
+Until G3 is complete, the honest project description is “designed a Mac-first
+Q8 kernel compiler and implemented its current completed gates,” with Python
+G0 status and pending Rust parity named explicitly. Any AVX2 claim waits for a
+G4 evidence bundle.

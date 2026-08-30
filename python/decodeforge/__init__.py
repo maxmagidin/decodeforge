@@ -1,10 +1,54 @@
-"""Public Python package metadata for DecodeForge.
+"""Public Python package for DecodeForge's portable Q8 reference."""
 
-The foundation intentionally exposes metadata only. Later milestones add the
-quantized module and framework integration without making PyTorch a default
-runtime dependency.
-"""
+from .q8 import (
+    BLOCK_SIZE,
+    FORMAT,
+    MAX_COMPARATOR_K,
+    NUMERIC_MODE,
+    OutputComparison,
+    Q8Error,
+    Q8Weights,
+    canonical_linear_f32_bits,
+    compare_strict_f32_v1,
+    dequantize_f32_bits,
+    dequantize_f32_rows_bits,
+    f32_add_bits,
+    f32_bits_to_float,
+    f32_div_bits,
+    f32_from_int,
+    f32_mul_bits,
+    fixture_identity,
+    float_to_f32_bits,
+    is_finite_f32_bits,
+    logical_weight_identity,
+    quantize_f32_bits,
+    ulp_distance,
+)
 
-__all__ = ["__version__"]
+__all__ = [
+    "BLOCK_SIZE",
+    "FORMAT",
+    "MAX_COMPARATOR_K",
+    "NUMERIC_MODE",
+    "OutputComparison",
+    "Q8Error",
+    "Q8Weights",
+    "__version__",
+    "canonical_linear_f32_bits",
+    "compare_strict_f32_v1",
+    "dequantize_f32_bits",
+    "dequantize_f32_rows_bits",
+    "f32_add_bits",
+    "f32_bits_to_float",
+    "f32_div_bits",
+    "f32_from_int",
+    "f32_mul_bits",
+    "fixture_identity",
+    "float_to_f32_bits",
+    "is_finite_f32_bits",
+    "logical_weight_identity",
+    "quantize_f32_bits",
+    "ulp_distance",
+]
 
 __version__ = "0.1.0"
