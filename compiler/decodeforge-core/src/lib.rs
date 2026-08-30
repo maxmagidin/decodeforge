@@ -1,10 +1,14 @@
 #![forbid(unsafe_code)]
 
-//! Versioned constants shared by the target-independent compiler surface.
+//! Versioned contracts and the G0 semantic oracle shared by the compiler.
 //!
-//! The foundation deliberately contains no quantization, IR, scheduling, or
-//! code generation logic. Later changes may build on these constants without
-//! changing the public version contract accidentally.
+//! This crate hosts the independent `DFQ8_B32_V1` scalar quantization,
+//! evaluation, identity, and fixture gates used to freeze G0 semantics. A
+//! future quantization crate will own G1 target packing and related lowering;
+//! keeping those concerns separate preserves this crate's target-independent
+//! oracle and version contract.
+
+pub mod q8;
 
 /// The user-facing package name.
 pub const PACKAGE_NAME: &str = "decodeforge";

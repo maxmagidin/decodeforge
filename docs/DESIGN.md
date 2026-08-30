@@ -1,7 +1,11 @@
 # DecodeForge design and technical specification
 
-**Status:** Python half of G0 is implemented and reviewable; Rust parity is
-pending, so G0 is not complete. The normative contract is
+**Status:** The first G0 semantic-parity checkpoint is complete: independent
+Python and Rust scalar oracles, closed fixture schemas, and the deterministic
+corpus pass parity gates. G0 remains open until a checked-in provenance and
+evidence bundle records the documented seed/input, source revision, toolchain,
+CPU/features, numeric mode, and artifact hashes. No G1 work is unlocked. The
+normative contract is
 [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
@@ -52,7 +56,7 @@ Implementation advances through evidence gates rather than component count:
 
 | Gate | Exit evidence |
 |---|---|
-| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree, followed by a checked-in provenance/evidence bundle |
 | G1: M4 vertical slice | One real TinyLlama shape flows through minimal IR to generated scalar and ARM64 NEON code on the M4; the bundle contains source, assembly, correctness, timings, and host metadata |
 | G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured |
 | G3: Mac PyTorch slice | A guarded `torch.compile` region runs end to end on the M4, demonstrates a guard miss, and reports supported-region coverage |
@@ -225,11 +229,15 @@ Contract:
 - scales are FP32 initially;
 - activations and accumulation are FP32;
 - block length is exactly 32; a padded tail is zero-filled and guarded;
-- rounding rule is specified; Python tests cover the current reference, with
-  Rust and native parity checked as those paths are implemented;
+- rounding rule is specified; Python/Rust scalar parity is complete, while
+  native parity remains future G1 work;
 - NaN/Inf source weights are rejected by default;
 - source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
   separately from generated-kernel comparator correctness.
+
+Both the Python and Rust strict-f32 helpers use integer/rational rounding for
+binary32 add, multiply, divide, and integer conversion. Native floating-point
+arithmetic is not part of the semantic oracle; it cannot change fixture bits.
 
 The complete bit-level contract is frozen in
 [`docs/Q8_FORMAT_V1.md`](Q8_FORMAT_V1.md), including raw-word finite checks,
@@ -752,8 +760,9 @@ only way to inspect a result.
 
 | Component | Responsibility |
 |---|---|
-| `decodeforge-ir` | IR, type/shape/layout model, verifier, text form |
-| `decodeforge-quant` | DFQ8 semantics, reference quantizer, logical/packed manifests |
+| `decodeforge-core` | G0 DFQ8 semantics, reference quantizer/evaluator, identities, fixture gates |
+| `decodeforge-ir` | IR, type/shape/layout model, verifier, text form (future G1) |
+| `decodeforge-quant` | Future G1 target packing and quantization interfaces |
 | `decodeforge-schedule` | fusion, schedule enumeration, legality, cost/ranking, tuner data |
 | `decodeforge-codegen` | Loop IR lowering and scalar/NEON source emission; deferred AVX2 extension |
 | `decodeforge-runtime` | cache, artifact validation, guards, dynamic loading |
