@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "operator": "q8_linear",
+  "format": "DFQ8_B32_V1",
+  "numeric_mode": "strict_f32_v1",
+  "m": 1,
+  "n": 4,
+  "k": 32,
+  "logical_weight_identity": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "target": {"triple": "aarch64-apple-darwin", "features": ["neon"]},
+  "schedule_policy": {"kind": "fixed", "schedule": "baseline"},
+  "compiler_revision": "unknown"
+}

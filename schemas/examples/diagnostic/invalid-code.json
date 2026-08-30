@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "code": "bundle-missing",
+  "severity": "error",
+  "component": "bundle",
+  "summary": "A required artifact is missing.",
+  "context": {"artifact": "host.json"}
+}

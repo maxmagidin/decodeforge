@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A shape-specializing compiler for quantized CPU inference kernels."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
-dependencies = []
+dependencies = ["jsonschema==4.26.0"]
 
 [project.optional-dependencies]
 # PyTorch is deliberately isolated from the default package. Framework
@@ -21,6 +21,7 @@ dev = [
     "mypy==1.17.1",
     "pytest==8.4.1",
     "ruff==0.12.10",
+    "types-jsonschema==4.26.0.20260518",
 ]
 
 [tool.hatch.build.targets.wheel]

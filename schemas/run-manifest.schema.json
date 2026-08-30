@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:run-manifest-v1",
+  "title": "DecodeForge run manifest V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "milestone", "bundle_class", "project", "artifacts", "checks", "not_applicable"],
+  "properties": {
+    "schema_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"},
+    "milestone": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
+    "bundle_class": {"type": "string", "enum": ["fixture", "smoke", "candidate-set", "certified", "contextual"]},
+    "bundle_id": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/bundle_id"},
+    "created_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "dirty", "format", "numeric_mode", "compiler_version", "generated_abi"],
+      "properties": {
+        "revision": {"type": "string", "pattern": "^(?:unknown|[0-9a-f]{40})$"},
+        "dirty": {"type": "boolean"},
+        "format": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/format"},
+        "numeric_mode": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"},
+        "compiler_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "generated_abi": {"type": "integer", "const": 1},
+        "runtime_abi": {"type": "integer", "const": 1}
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "m", "n", "k", "logical_weight_identity"],
+      "properties": {
+        "kind": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/operator"},
+        "m": {"type": "integer", "const": 1},
+        "n": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"},
+        "k": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"},
+        "logical_weight_identity": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"}
+      }
+    },
+    "target": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/target"},
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {"type": "string", "enum": ["not-applicable", "selected"]},
+        "policy_id": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "selected_schedule_id": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "candidate_count": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/nonnegative_u32"}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes", "role"],
+        "properties": {
+          "path": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/portable_path"},
+          "sha256": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/sha256"},
+          "bytes": {"type": "integer", "minimum": 0},
+          "role": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "correctness", "assembly", "certified_performance"],
+      "properties": {
+        "schema": {"enum": ["pass", "fail", "not-run", "not-applicable"]},
+        "correctness": {"enum": ["pass", "fail", "not-run", "not-applicable"]},
+        "assembly": {"enum": ["pass", "fail", "not-run", "not-applicable"]},
+        "certified_performance": {"enum": ["pass", "fail", "not-run", "not-applicable"]}
+      }
+    },
+    "not_applicable": {"type": "array", "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/portable_path"}, "uniqueItems": true},
+    "redactions": {"type": "array", "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}, "uniqueItems": true},
+    "metadata": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"}
+  }
+}

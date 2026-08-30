@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "codes": [
+    {"code": "DFE-SCHEMA-001", "name": "malformed-json", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-002", "name": "unsupported-schema-version", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-003", "name": "unresolved-schema-reference", "component": "schema", "required_context": ["ref"]},
+    {"code": "DFE-SCHEMA-004", "name": "missing-required-field", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-005", "name": "unknown-field", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-006", "name": "invalid-type", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-007", "name": "invalid-value", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-008", "name": "duplicate-json-key", "component": "schema", "required_context": ["path"]},
+    {"code": "DFE-SCHEMA-009", "name": "catalog-conflict", "component": "schema", "required_context": ["schema"]},
+    {"code": "DFE-BUNDLE-001", "name": "missing-required-artifact", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-002", "name": "forbidden-artifact-present", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-003", "name": "invalid-relative-path", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-004", "name": "duplicate-artifact-path", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-005", "name": "artifact-not-found", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-006", "name": "artifact-size-mismatch", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-007", "name": "artifact-hash-mismatch", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-008", "name": "bundle-id-mismatch", "component": "bundle", "required_context": ["bundle"]},
+    {"code": "DFE-BUNDLE-009", "name": "cross-file-inconsistency", "component": "bundle", "required_context": ["artifact"]},
+    {"code": "DFE-BUNDLE-010", "name": "class-requirement-unsatisfied", "component": "bundle", "required_context": ["reason"]},
+    {"code": "DFE-SCHED-001", "name": "unsupported-feature", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-002", "name": "vector-width-mismatch", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-003", "name": "register-budget-exceeded", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-004", "name": "incompatible-pack-layout", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-005", "name": "k-block-boundary-violation", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-006", "name": "unsafe-n-tail", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-007", "name": "packed-offset-overflow", "component": "schedule", "required_context": []},
+    {"code": "DFE-SCHED-008", "name": "candidate-budget-exceeded", "component": "schedule", "required_context": []}
+  ]
+}

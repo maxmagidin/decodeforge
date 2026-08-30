@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "milestone": "foundation",
+  "bundle_class": "fixture",
+  "project": {"revision": "unknown", "dirty": false, "format": "DFQ8_B32_V1", "numeric_mode": "strict_f32_v1", "compiler_version": "0.1.0", "generated_abi": 1},
+  "artifacts": [{"path": "../escape", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "role": "invalid"}],
+  "checks": {"schema": "pass", "correctness": "not-applicable", "assembly": "not-applicable", "certified_performance": "not-applicable"},
+  "not_applicable": []
+}

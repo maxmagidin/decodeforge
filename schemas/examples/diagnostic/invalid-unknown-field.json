@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "code": "DFE-BUNDLE-001",
+  "severity": "error",
+  "component": "bundle",
+  "summary": "A required artifact is missing.",
+  "context": {"artifact": "host.json"},
+  "human_only": true
+}

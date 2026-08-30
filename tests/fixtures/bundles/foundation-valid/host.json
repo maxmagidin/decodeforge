@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "host_id": "fixture-host",
+  "role": "development",
+  "architecture": "aarch64",
+  "cpu": {"model": "fixture CPU", "physical_cores": 1, "logical_cores": 1, "features": []},
+  "os": {"name": "fixture OS", "version": "1", "kernel": "fixture kernel"},
+  "toolchains": {"clang": "fixture", "rust": "1.98.0", "python": "3.12.14"},
+  "source": {"revision": "unknown", "dirty": false}
+}

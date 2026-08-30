@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "milestone": "foundation",
+  "bundle_class": "fixture",
+  "project": {"revision": "unknown", "dirty": false, "format": "DFQ8_B32_V1", "numeric_mode": "strict_f32_v1", "compiler_version": "0.1.0", "generated_abi": 1, "runtime_abi": 1},
+  "artifacts": [
+    {"path": "host.json", "sha256": "f0840712036cf6277af35dfb2d61de30f82d1ba9788302130c9aba5363867b25", "bytes": 407, "role": "host-manifest"},
+    {"path": "report.md", "sha256": "5ed0824d88a9b9fad4072dc8a9d96035d07c4475b5ff027ccafc23c8d044fbf4", "bytes": 190, "role": "report"},
+    {"path": "request.json", "sha256": "4cae82a77bd863a2e6a6c48060f50eec1be752b462db99d3610d66c737699a9d", "bytes": 411, "role": "compiler-request"}
+  ],
+  "checks": {"schema": "pass", "correctness": "not-applicable", "assembly": "not-applicable", "certified_performance": "not-applicable"},
+  "not_applicable": ["operator", "target", "selection"]
+}

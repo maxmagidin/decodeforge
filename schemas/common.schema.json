@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:common-v1",
+  "title": "DecodeForge common V1 schema definitions",
+  "$defs": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "positive_u32": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "nonnegative_u32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bundle_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "content_identity": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]{0,31}:[0-9a-f]{64}$"
+    },
+    "portable_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\)(?!.*//)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "format": {
+      "type": "string",
+      "const": "DFQ8_B32_V1"
+    },
+    "numeric_mode": {
+      "type": "string",
+      "const": "strict_f32_v1"
+    },
+    "operator": {
+      "type": "string",
+      "const": "q8_linear"
+    },
+    "feature_list": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/non_empty_string"
+      },
+      "uniqueItems": true
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "triple",
+        "features"
+      ],
+      "properties": {
+        "triple": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "features": {
+          "$ref": "#/$defs/feature_list"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "m",
+        "n",
+        "k"
+      ],
+      "properties": {
+        "m": {
+          "type": "integer",
+          "const": 1
+        },
+        "n": {
+          "$ref": "#/$defs/positive_u32"
+        },
+        "k": {
+          "$ref": "#/$defs/positive_u32"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          }
+        },
+        "field": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "keyword": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "expected": {},
+        "actual": {},
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "uniqueItems": true
+        },
+        "schema": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "artifact": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "bundle": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "reason": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    }
+  }
+}

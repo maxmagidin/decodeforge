@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "host_id": "ci-linux-x86",
+  "role": "ci",
+  "architecture": "x86_64",
+  "cpu": {"model": "CI virtual CPU", "physical_cores": 0, "logical_cores": 2, "features": []},
+  "os": {"name": "Linux", "version": "24.04", "kernel": "recorded-by-runner"},
+  "toolchains": {"clang": "recorded-by-runner"},
+  "source": {"revision": "unknown", "dirty": false}
+}

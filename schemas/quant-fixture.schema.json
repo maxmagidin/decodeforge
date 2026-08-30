@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:quant-fixture-v1",
+  "title": "DecodeForge quantization fixture V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operator",
+    "operator_version",
+    "format",
+    "numeric_mode",
+    "n",
+    "k",
+    "source_fp32_bits",
+    "expected_scale_bits",
+    "expected_q_bytes",
+    "input_fp32_bits",
+    "expected_output_fp32_bits",
+    "error_bound"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+    },
+    "operator": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/operator"
+    },
+    "operator_version": {
+      "type": "string",
+      "const": "q8_linear_v1"
+    },
+    "format": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/format"
+    },
+    "numeric_mode": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
+    },
+    "n": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+    },
+    "k": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+    },
+    "source_fp32_bits": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295
+      }
+    },
+    "expected_scale_bits": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295
+      }
+    },
+    "expected_q_bytes": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -127,
+        "maximum": 127
+      }
+    },
+    "input_fp32_bits": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295
+      }
+    },
+    "expected_output_fp32_bits": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295
+      }
+    },
+    "error_bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "comparator"
+      ],
+      "properties": {
+        "policy": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "comparator": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "metadata": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+        }
+      }
+    },
+    "logical_weight_identity": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+    },
+    "metadata": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+    }
+  }
+}
