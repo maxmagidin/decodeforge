@@ -34,6 +34,8 @@ const POSITIVE_MASK: u32 = 0x7fff_ffff;
 const F32_127_BITS: u32 = 0x42fe_0000;
 const I64_MAX_U64: u64 = i64::MAX as u64;
 
+pub mod fixture;
+
 /// A stable semantic rejection with a machine-readable diagnostic code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Q8Error {
