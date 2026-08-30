@@ -1,4 +1,5 @@
-.PHONY: setup format lint test check check-pytorch-pin test-native
+.PHONY: setup format lint test check check-pytorch-pin test-native \
+	validate-contracts verify-bundle
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -37,6 +38,7 @@ lint:
 	$(UV) run --frozen mypy
 	$(UV) run --frozen python scripts/check_workspace.py
 	$(UV) run --frozen python scripts/check_headers.py
+	$(UV) run --frozen python scripts/validate_schemas.py --all
 
 test:
 	cargo build --workspace --all-features --locked
@@ -51,3 +53,10 @@ check-pytorch-pin:
 
 test-native:
 	$(UV) run --frozen python scripts/check_headers.py
+
+validate-contracts:
+	$(UV) run --frozen python scripts/validate_schemas.py --all
+
+verify-bundle:
+	@test -n "$(BUNDLE)" || { echo "verify-bundle: BUNDLE=<path> is required" >&2; exit 2; }
+	$(UV) run --frozen python scripts/validate_schemas.py --bundle "$(BUNDLE)"

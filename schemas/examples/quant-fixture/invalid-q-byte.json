@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "operator": "q8_linear",
+  "operator_version": "q8_linear_v1",
+  "format": "DFQ8_B32_V1",
+  "numeric_mode": "strict_f32_v1",
+  "n": 1,
+  "k": 1,
+  "source_fp32_bits": [0],
+  "expected_scale_bits": [0],
+  "expected_q_bytes": [-128],
+  "input_fp32_bits": [0],
+  "expected_output_fp32_bits": [0],
+  "error_bound": {"policy": "strict-f32-v1", "comparator": "exact-zero"}
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:host-manifest-v1",
+  "title": "DecodeForge host manifest V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "host_id", "role", "architecture", "cpu", "os", "toolchains", "source"],
+  "properties": {
+    "schema_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"},
+    "host_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"},
+    "role": {"type": "string", "enum": ["development", "ci", "mac-primary"]},
+    "architecture": {"type": "string", "enum": ["aarch64", "x86_64"]},
+    "cpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "physical_cores", "logical_cores", "features"],
+      "properties": {
+        "model": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "physical_cores": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"},
+        "logical_cores": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"},
+        "features": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/feature_list"}
+      }
+    },
+    "os": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "kernel"],
+      "properties": {
+        "name": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "kernel": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}
+      }
+    },
+    "toolchains": {"type": "object", "additionalProperties": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}},
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "power_state": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "affinity_or_qos": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "timer": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "counters": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "thread_environment": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "dirty"],
+      "properties": {
+        "revision": {"type": "string", "pattern": "^(?:unknown|[0-9a-f]{40})$"},
+        "dirty": {"type": "boolean"}
+      }
+    },
+    "metadata": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"}
+  }
+}

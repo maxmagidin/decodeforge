@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:diagnostic-v1",
+  "title": "DecodeForge diagnostic V1",
+  "$defs": {
+    "diagnostic_body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "component", "summary", "context"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^DFE-[A-Z0-9]+-[0-9]{3}$"},
+        "severity": {"type": "string", "enum": ["error", "warning", "info"]},
+        "component": {"type": "string", "enum": ["schema", "request", "fixture", "schedule", "host", "bundle", "cli"]},
+        "summary": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "context": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/context"},
+        "causes": {"type": "array", "items": {"$ref": "#/$defs/diagnostic_body"}},
+        "metadata": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"}
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "code", "severity", "component", "summary", "context"],
+  "properties": {
+    "schema_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"},
+    "code": {"type": "string", "pattern": "^DFE-[A-Z0-9]+-[0-9]{3}$"},
+    "severity": {"type": "string", "enum": ["error", "warning", "info"]},
+    "component": {"type": "string", "enum": ["schema", "request", "fixture", "schedule", "host", "bundle", "cli"]},
+    "summary": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+    "context": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/context"},
+    "causes": {"type": "array", "items": {"$ref": "#/$defs/diagnostic_body"}},
+    "metadata": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"}
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "shape": {"m": 1, "n": 4, "k": 32},
+  "vector_axis": "output",
+  "vector_lanes": 4,
+  "n_tile": 4,
+  "k_block": 32,
+  "k_unroll": 1,
+  "accumulators": 4,
+  "pack": {"layout": "output-interleaved", "alignment": 16},
+  "n_tail": "scalar-cleanup",
+  "prefetch_bytes": null,
+  "target": {"triple": "aarch64-apple-darwin", "features": ["neon"]},
+  "numeric_mode": "strict_f32_v1"
+}

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:schedule-v1",
+  "title": "DecodeForge LoopKernelV1 schedule V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "shape",
+    "vector_axis",
+    "vector_lanes",
+    "n_tile",
+    "k_block",
+    "k_unroll",
+    "accumulators",
+    "pack",
+    "n_tail",
+    "target",
+    "numeric_mode"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+    },
+    "shape": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/shape"
+    },
+    "vector_axis": {
+      "type": "string",
+      "enum": [
+        "output",
+        "reduction"
+      ]
+    },
+    "vector_lanes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255
+    },
+    "n_tile": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "k_block": {
+      "type": "integer",
+      "const": 32
+    },
+    "k_unroll": {
+      "type": "integer",
+      "enum": [
+        1,
+        2,
+        4
+      ]
+    },
+    "accumulators": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout",
+        "alignment"
+      ],
+      "properties": {
+        "layout": {
+          "type": "string",
+          "enum": [
+            "row-major",
+            "output-interleaved"
+          ]
+        },
+        "alignment": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "metadata": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+        }
+      }
+    },
+    "n_tail": {
+      "type": "string",
+      "enum": [
+        "scalar-cleanup",
+        "padded-panel"
+      ]
+    },
+    "prefetch_bytes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "target": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/target"
+    },
+    "numeric_mode": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
+    },
+    "metadata": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+    }
+  }
+}
