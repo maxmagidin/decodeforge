@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import math
 import struct
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import FrozenInstanceError, dataclass
 from typing import TypeAlias
 
 FORMAT = "DFQ8_B32_V1"
@@ -309,3 +310,307 @@ def f32_from_int(value: int) -> int:
     if value == 0:
         return 0
     return _round_rational_f32(abs(value), sign=1 if value > 0 else -1)
+
+
+def _round_f32_to_int(bits: int) -> int:
+    """Round one finite binary32 value to an integer, ties-to-even."""
+
+    sign, numerator, power, is_zero = _finite_components(bits)
+    if is_zero:
+        return 0
+    magnitude = _round_scaled(numerator, 1, power)
+    return sign * magnitude
+
+
+def _ratio_to_q(ratio_bits: int) -> int:
+    """Round one binary32 ratio and clamp it to the signed DFQ8 range."""
+
+    ratio = _validate_bits(ratio_bits, "ratio_bits")
+    if not is_finite_f32_bits(ratio):
+        # A finite source divided by a positive finite scale can overflow to
+        # infinity.  It is still unambiguously beyond the representable q
+        # range; NaN cannot arise from that operation and is rejected if an
+        # alternate caller supplies it.
+        if ratio & FRAC_MASK:
+            raise _error(
+                "DFE-QUANT-010",
+                "A quantization ratio is not finite.",
+                field="ratio_bits",
+                bits=ratio,
+            )
+        return Q_MIN if ratio & SIGN_MASK else Q_MAX
+    rounded = _round_f32_to_int(ratio)
+    return max(Q_MIN, min(Q_MAX, rounded))
+
+
+def _coerce_bits_sequence(values: Iterable[object], *, field: str) -> tuple[int, ...]:
+    try:
+        result = tuple(_validate_bits(value, field) for value in values)
+    except TypeError as exc:
+        raise _error(
+            "DFE-QUANT-003", "A bit-word sequence is not iterable.", field=field
+        ) from exc
+    return result
+
+
+def _shape(n: object, k: object) -> tuple[int, int, int]:
+    n_value = _validate_u32(n, "n")
+    k_value = _validate_u32(k, "k")
+    if n_value == 0 or k_value == 0:
+        raise _error(
+            "DFE-QUANT-001", "N and K must both be positive.", n=n_value, k=k_value
+        )
+    blocks = (k_value + BLOCK_SIZE - 1) // BLOCK_SIZE
+    # Keep every derived byte count representable by Python's sequence APIs;
+    # importantly this check runs before any result allocation.
+    counts = (
+        ("source", n_value, k_value),
+        ("q", n_value, blocks * BLOCK_SIZE),
+        ("scale", n_value, blocks),
+    )
+    for name, left, right in counts:
+        if left > (2**63 - 1) // max(1, right):
+            raise _error("DFE-QUANT-002", "Derived storage size overflows.", field=name)
+    return n_value, k_value, blocks
+
+
+def _check_length(values: Sequence[object], expected: int, field: str) -> None:
+    if len(values) != expected:
+        raise _error(
+            "DFE-QUANT-003",
+            "A bit-word sequence has the wrong length.",
+            field=field,
+            expected=expected,
+            actual=len(values),
+        )
+
+
+def _check_finite(values: Sequence[int], field: str, code: str) -> None:
+    for index, bits in enumerate(values):
+        if not is_finite_f32_bits(bits):
+            raise _error(
+                code,
+                "A binary32 value is not finite.",
+                field=field,
+                index=index,
+                bits=bits,
+            )
+
+
+def _signed_q(raw: int) -> int:
+    return raw if raw < 128 else raw - 256
+
+
+def _raw_q(value: int) -> int:
+    if value < Q_MIN or value > Q_MAX:
+        raise ValueError("q value outside DFQ8 range")
+    return value & 0xFF
+
+
+@dataclass(frozen=True)
+class Q8Weights:
+    """Immutable logical shape plus raw Q8/scales storage.
+
+    ``q_bytes`` is row-major ``[N][B][32]`` two's-complement storage.  The
+    scale words are kept as integer binary32 bits in row-major ``[N][B]``
+    order.  Both are intentionally exposed in raw form for hashing and parity
+    checks; convenience properties expose signed q values and scale floats.
+    """
+
+    n: int
+    k: int
+    blocks: int
+    q_bytes: bytes
+    scale_bits: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        n, k, blocks = _shape(self.n, self.k)
+        if not isinstance(self.blocks, int) or isinstance(self.blocks, bool):
+            raise _error(
+                "DFE-QUANT-001",
+                "The block count is not an integer.",
+                field="blocks",
+            )
+        if self.blocks != blocks:
+            raise _error(
+                "DFE-QUANT-001",
+                "The declared block count does not equal ceil(K/32).",
+                expected=blocks,
+                actual=self.blocks,
+            )
+        if not isinstance(self.q_bytes, bytes):
+            raise _error(
+                "DFE-QUANT-003", "q_bytes must be immutable bytes.", field="q_bytes"
+            )
+        if not isinstance(self.scale_bits, tuple):
+            raise _error(
+                "DFE-QUANT-003",
+                "scale_bits must be an immutable tuple.",
+                field="scale_bits",
+            )
+        expected_q = n * blocks * BLOCK_SIZE
+        expected_scales = n * blocks
+        if len(self.q_bytes) != expected_q or len(self.scale_bits) != expected_scales:
+            raise _error(
+                "DFE-QUANT-003",
+                "Stored q or scale length does not match the shape.",
+                expected_q=expected_q,
+                actual_q=len(self.q_bytes),
+                expected_scales=expected_scales,
+                actual_scales=len(self.scale_bits),
+            )
+        for index, bits in enumerate(self.scale_bits):
+            try:
+                _validate_bits(bits, "scale_bits")
+            except Q8Error as error:
+                raise _error(
+                    "DFE-QUANT-006",
+                    "A scale is not a valid binary32 bit word.",
+                    index=index,
+                    value=bits,
+                ) from error
+            if not is_finite_f32_bits(bits) or bits & SIGN_MASK:
+                raise _error(
+                    "DFE-QUANT-006",
+                    "A scale must be finite and non-negative.",
+                    index=index,
+                    bits=bits,
+                )
+        for row in range(n):
+            for block in range(blocks):
+                scale = self.scale_bits[row * blocks + block]
+                start = (row * blocks + block) * BLOCK_SIZE
+                end = start + BLOCK_SIZE
+                for index in range(start, end):
+                    q = _signed_q(self.q_bytes[index])
+                    if q < Q_MIN or q > Q_MAX:
+                        raise _error(
+                            "DFE-QUANT-007",
+                            "A q byte is outside the signed DFQ8 range.",
+                            index=index,
+                            value=q,
+                        )
+                    if (
+                        block * BLOCK_SIZE + (index - start) >= k
+                        and self.q_bytes[index] != 0
+                    ):
+                        raise _error(
+                            "DFE-QUANT-007",
+                            "A padded q lane is not zero.",
+                            row=row,
+                            block=block,
+                            lane=index - start,
+                        )
+                    if scale == 0 and self.q_bytes[index] != 0:
+                        raise _error(
+                            "DFE-QUANT-007",
+                            "A zero-scale block contains a nonzero q lane.",
+                            row=row,
+                            block=block,
+                        )
+
+    @property
+    def b(self) -> int:
+        """Read-only compatibility alias for the canonical ``blocks`` field."""
+
+        return self.blocks
+
+    @b.setter
+    def b(self, value: int) -> None:
+        del value
+        raise FrozenInstanceError("cannot assign to field 'b'")
+
+    @property
+    def raw_q_bytes(self) -> bytes:
+        return self.q_bytes
+
+    @property
+    def scales(self) -> tuple[int, ...]:
+        return self.scale_bits
+
+    @property
+    def scale_bytes(self) -> bytes:
+        return struct.pack(f"<{len(self.scale_bits)}I", *self.scale_bits)
+
+    @property
+    def q_values(self) -> tuple[int, ...]:
+        return tuple(_signed_q(value) for value in self.q_bytes)
+
+    def q_at(self, row: int, block: int, lane: int) -> int:
+        if not (
+            0 <= row < self.n and 0 <= block < self.blocks and 0 <= lane < BLOCK_SIZE
+        ):
+            raise IndexError("q index out of range")
+        return _signed_q(self.q_bytes[(row * self.blocks + block) * BLOCK_SIZE + lane])
+
+    def scale_at(self, row: int, block: int) -> int:
+        if not (0 <= row < self.n and 0 <= block < self.blocks):
+            raise IndexError("scale index out of range")
+        return self.scale_bits[row * self.blocks + block]
+
+
+def quantize_f32_bits(n: int, k: int, source_bits: Iterable[int]) -> Q8Weights:
+    """Quantize row-major source binary32 words into immutable DFQ8 storage."""
+
+    n_value, k_value, blocks = _shape(n, k)
+    source = _coerce_bits_sequence(source_bits, field="source_fp32_bits")
+    _check_length(source, n_value * k_value, "source_fp32_bits")
+    _check_finite(source, "source_fp32_bits", "DFE-QUANT-004")
+
+    q = bytearray(n_value * blocks * BLOCK_SIZE)
+    scales: list[int] = []
+    for row in range(n_value):
+        source_row = source[row * k_value : (row + 1) * k_value]
+        for block in range(blocks):
+            first = block * BLOCK_SIZE
+            last = min(first + BLOCK_SIZE, k_value)
+            # Clearing the sign bit normalizes -0 while retaining all finite
+            # positive magnitudes and their exact payload-free bit patterns.
+            amax = max((bits & POSITIVE_MASK) for bits in source_row[first:last])
+            if amax == 0:
+                scale = 0
+            else:
+                scale = f32_div_bits(amax, F32_127_BITS)
+                if not is_finite_f32_bits(scale) or scale & SIGN_MASK:
+                    raise _error(
+                        "DFE-QUANT-006",
+                        "Quantization produced an invalid scale.",
+                        row=row,
+                        block=block,
+                        bits=scale,
+                    )
+            scales.append(scale)
+            out_start = (row * blocks + block) * BLOCK_SIZE
+            if scale == 0:
+                # bytearray was zero-initialized; keep the explicit branch as
+                # an invariant marker for reviewers and alternate callers.
+                continue
+            for lane in range(last - first):
+                source_value = source[row * k_value + first + lane]
+                ratio = f32_div_bits(source_value, scale)
+                q[out_start + lane] = _raw_q(_ratio_to_q(ratio))
+            # Remaining lanes are already exactly zero padding.
+    return Q8Weights(n_value, k_value, blocks, bytes(q), tuple(scales))
+
+
+def dequantize_f32_bits(weights: Q8Weights) -> tuple[int, ...]:
+    """Return logical row-major dequantized binary32 words (length ``N*K``)."""
+
+    if not isinstance(weights, Q8Weights):
+        raise TypeError("weights must be Q8Weights")
+    result: list[int] = []
+    for row in range(weights.n):
+        for logical_k in range(weights.k):
+            block, lane = divmod(logical_k, BLOCK_SIZE)
+            q_bits = f32_from_int(weights.q_at(row, block, lane))
+            result.append(f32_mul_bits(q_bits, weights.scale_at(row, block)))
+    return tuple(result)
+
+
+def dequantize_f32_rows_bits(weights: Q8Weights) -> tuple[tuple[int, ...], ...]:
+    """Return dequantized words grouped by output row."""
+
+    flat = dequantize_f32_bits(weights)
+    return tuple(
+        flat[row * weights.k : (row + 1) * weights.k] for row in range(weights.n)
+    )
