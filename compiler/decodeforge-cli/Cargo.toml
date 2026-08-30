@@ -1,0 +1,15 @@
+[package]
+name = "decodeforge"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "DecodeForge command-line interface."
+build = "build.rs"
+
+[[bin]]
+name = "decodeforge"
+path = "src/main.rs"
+
+[dependencies]
+decodeforge-core = { path = "../decodeforge-core" }
+decodeforge-runtime = { path = "../decodeforge-runtime" }

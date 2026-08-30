@@ -1,0 +1,12 @@
+[package]
+name = "decodeforge-runtime"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Version reservation for the DecodeForge runtime boundary."
+
+[lib]
+path = "src/lib.rs"
+
+[lints.rust]
+unsafe_code = "forbid"

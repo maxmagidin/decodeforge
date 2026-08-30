@@ -2,6 +2,12 @@
 /build/
 /dist/
 /.venv/
+/.lavish/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 __pycache__/
 *.py[cod]
 *.so

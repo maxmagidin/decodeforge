@@ -1,0 +1,51 @@
+name: foundation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            expected: Linux:x86_64
+          - name: macos-arm64
+            os: macos-15
+            expected: Darwin:arm64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          enable-cache: true
+      - name: Verify runner architecture
+        shell: bash
+        env:
+          EXPECTED_HOST: ${{ matrix.expected }}
+        run: |
+          actual="$(uname -s):$(uname -m)"
+          test "$actual" = "$EXPECTED_HOST"
+      - name: Install pinned toolchains and dependencies
+        run: make setup
+      - name: Run foundation checks
+        run: make check
+      - name: Smoke pinned PyTorch CPU wheel
+        run: make check-pytorch-pin
+      - name: Re-run portable checks offline
+        env:
+          CARGO_NET_OFFLINE: "true"
+          UV_OFFLINE: "true"
+        run: |
+          make setup
+          make check
