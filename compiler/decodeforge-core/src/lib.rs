@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! Versioned constants shared by the target-independent compiler surface.
+//! Versioned contracts and target-independent G0 semantics shared by the compiler.
 //!
-//! The foundation deliberately contains no quantization, IR, scheduling, or
-//! code generation logic. Later changes may build on these constants without
-//! changing the public version contract accidentally.
+//! The independent `DFQ8_B32_V1` semantic oracle grows here in reviewable
+//! layers while target packing and code generation remain outside the
+//! foundation. The public version contract stays stable across those layers.
+
+pub mod q8;
 
 /// The user-facing package name.
 pub const PACKAGE_NAME: &str = "decodeforge";
