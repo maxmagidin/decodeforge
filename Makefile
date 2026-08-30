@@ -1,5 +1,5 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
-	validate-contracts verify-bundle fixture-check
+	validate-contracts verify-bundle fixture-check rust-fixture-check
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -44,8 +44,10 @@ lint:
 test:
 	$(CARGO) build --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked
+	$(CARGO) test --workspace --all-features --locked --release
 	$(UV) run --frozen python -m pytest -q
 	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
+	$(MAKE) rust-fixture-check
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
 
 check: lint test
@@ -65,3 +67,7 @@ verify-bundle:
 
 fixture-check:
 	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
+
+rust-fixture-check:
+	$(CARGO) run --quiet --offline --locked -p decodeforge -- q8 verify
+	$(CARGO) run --quiet --offline --locked --release -p decodeforge -- q8 verify

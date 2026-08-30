@@ -112,7 +112,19 @@ and SHA-256 value. Hashed artifacts contain no timestamps or free-form
 metadata. The committed corpus is listed by the closed, sorted
 `tests/fixtures/v1/manifest.json`. Run
 `uv run --frozen python scripts/generate_q8_fixtures.py --check` to verify it
-without writing; `--write` is the explicit regeneration operation.
+without writing. Rust independently generates the expected documents in memory,
+and `q8 verify` only reads and verifies the supplied fixture tree. Reproduce
+the read-only Rust gate with:
+
+```sh
+PATH="$(dirname "$(rustup which --toolchain 1.98.0 cargo)"):$PATH" cargo run --offline --locked -p decodeforge -- q8 verify
+```
+
+The Python generator is the sole explicit fixture writer:
+
+```sh
+uv run --frozen python scripts/generate_q8_fixtures.py --write
+```
 
 ## Comparator
 

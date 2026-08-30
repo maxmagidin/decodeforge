@@ -1,4 +1,4 @@
-//! Closed fixture parsing and deterministic in-memory generation.
+//! Closed fixture parsing, deterministic in-memory generation, and read-only checks.
 //!
 //! The fixture wire format is intentionally typed and closed.  Serde handles
 //! JSON syntax and escaping, `deny_unknown_fields` handles the schema surface,
@@ -15,6 +15,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fs;
+use std::io;
+use std::path::{Component, Path, PathBuf};
 
 const FIXTURE_COUNT: usize = 16;
 const MANIFEST_NAME: &str = "manifest.json";
@@ -767,15 +770,231 @@ pub fn generated_documents() -> Result<Vec<(String, Vec<u8>)>, Q8Error> {
     Ok(documents)
 }
 
+fn manifest_json(documents: &[(String, Vec<u8>)]) -> Result<Vec<u8>, Q8Error> {
+    let artifacts = documents
+        .iter()
+        .map(|(path, bytes)| {
+            let mut artifact = BTreeMap::<String, Value>::new();
+            artifact.insert("bytes".to_owned(), json!(bytes.len()));
+            artifact.insert("path".to_owned(), json!(path));
+            artifact.insert(
+                "sha256".to_owned(),
+                json!(super::hex_lower(&sha256_digest(bytes))),
+            );
+            Value::Object(artifact.into_iter().collect())
+        })
+        .collect::<Vec<_>>();
+    let mut object = BTreeMap::<String, Value>::new();
+    object.insert("artifacts".to_owned(), Value::Array(artifacts));
+    object.insert("format".to_owned(), json!(FORMAT));
+    object.insert("numeric_mode".to_owned(), json!(NUMERIC_MODE));
+    object.insert("schema_version".to_owned(), json!(1));
+    let mut bytes = serde_json::to_vec(&object).map_err(|_| {
+        Q8Error::new(
+            "DFE-QUANT-002",
+            "Fixture JSON allocation or serialization failed.",
+        )
+    })?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    digest.finalize().into()
+}
+
+fn path_has_symlink(path: &Path) -> io::Result<bool> {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(Path::new("/")),
+            Component::CurDir => {}
+            Component::ParentDir => current.push(".."),
+            Component::Normal(part) => current.push(part),
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Ok(true);
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(false)
+}
+
+fn regular_file(path: &Path) -> io::Result<bool> {
+    Ok(fs::symlink_metadata(path)?.file_type().is_file())
+}
+
+fn relative_path(root: &Path, path: &Path) -> PathBuf {
+    path.strip_prefix(root).unwrap_or(path).to_owned()
+}
+
+fn inventory(
+    root: &Path,
+    current: &Path,
+    files: &mut BTreeSet<PathBuf>,
+    symlinks: &mut Vec<PathBuf>,
+) -> io::Result<()> {
+    for entry in fs::read_dir(current)? {
+        let path = entry?.path();
+        let name = relative_path(root, &path);
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_type().is_symlink() {
+            symlinks.push(name);
+        } else if metadata.is_dir() {
+            inventory(root, &path, files, symlinks)?;
+        } else {
+            files.insert(name);
+        }
+    }
+    Ok(())
+}
+
+fn path_from_safe(root: &Path, raw: &str) -> PathBuf {
+    raw.split('/')
+        .fold(root.to_owned(), |path, component| path.join(component))
+}
+
+/// Verify a complete closed fixture tree against deterministic in-memory generation.
+pub fn verify_fixture_root(root: &Path) -> Result<usize, Q8Error> {
+    let documents = generated_documents()?;
+    if path_has_symlink(root).map_err(io_error)? || !root.is_dir() {
+        return Err(Q8Error::new(
+            "DFE-QUANT-012",
+            "The fixture root is missing or contains a symlink.",
+        ));
+    }
+    let manifest_path = root.join(MANIFEST_NAME);
+    if path_has_symlink(&manifest_path).map_err(io_error)?
+        || !regular_file(&manifest_path).map_err(io_error)?
+    {
+        return Err(Q8Error::new(
+            "DFE-QUANT-012",
+            "The fixture manifest must be a regular file.",
+        ));
+    }
+    let manifest_bytes = fs::read(&manifest_path).map_err(io_error)?;
+    let manifest = parse_fixture_manifest(&manifest_bytes)?;
+    let expected_manifest = manifest_json(&documents)?;
+    if manifest_bytes != expected_manifest {
+        return Err(Q8Error::new(
+            "DFE-QUANT-011",
+            "Fixture manifest contents differ from deterministic in-memory generation.",
+        ));
+    }
+    if manifest.artifacts.len() != documents.len()
+        || manifest
+            .artifacts
+            .iter()
+            .zip(documents.iter())
+            .any(|(record, (path, bytes))| {
+                record.path != *path
+                    || record.bytes != bytes.len() as u64
+                    || record.sha256 != super::hex_lower(&sha256_digest(bytes))
+            })
+    {
+        return Err(Q8Error::new(
+            "DFE-QUANT-011",
+            "Fixture manifest contents differ from deterministic in-memory generation.",
+        ));
+    }
+    let mut actual = BTreeSet::new();
+    let mut symlinks = Vec::new();
+    inventory(root, root, &mut actual, &mut symlinks).map_err(io_error)?;
+    actual.remove(Path::new(MANIFEST_NAME));
+    let expected = documents
+        .iter()
+        .map(|(path, _)| PathBuf::from(path))
+        .collect::<BTreeSet<_>>();
+    if !symlinks.is_empty() || actual != expected {
+        return Err(Q8Error::new(
+            "DFE-QUANT-012",
+            "Closed fixture inventory contains an unsafe or undeclared artifact.",
+        ));
+    }
+    for (relative, expected_bytes) in &documents {
+        let path = path_from_safe(root, relative);
+        if path_has_symlink(&path).map_err(io_error)? || !regular_file(&path).map_err(io_error)? {
+            return Err(
+                Q8Error::new("DFE-QUANT-012", "A fixture artifact is unsafe or missing.")
+                    .with("artifact", relative),
+            );
+        }
+        let observed = fs::read(&path).map_err(io_error)?;
+        if observed != *expected_bytes {
+            return Err(Q8Error::new(
+                "DFE-QUANT-011",
+                "Fixture bytes differ from deterministic in-memory generation.",
+            )
+            .with("artifact", relative));
+        }
+        parse_quant_fixture(&observed)?;
+    }
+    Ok(documents.len())
+}
+
+fn io_error(error: io::Error) -> Q8Error {
+    Q8Error::new(
+        "DFE-QUANT-012",
+        "A fixture artifact could not be safely accessed.",
+    )
+    .with("reason", error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::OpenOptions;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let base = std::env::temp_dir()
+            .canonicalize()
+            .expect("system temp directory must be accessible");
+        for _ in 0..100 {
+            let number = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = base.join(format!(
+                "decodeforge-q8-{label}-{}-{number}",
+                std::process::id()
+            ));
+            if fs::create_dir(&path).is_ok() {
+                return path;
+            }
+        }
+        panic!("unable to allocate a unique fixture test directory");
+    }
+
+    fn seed_fixture_root(label: &str) -> (PathBuf, PathBuf) {
+        let parent = unique_temp_dir(label);
+        let root = parent.join("fixture-root");
+        fs::create_dir(&root).unwrap();
+        let documents = generated_documents().unwrap();
+        for (relative, bytes) in &documents {
+            assert!(safe_relative_path(relative));
+            let path = path_from_safe(&root, relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        fs::write(root.join(MANIFEST_NAME), manifest_json(&documents).unwrap()).unwrap();
+        (parent, root)
+    }
 
     #[test]
     fn generated_corpus_has_expected_count_and_sorted_paths() {
         let documents = generated_documents().unwrap();
         assert_eq!(documents.len(), FIXTURE_COUNT);
         assert!(documents.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        let manifest = manifest_json(&documents).unwrap();
+        let parsed = parse_fixture_manifest(&manifest).unwrap();
+        assert_eq!(parsed.artifacts.len(), FIXTURE_COUNT);
     }
 
     #[test]
@@ -859,5 +1078,99 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             allowed_top
         );
+    }
+
+    #[test]
+    fn one_artifact_byte_corruption_is_reported_as_mismatch() {
+        let (parent, root) = seed_fixture_root("corrupt");
+        let path = root.join("fixtures/ties-and-extrema.json");
+        let mut bytes = fs::read(&path).unwrap();
+        assert_eq!(bytes.pop(), Some(b'\n'));
+        bytes.push(b' ');
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            verify_fixture_root(&root).unwrap_err().code,
+            "DFE-QUANT-011"
+        );
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn undeclared_extra_file_is_rejected_by_closed_inventory() {
+        let (parent, root) = seed_fixture_root("extra");
+        let extra = root.join("fixtures/extra.json");
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&extra)
+            .unwrap();
+        assert_eq!(
+            verify_fixture_root(&root).unwrap_err().code,
+            "DFE-QUANT-012"
+        );
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn non_utf8_inventory_name_is_rejected_without_path_loss() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let (parent, root) = seed_fixture_root("non-utf8");
+        let invalid_component = OsString::from_vec(vec![0xff]);
+        let hidden_directory = root.join("fixtures").join(invalid_component);
+        fs::create_dir(&hidden_directory).unwrap();
+        fs::copy(
+            root.join("fixtures/ties-and-extrema.json"),
+            hidden_directory.join("ties-and-extrema.json"),
+        )
+        .unwrap();
+        assert_eq!(
+            verify_fixture_root(&root).unwrap_err().code,
+            "DFE-QUANT-012"
+        );
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn derived_size_overflow_is_rejected_before_allocation() {
+        let error = quantize_f32_bits(u32::MAX, u32::MAX, &[]).unwrap_err();
+        assert_eq!(error.code, "DFE-QUANT-002");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_artifact_and_ancestor_are_rejected() {
+        let (parent, root) = seed_fixture_root("symlink-artifact");
+        let outside = unique_temp_dir("symlink-outside");
+        let target = root.join("fixtures/ties-and-extrema.json");
+        fs::remove_file(&target).unwrap();
+        std::os::unix::fs::symlink(outside.join("target.json"), &target).unwrap();
+        assert_eq!(
+            verify_fixture_root(&root).unwrap_err().code,
+            "DFE-QUANT-012"
+        );
+        fs::remove_dir_all(parent).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+
+        let (parent, root) = seed_fixture_root("symlink-ancestor");
+        let outside = unique_temp_dir("symlink-ancestor-outside");
+        fs::remove_dir_all(root.join("fixtures")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("fixtures")).unwrap();
+        assert_eq!(
+            verify_fixture_root(&root).unwrap_err().code,
+            "DFE-QUANT-012"
+        );
+        fs::remove_dir_all(parent).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn generated_documents_match_committed_corpus_when_present() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/v1");
+        if root.is_dir() {
+            assert_eq!(verify_fixture_root(&root).unwrap(), FIXTURE_COUNT);
+        }
     }
 }

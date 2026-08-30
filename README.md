@@ -136,7 +136,7 @@ substituting an estimate.
 
 | Gate | Required result | Scope unlocked |
 |---|---|---|
-| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree | generated scalar code |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree, followed by a checked-in provenance/evidence bundle | none until the G0 evidence bundle is complete |
 | G1: M4 vertical slice | A TinyLlama `M=1` projection lowers to generated scalar and ARM64 NEON on the M4, with source, disassembly, correctness, and timings | bounded Mac schedule evidence |
 | G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured | guarded Mac PyTorch integration |
 | G3: Mac framework proof | A guarded `torch.compile` region executes end to end on the M4, falls back safely, and reports coverage | evidence-selected extension |
@@ -149,8 +149,9 @@ surface area. The dashboard is presentation polish and comes after G3.
 
 ```text
 compiler/                 Rust workspace
-  decodeforge-ir/         typed ops, verifier, canonical text form
-  decodeforge-quant/      Q8 reference, packing, manifests
+  decodeforge-core/       G0 Q8 semantic oracle, identities, fixture gates
+  decodeforge-ir/         typed ops, verifier, canonical text form (future G1)
+  decodeforge-quant/      future G1 target packing and quantization interfaces
   decodeforge-schedule/   legal schedule space, cost data, tuner
   decodeforge-codegen/    scalar, NEON, AVX2 C/intrinsics emission
   decodeforge-runtime/    module cache, guards, loading, ABI
@@ -202,7 +203,24 @@ analysis.
 
 ## Status
 
-Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
-is not complete. The compiler and performance paths are not claimed until a
-checked-in result bundle proves them. See [the normative Q8
+The first G0 semantic-parity checkpoint is complete: the independent Python and
+Rust scalar oracles, closed fixture schemas, and the 16-case corpus pass
+byte-for-byte parity gates. G0 remains open until a checked-in provenance and
+evidence bundle records the documented seed/input, source revision, toolchain,
+CPU/features, numeric mode, and artifact hashes. No G1 work is unlocked; the
+compiler and performance paths are not claimed. See [the normative Q8
 contract](docs/Q8_FORMAT_V1.md).
+
+Rust independently generates the expected fixture documents in memory, and
+`q8 verify` only reads and verifies an existing fixture tree. Run the read-only
+Rust gate with `make rust-fixture-check`, or directly:
+
+```sh
+PATH="$(dirname "$(rustup which --toolchain 1.98.0 cargo)"):$PATH" cargo run --offline --locked -p decodeforge -- q8 verify
+```
+
+The Python generator is the sole explicit fixture writer:
+
+```sh
+uv run --frozen python scripts/generate_q8_fixtures.py --write
+```

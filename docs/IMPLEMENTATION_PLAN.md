@@ -47,7 +47,7 @@ This sequencing is the accepted owner decision in
 - Create deterministic fixtures for zero, sign-alternating, extreme finite,
   block-boundary, tail, and random cases.
 - Keep the normative bit-level contract in `docs/Q8_FORMAT_V1.md`; fixture
-  checks are read-only unless the generator is invoked with `--write`.
+  checks are read-only unless the Python generator is invoked with `--write`.
 
 ### Exit evidence
 
@@ -58,9 +58,12 @@ This sequencing is the accepted owner decision in
 
 ### Current status
 
-Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
-is not complete until independent Rust generation/verifier matches the frozen
-fixture bytes.
+The first G0 semantic-parity checkpoint is complete: independent in-memory Rust
+generation plus read-only verification matches the frozen Python fixture bytes,
+and the closed manifest/inventory gates pass. G0 remains open until a checked-in
+provenance/evidence bundle records the documented seed/input, source revision,
+toolchain, CPU/features, numeric mode, and artifact hashes. No G1 work is
+unlocked; compiler and performance work remains gated.
 
 ### Stop condition
 
@@ -207,6 +210,6 @@ Résumé bullets may use these verbs only after the matching evidence exists:
 | achieved `X%` improvement | raw samples, baseline definition, uncertainty, host manifest, and reproduction command |
 
 Until G3 is complete, the honest project description is “designed a Mac-first
-Q8 kernel compiler and implemented its current completed gates,” with Python
-G0 status and pending Rust parity named explicitly. Any AVX2 claim waits for a
+Q8 kernel compiler and implemented its current completed checkpoints,” with G0
+semantics named explicitly. Any AVX2 claim waits for a
 G4 evidence bundle.
