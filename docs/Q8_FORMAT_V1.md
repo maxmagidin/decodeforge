@@ -1,14 +1,14 @@
 # DFQ8_B32_V1 strict-f32 reference contract
 
-This document is the normative readable contract for the Python reference and
-the cross-language fixtures. The format is frozen as `DFQ8_B32_V1` and the
-executable numeric mode is `strict_f32_v1`.
+This document is the normative readable contract for the independent Python
+and Rust references and their cross-language fixtures. The format is frozen as
+`DFQ8_B32_V1` and the executable numeric mode is `strict_f32_v1`.
 
 ## Shape and storage
 
 An operator has `N > 0` output rows and `K > 0` logical input columns. The
-number of blocks is `B = ceil(K / 32)`. The Python quantizer accepts positive
-u32 `K` values subject to derived-storage checks. The fixed forward-error
+number of blocks is `B = ceil(K / 32)`. Both references accept positive u32
+`N` and `K` values subject to derived-storage checks. The fixed forward-error
 comparator is defined only through `MAX_COMPARATOR_K = 8,134,399`, where its
 declared reduction bound remains in domain. Storage is row-major:
 
@@ -35,11 +35,11 @@ q     = 0                          if scale == +0
 ```
 
 `RN32` means one correctly rounded binary32 operation (round-to-nearest,
-ties-to-even) with gradual underflow and no flush-to-zero. The division helper
-uses an integer/rational implementation, so its result does not depend on an
-accidental binary64 double round. Integer rounding and clamping happen in the
-shown order. The source bit words remain inspectable in fixtures and are never
-mutated.
+ties-to-even) with gradual underflow and no flush-to-zero. Both the Python and
+Rust references implement these operations with integer/rational helpers, so
+their results do not depend on an accidental binary64 double round, host FPU
+mode, or contraction. Integer rounding and clamping happen in the shown order.
+The source bit words remain inspectable in fixtures and are never mutated.
 
 ## Source-vs-Q8 quality evidence
 
