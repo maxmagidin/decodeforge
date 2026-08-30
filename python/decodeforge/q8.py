@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import math
 import struct
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import FrozenInstanceError, dataclass
 from typing import TypeAlias
 
@@ -726,3 +726,210 @@ def fixture_identity(
         + _u32_le(outputs)
     )
     return "sha256:" + hashlib.sha256(preimage).hexdigest()
+
+
+def _ordered_ulp(bits: int) -> int:
+    # Put both zero encodings at the same conceptual rank while retaining one
+    # step from either zero to the adjacent signed min-subnormal.
+    magnitude = bits & POSITIVE_MASK
+    return 0x80000000 - magnitude if bits & SIGN_MASK else 0x80000000 + magnitude
+
+
+def ulp_distance(left_bits: int, right_bits: int) -> int:
+    """Return finite binary32 ULP distance, treating +/-0 as equal."""
+
+    left = _validate_bits(left_bits, "left_bits")
+    right = _validate_bits(right_bits, "right_bits")
+    if not is_finite_f32_bits(left) or not is_finite_f32_bits(right):
+        raise _error("DFE-QUANT-009", "ULP comparison requires finite values.")
+    if left & POSITIVE_MASK == 0 and right & POSITIVE_MASK == 0:
+        return 0
+    return abs(_ordered_ulp(left) - _ordered_ulp(right))
+
+
+@dataclass(frozen=True, slots=True)
+class OutputComparison:
+    """One output's strict-f32 comparison metrics and pass/fail decision."""
+
+    index: int
+    actual_bits: int
+    reference_bits: int
+    absolute_error: float
+    relative_error: float
+    ulp: int
+    l1_magnitude: float
+    tolerance: float
+    factor: float
+    passed: bool
+
+    @property
+    def ulp_distance(self) -> int:
+        return self.ulp
+
+
+def _comparison_bits(values: Iterable[object], field: str) -> tuple[int, ...]:
+    result: list[int] = []
+    try:
+        iterator: Iterator[object] = iter(values)
+    except TypeError as exc:
+        raise _error(
+            "DFE-QUANT-009", "Comparator values are not iterable.", field=field
+        ) from exc
+    for index, value in enumerate(iterator):
+        if isinstance(value, bool):
+            raise _error(
+                "DFE-QUANT-009",
+                "Comparator value is not finite.",
+                field=field,
+                index=index,
+            )
+        if isinstance(value, int):
+            bits = _validate_bits(value, field)
+        elif isinstance(value, float):
+            if not math.isfinite(value):
+                raise _error(
+                    "DFE-QUANT-009",
+                    "Comparator value is not finite.",
+                    field=field,
+                    index=index,
+                )
+            try:
+                bits = struct.unpack("<I", struct.pack("<f", value))[0]
+            except (OverflowError, struct.error) as exc:
+                raise _error(
+                    "DFE-QUANT-009",
+                    "Comparator value is outside binary32 range.",
+                    field=field,
+                    index=index,
+                ) from exc
+        else:
+            raise _error(
+                "DFE-QUANT-009",
+                "Comparator value is not a bit word or float.",
+                field=field,
+                index=index,
+            )
+        if not is_finite_f32_bits(bits):
+            raise _error(
+                "DFE-QUANT-009",
+                "Comparator value is not finite.",
+                field=field,
+                index=index,
+                bits=bits,
+            )
+        result.append(bits)
+    return tuple(result)
+
+
+def compare_strict_f32_v1(
+    actual: Iterable[int | float],
+    input_bits: Iterable[int],
+    weights: Q8Weights,
+    *,
+    generated_scalar: bool = False,
+) -> tuple[OutputComparison, ...]:
+    """Compare candidate outputs against internally computed canonical output.
+
+    Values may be finite Python floats or raw f32 bit words.  The canonical
+    reference is always computed from ``input_bits`` and ``weights`` in the
+    strict scalar order.  ``A`` is summed in ascending row-major order using
+    binary64 Python floats.  Generated scalar candidates use the fixed
+    factor-one and ULP-2 policy; all other candidates use fixed factor four.
+    """
+
+    if not isinstance(weights, Q8Weights):
+        raise TypeError("weights must be Q8Weights")
+    if weights.k > MAX_COMPARATOR_K:
+        raise _error(
+            "DFE-QUANT-009",
+            "Comparator K exceeds the strict-f32 reduction-bound limit.",
+            k=weights.k,
+            maximum_k=MAX_COMPARATOR_K,
+        )
+    actual_bits = _comparison_bits(actual, "actual")
+    if len(actual_bits) != weights.n:
+        raise _error(
+            "DFE-QUANT-003",
+            "Comparator output length does not match N.",
+            expected=weights.n,
+            actual=len(actual_bits),
+        )
+    inputs = _coerce_bits_sequence(input_bits, field="input_fp32_bits")
+    _check_length(inputs, weights.k, "input_fp32_bits")
+    _check_finite(inputs, "input_fp32_bits", "DFE-QUANT-009")
+    reference_bits = canonical_linear_f32_bits(inputs, weights)
+    factor_value = 1.0 if generated_scalar else 4.0
+
+    t = 2 * weights.k + 2 * weights.blocks + 16
+    denominator = 1.0 - t * U
+    if denominator <= 0:
+        raise _error(
+            "DFE-QUANT-009", "Comparator reduction bound is outside its domain.", t=t
+        )
+    gamma = (t * U) / denominator
+    comparisons: list[OutputComparison] = []
+    for row, (actual_word, reference_word) in enumerate(
+        zip(actual_bits, reference_bits, strict=False)
+    ):
+        actual_value = f32_bits_to_float(actual_word)
+        reference_value = f32_bits_to_float(reference_word)
+        magnitude = 0.0
+        # Canonical ascending order is explicit here; no sum/reduction helper
+        # is allowed to choose an alternate order.
+        for logical_k, input_word in enumerate(inputs):
+            block, lane = divmod(logical_k, BLOCK_SIZE)
+            q_value = weights.q_at(row, block, lane)
+            scale_value = f32_bits_to_float(weights.scale_at(row, block))
+            term = abs(f32_bits_to_float(input_word) * float(q_value) * scale_value)
+            magnitude += term
+        absolute = abs(actual_value - reference_value)
+        if reference_word & POSITIVE_MASK == 0:
+            relative = 0.0 if actual_word & POSITIVE_MASK == 0 else math.inf
+        else:
+            relative = absolute / abs(reference_value)
+        tolerance = max(1e-7, factor_value * gamma * magnitude)
+        distance = ulp_distance(actual_word, reference_word)
+        passed = absolute <= tolerance
+        if generated_scalar:
+            passed = passed and distance <= 2
+        comparisons.append(
+            OutputComparison(
+                index=row,
+                actual_bits=actual_word,
+                reference_bits=reference_word,
+                absolute_error=absolute,
+                relative_error=relative,
+                ulp=distance,
+                l1_magnitude=magnitude,
+                tolerance=tolerance,
+                factor=factor_value,
+                passed=passed,
+            )
+        )
+    return tuple(comparisons)
+
+
+__all__ = [
+    "BLOCK_SIZE",
+    "FORMAT",
+    "MAX_COMPARATOR_K",
+    "NUMERIC_MODE",
+    "OutputComparison",
+    "Q8Error",
+    "Q8Weights",
+    "canonical_linear_f32_bits",
+    "compare_strict_f32_v1",
+    "dequantize_f32_bits",
+    "dequantize_f32_rows_bits",
+    "f32_add_bits",
+    "f32_bits_to_float",
+    "f32_div_bits",
+    "f32_from_int",
+    "f32_mul_bits",
+    "fixture_identity",
+    "float_to_f32_bits",
+    "is_finite_f32_bits",
+    "logical_weight_identity",
+    "quantize_f32_bits",
+    "ulp_distance",
+]

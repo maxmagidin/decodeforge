@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import math
 import struct
 from collections.abc import Callable
 
 import pytest
 from decodeforge.contracts import validate_data
 from decodeforge.q8 import (
+    MAX_COMPARATOR_K,
     Q8Error,
     Q8Weights,
     _ratio_to_q,
     canonical_linear_f32_bits,
+    compare_strict_f32_v1,
     dequantize_f32_bits,
     f32_add_bits,
     f32_div_bits,
@@ -20,6 +23,7 @@ from decodeforge.q8 import (
     float_to_f32_bits,
     logical_weight_identity,
     quantize_f32_bits,
+    ulp_distance,
 )
 
 
@@ -87,10 +91,40 @@ def test_hash_preimages_are_stable_and_dimension_sensitive() -> None:
     assert fixture != logical
 
 
+def test_comparator_zero_and_scalar_policy() -> None:
+    weights = quantize_f32_bits(1, 1, [0x3F800000])
+    exact = canonical_linear_f32_bits([0x3F800000], weights)
+    comparison = compare_strict_f32_v1([0x80000000], [0], quantize_f32_bits(1, 1, [0]))
+    assert comparison[0].passed
+    assert comparison[0].ulp == 0
+    nonzero = compare_strict_f32_v1([0x3F800000], [0], quantize_f32_bits(1, 1, [0]))
+    assert math.isinf(nonzero[0].relative_error)
+    scalar = compare_strict_f32_v1(exact, [0x3F800000], weights, generated_scalar=True)
+    assert scalar[0].passed and scalar[0].factor == 1.0
+
+
+def test_comparator_rejects_nonfinite_candidate() -> None:
+    weights = quantize_f32_bits(1, 1, [0x3F800000])
+    with pytest.raises(Q8Error, match="DFE-QUANT-009"):
+        compare_strict_f32_v1([float("nan")], [0], weights)
+
+
 def test_quantization_accepts_positive_u32_k_before_length_check() -> None:
     with pytest.raises(Q8Error, match="DFE-QUANT-003") as error:
         quantize_f32_bits(1, 0xFFFFFFFF, ())
     assert error.value.context["expected"] == 0xFFFFFFFF
+
+
+def test_comparator_cap_is_separate_from_quantization_shape() -> None:
+    weights = object.__new__(Q8Weights)
+    object.__setattr__(weights, "n", 1)
+    object.__setattr__(weights, "k", MAX_COMPARATOR_K + 1)
+    object.__setattr__(weights, "blocks", (MAX_COMPARATOR_K + 32) // 32)
+    object.__setattr__(weights, "q_bytes", b"")
+    object.__setattr__(weights, "scale_bits", ())
+    with pytest.raises(Q8Error, match="DFE-QUANT-009") as error:
+        compare_strict_f32_v1([], [], weights)
+    assert error.value.context["maximum_k"] == MAX_COMPARATOR_K
 
 
 def test_f32_arithmetic_matches_packed_scalar_for_basic_values() -> None:
@@ -100,7 +134,16 @@ def test_f32_arithmetic_matches_packed_scalar_for_basic_values() -> None:
     left, right = bits(1.25), bits(-0.5)
     assert f32_add_bits(left, right) == bits(0.75)
     assert f32_mul_bits(left, right) == bits(-0.625)
+    assert ulp_distance(0x00000000, 0x80000000) == 0
     assert len(dequantize_f32_bits(quantize_f32_bits(1, 1, [left]))) == 1
+
+
+def test_ulp_ordering_across_signed_zero() -> None:
+    minsub = 0x00000001
+    neg_minsub = 0x80000001
+    assert ulp_distance(neg_minsub, 0x80000000) == 1
+    assert ulp_distance(neg_minsub, 0x00000000) == 1
+    assert ulp_distance(neg_minsub, minsub) == 2
 
 
 def test_ratio_to_q_clamps_after_ties_to_even() -> None:
@@ -135,6 +178,18 @@ def test_one_hot_all_32_lanes_have_deterministic_layout() -> None:
             sum(value != 0 for value in weights.q_values[row * 32 : (row + 1) * 32])
             == 1
         )
+
+
+def test_comparator_rejects_nonfinite_canonical_evaluation() -> None:
+    weights = Q8Weights(
+        1,
+        1,
+        1,
+        bytes([127] + [0] * 31),
+        (0x7F7FFFFF,),
+    )
+    with pytest.raises(Q8Error, match="DFE-QUANT-010"):
+        compare_strict_f32_v1([0], [0x7F7FFFFF], weights)
 
 
 def test_representative_q8_diagnostics_match_closed_schema() -> None:
