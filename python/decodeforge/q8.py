@@ -12,6 +12,7 @@ implementation.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import struct
 from collections.abc import Iterable, Sequence
@@ -614,3 +615,114 @@ def dequantize_f32_rows_bits(weights: Q8Weights) -> tuple[tuple[int, ...], ...]:
     return tuple(
         flat[row * weights.k : (row + 1) * weights.k] for row in range(weights.n)
     )
+
+
+def canonical_linear_f32_bits(
+    input_bits: Iterable[int],
+    weights: Q8Weights,
+) -> tuple[int, ...]:
+    """Evaluate one ``[1,K]`` input in the strict canonical scalar order."""
+
+    if not isinstance(weights, Q8Weights):
+        raise TypeError("weights must be Q8Weights")
+    input_words = _coerce_bits_sequence(input_bits, field="input_fp32_bits")
+    _check_length(input_words, weights.k, "input_fp32_bits")
+    _check_finite(input_words, "input_fp32_bits", "DFE-QUANT-005")
+
+    outputs: list[int] = []
+    for row in range(weights.n):
+        output = 0  # canonical +0
+        for block in range(weights.blocks):
+            block_sum = 0  # canonical +0
+            first = block * BLOCK_SIZE
+            last = min(first + BLOCK_SIZE, weights.k)
+            scale = weights.scale_at(row, block)
+            for logical_k in range(first, last):
+                q_bits = f32_from_int(weights.q_at(row, block, logical_k - first))
+                product = f32_mul_bits(input_words[logical_k], q_bits)
+                if not is_finite_f32_bits(product):
+                    raise _error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite product.",
+                        row=row,
+                        block=block,
+                        lane=logical_k - first,
+                    )
+                block_sum = f32_add_bits(block_sum, product)
+                if not is_finite_f32_bits(block_sum):
+                    raise _error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite block sum.",
+                        row=row,
+                        block=block,
+                    )
+            scaled = f32_mul_bits(block_sum, scale)
+            if not is_finite_f32_bits(scaled):
+                raise _error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite scaled block.",
+                    row=row,
+                    block=block,
+                )
+            output = f32_add_bits(output, scaled)
+            if not is_finite_f32_bits(output):
+                raise _error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite output.",
+                    row=row,
+                )
+        outputs.append(output)
+    return tuple(outputs)
+
+
+def _u32_le(words: Iterable[int]) -> bytes:
+    values = tuple(_validate_bits(word) for word in words)
+    return struct.pack(f"<{len(values)}I", *values)
+
+
+def logical_weight_identity(weights: Q8Weights) -> str:
+    """Hash the canonical logical-weight preimage and return ``sha256:...``."""
+
+    if not isinstance(weights, Q8Weights):
+        raise TypeError("weights must be Q8Weights")
+    preimage = (
+        b"DecodeForge/DFQ8_B32_V1/logical-weight/v1\0"
+        + struct.pack("<III", weights.n, weights.k, weights.blocks)
+        + weights.q_bytes
+        + weights.scale_bytes
+    )
+    return "sha256:" + hashlib.sha256(preimage).hexdigest()
+
+
+def fixture_identity(
+    n: int,
+    k: int,
+    source_bits: Iterable[int],
+    weights: Q8Weights,
+    input_bits: Iterable[int],
+    output_bits: Iterable[int],
+) -> str:
+    """Hash a complete quantization/evaluation fixture preimage."""
+
+    n_value, k_value, blocks = _shape(n, k)
+    if weights.n != n_value or weights.k != k_value or weights.blocks != blocks:
+        raise _error("DFE-QUANT-008", "Fixture dimensions disagree with weights.")
+    source = _coerce_bits_sequence(source_bits, field="source_fp32_bits")
+    inputs = _coerce_bits_sequence(input_bits, field="input_fp32_bits")
+    outputs = _coerce_bits_sequence(output_bits, field="expected_output_fp32_bits")
+    _check_length(source, n_value * k_value, "source_fp32_bits")
+    _check_length(inputs, k_value, "input_fp32_bits")
+    _check_length(outputs, n_value, "expected_output_fp32_bits")
+    _check_finite(source, "source_fp32_bits", "DFE-QUANT-004")
+    _check_finite(inputs, "input_fp32_bits", "DFE-QUANT-005")
+    _check_finite(outputs, "expected_output_fp32_bits", "DFE-QUANT-010")
+    preimage = (
+        b"DecodeForge/DFQ8_B32_V1/strict_f32_v1/quant-fixture/v1\0"
+        + struct.pack("<II", n_value, k_value)
+        + _u32_le(source)
+        + weights.scale_bytes
+        + weights.q_bytes
+        + _u32_le(inputs)
+        + _u32_le(outputs)
+    )
+    return "sha256:" + hashlib.sha256(preimage).hexdigest()

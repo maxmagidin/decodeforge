@@ -35,6 +35,7 @@ make verify-bundle BUNDLE=tests/fixtures/bundles/foundation-valid
 
 The `foundation-empty` fixture is intentionally invalid and must emit three
 ordered `DFE-BUNDLE-001` diagnostics. Later milestones extend bundle
-requirements. The foundation does not define quantization array-length
-semantics, the logical-weight hash preimage, schedule IDs, or artifact IDs;
-their owning milestones must freeze those rules before producing artifacts.
+requirements. The Q8 fixture schema records a physical 32-lane q block even
+for a `K` tail; the Python semantic validator derives all array lengths from
+`N`, `K`, and `blocks`. The exact identities and corpus manifest are defined
+in `docs/Q8_FORMAT_V1.md`.
