@@ -16,6 +16,7 @@ pub enum RuntimeError {
     AbiVersionMismatch { expected: u32, actual: u32 },
     ModuleIdMismatch,
     InputLength { expected: usize, actual: usize },
+    OutputLength { expected: usize, actual: usize },
     KernelStatus(GeneratedStatusV1),
     UnknownKernelStatus(i32),
     InvalidSuccessOutput { index: usize },
@@ -33,7 +34,9 @@ impl RuntimeError {
             | Self::MissingSymbol { .. }
             | Self::AbiVersionMismatch { .. }
             | Self::ModuleIdMismatch => "DFE-NATIVE-007",
-            Self::AllocationFailed { .. } | Self::InputLength { .. } => "DFE-NATIVE-008",
+            Self::AllocationFailed { .. }
+            | Self::InputLength { .. }
+            | Self::OutputLength { .. } => "DFE-NATIVE-008",
             Self::KernelStatus(_)
             | Self::UnknownKernelStatus(_)
             | Self::InvalidSuccessOutput { .. } => "DFE-NATIVE-009",
@@ -84,6 +87,12 @@ impl fmt::Display for RuntimeError {
                     "input length {actual} does not equal expected K={expected}"
                 )
             }
+            Self::OutputLength { expected, actual } => {
+                write!(
+                    formatter,
+                    "output length {actual} does not equal expected N={expected}"
+                )
+            }
             Self::KernelStatus(status) => {
                 write!(
                     formatter,
@@ -116,6 +125,14 @@ mod tests {
         assert_eq!(RuntimeError::DynamicLoadFailed.code(), "DFE-NATIVE-007");
         assert_eq!(
             RuntimeError::InputLength {
+                expected: 4,
+                actual: 3
+            }
+            .code(),
+            "DFE-NATIVE-008"
+        );
+        assert_eq!(
+            RuntimeError::OutputLength {
                 expected: 4,
                 actual: 3
             }

@@ -226,9 +226,11 @@ without disabling stack protection. A backend-neutral checked runtime executes
 scalar and NEON modules through the same ABI: all 16 frozen fixtures are
 bit-exact, and dedicated `N=4` and `N=5` cases prove vector-only and
 vector-plus-tail execution. This is correctness and machine-code evidence
-only; no timing or speedup claim exists yet. The next gate is an allocation-free
-prepared call followed by a reproducible scalar-versus-NEON benchmark on a real
-TinyLlama projection. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
+only; no timing or speedup claim exists yet. A backend-neutral prepared-call API
+now validates buffer extents once, reuses caller-owned output storage, and
+includes deterministic output scrubbing and validation around every native
+invocation. The next gate is a reproducible scalar-versus-NEON benchmark on a
+real TinyLlama projection. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
 Rust independently generates the expected fixture documents in memory, and
 `q8 verify` only reads and verifies an existing fixture tree. Run the read-only

@@ -80,10 +80,14 @@ Each implementation evaluates guards in this deterministic order:
 Every failure through the nonfinite-input check leaves `y` untouched. Once the
 helper starts, it may write earlier logical outputs before detecting a
 nonfinite result. In that case it returns `DF_STATUS_NONFINITE_RESULT_V1`; the
-safe runtime discards its private output allocation and exposes no partial
-result. More generally, that runtime discards the whole private output on any
-nonzero status. A direct raw-ABI caller must treat `y` as unspecified after any
-post-helper failure.
+safe runtime never exposes a partial result. Its allocating `run` API discards
+the private output, while its prepared-call API scrubs the complete
+caller-owned output back to the fixed `0x7fc0_0000` quiet-NaN sentinel after
+every known or unknown nonzero status and after a nonfinite success output. The
+prepared API also fills the complete output with that sentinel before every
+invocation, so an incomplete write cannot inherit finite values from an
+earlier successful call. A direct raw-ABI caller must treat `y` as unspecified
+after any post-helper failure.
 
 Before observing or performing floating-point work, the generated entrypoint
 uses `feholdexcept` to save the caller environment, clear exception flags, and
