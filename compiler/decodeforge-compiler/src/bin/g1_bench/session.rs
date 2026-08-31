@@ -242,6 +242,7 @@ pub fn run_session(bundle: &CaseBundle, session_id: &str) -> Result<SessionResul
         ));
     }
     let host = capture_host()?;
+    validate_primary_cpu_model(&host.cpu_model)?;
     let first_case = bundle.cases.first().ok_or_else(|| {
         BenchError::new("DFE-G1-ASSET", "case bundle must contain one prepared case")
     })?;
@@ -857,6 +858,17 @@ fn capture_host() -> Result<HostInfo, BenchError> {
     })
 }
 
+fn validate_primary_cpu_model(cpu_model: &str) -> Result<(), BenchError> {
+    if cpu_model == "Apple M4" {
+        Ok(())
+    } else {
+        Err(BenchError::new(
+            "DFE-G1-HOST",
+            "run-session requires the primary Apple M4 host (cpu_model must be exactly \"Apple M4\")",
+        ))
+    }
+}
+
 fn context_error(context: impl Into<String>, error: impl std::fmt::Display) -> BenchError {
     BenchError::new("DFE-G1-NATIVE", format!("{}: {error}", context.into()))
 }
@@ -951,5 +963,12 @@ mod tests {
         );
         assert_eq!(records, activation_order("session-a", "case"));
         assert_ne!(records, activation_order("session-b", "case"));
+    }
+
+    #[test]
+    fn primary_host_requires_exact_apple_m4_cpu_model() {
+        assert!(validate_primary_cpu_model("Apple M4").is_ok());
+        assert!(validate_primary_cpu_model("Apple M4 Pro").is_err());
+        assert!(validate_primary_cpu_model("Apple M3").is_err());
     }
 }
