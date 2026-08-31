@@ -19,7 +19,8 @@ The first NEON backend emits one fixed C11/ARM64 schedule:
 
 1. vectorize four independent output rows across the OI4 panel (`N` axis);
 2. traverse blocks in ascending order and lanes within each block in ascending
-   order, with one vector accumulator per output lane;
+   order, with one independent scalar-equivalent recurrence in each vector
+   lane;
 3. load four signed Q8 values from the current lane, widen through
    `int8 -> int16 -> int32`, convert to four FP32 values, and broadcast the
    scalar activation to all four lanes;
