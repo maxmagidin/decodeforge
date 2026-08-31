@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"},
     "milestone": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
-    "bundle_class": {"type": "string", "enum": ["fixture", "smoke", "candidate-set", "certified", "contextual"]},
+    "bundle_class": {"type": "string", "enum": ["fixture", "smoke", "candidate-set", "certified", "contextual", "correctness"]},
     "bundle_id": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/bundle_id"},
     "created_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
     "project": {
@@ -23,6 +23,38 @@
         "compiler_version": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
         "generated_abi": {"type": "integer", "const": 1},
         "runtime_abi": {"type": "integer", "const": 1}
+      }
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "policy", "source_revision", "environment", "commands"],
+      "properties": {
+        "cwd": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "policy": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+        "source_revision": {"type": "string", "pattern": "^(?:unknown|[0-9a-f]{40})$"},
+        "environment": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "argv", "expected_exit_code"],
+            "properties": {
+              "id": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+              "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}
+              },
+              "expected_exit_code": {"type": "integer"}
+            }
+          }
+        }
       }
     },
     "operator": {
@@ -77,5 +109,43 @@
     "not_applicable": {"type": "array", "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/portable_path"}, "uniqueItems": true},
     "redactions": {"type": "array", "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"}, "uniqueItems": true},
     "metadata": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"}
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["milestone"],
+        "properties": {"milestone": {"const": "g0"}}
+      },
+      "then": {
+        "required": ["bundle_id", "created_utc", "target", "reproduction"],
+        "properties": {
+          "bundle_class": {"const": "correctness"},
+          "project": {"required": ["runtime_abi"]},
+          "reproduction": {
+            "properties": {
+              "cwd": {"const": "."},
+              "policy": {"const": "g0-correctness-v1"},
+              "source_revision": {"pattern": "^[0-9a-f]{40}$"},
+              "environment": {
+                "additionalProperties": false,
+                "required": ["CARGO_NET_OFFLINE", "DECODEFORGE_SOURCE_REVISION", "UV_OFFLINE"],
+                "properties": {
+                  "CARGO_NET_OFFLINE": {"const": "true"},
+                  "DECODEFORGE_SOURCE_REVISION": {"pattern": "^[0-9a-f]{40}$"},
+                  "UV_OFFLINE": {"const": "true"}
+                }
+              },
+              "commands": {
+                "items": {
+                  "properties": {
+                    "expected_exit_code": {"const": 0}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
