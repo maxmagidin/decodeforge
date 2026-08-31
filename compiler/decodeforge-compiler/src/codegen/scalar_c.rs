@@ -249,7 +249,7 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
         "    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n",
     );
     source.push_str("    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n");
-    source.push_str("    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        if (df_probe_true_min * df_probe_one != FLT_TRUE_MIN || df_probe_min * df_probe_half != 0x1p-127f) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
+    source.push_str("    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
     source.push_str("    for (uint32_t input = 0; input < UINT32_C(");
     source.push_str(&k.to_string());
     source.push_str("); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
@@ -300,6 +300,17 @@ mod tests {
         assert!(first.source.contains("#pragma STDC FENV_ACCESS ON"));
         assert!(first.source.contains("feholdexcept(&df_saved_environment)"));
         assert!(first.source.contains("fesetenv(&df_saved_environment)"));
+        assert!(
+            first
+                .source
+                .contains("df_probe_true_min_bits != UINT32_C(0x00000001)")
+        );
+        assert!(
+            first
+                .source
+                .contains("df_probe_half_min_bits != UINT32_C(0x00400000)")
+        );
+        assert!(!first.source.contains("df_probe_true_min * df_probe_one !="));
         assert!(!first.source.contains("lane < UINT32_C(32)"));
         assert!(!first.source.contains("__m128"));
         assert!(first.source.len() <= MAX_SCALAR_C_SOURCE_BYTES);
@@ -386,7 +397,7 @@ mod tests {
         );
         assert_eq!(
             source_hash,
-            "sha256:6c516ecf283bd5c10111e77b30ba9abac392d4f7f5da09ae67fbeeeac1e33dcd"
+            "sha256:3b081276e3ded67787b8cb917ed4a072065773c87735b30ffeb8508a61d28e54"
         );
     }
 }

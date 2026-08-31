@@ -93,6 +93,23 @@ subnormal canaries, nonfinite input, and nonfinite output. Thus the call
 preserves the caller's rounding mode, exception flags, and trap configuration;
 a hold or restore failure reports `DF_STATUS_FP_ENVIRONMENT_V1`.
 
+The gradual-underflow canaries compare the object-representation bits of their
+computed subnormal results. A floating-point comparison is insufficient: when
+flush-to-zero or flush-inputs-to-zero is active, ARM can treat both a flushed
+result and the expected subnormal comparison operand as zero. Integer bit
+checks make either mode an observable `DF_STATUS_FP_ENVIRONMENT_V1` failure.
+
+The safe runtime loads only the exact compiler-owned and audited image. It
+copies bytes into owner-only storage, drops all writable descriptors, retains a
+read-only descriptor, and asks dyld to open `/dev/fd/N` with eager, local,
+first-image lookup. It rejects every visible `DYLD_*` variable first because
+macOS otherwise applies launch-time search paths even to names containing a
+slash. Path, inode, length, link count, mode `0400`, and bytes are rechecked
+after loading. The G1 threat model excludes hostile same-UID in-place writes
+and C/unsafe code that hides a launch-time dyld override after dyld cached it;
+defending a process already compromised at that level requires a separate
+code-signature or mapped-image attestation design.
+
 This ABI freezes correctness and failure semantics only. It is not evidence of
 native code generation, throughput, latency, or any other performance result.
 

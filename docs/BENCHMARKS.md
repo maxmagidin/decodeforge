@@ -9,8 +9,9 @@ agree, and the checked-in [Apple M4 correctness bundle](../results/g0/apple-m4-p
 records their source, toolchain, host profile, numeric mode, and artifact
 hashes. The G1 contract/IR, OI4 packing, generated-module ABI, deterministic
 strict scalar C, and exact Apple-arm64 artifact construction/audit are
-implemented, but no native-execution or performance claim is made. The next
-gate is the Apple M4 scalar/ARM64 NEON path; Ryzen/AVX2
+implemented. The checked runtime executes the full frozen corpus bit-exactly
+through the native scalar ABI, but no timing or performance claim is made. The
+next gate is the Apple M4 ARM64 NEON path; Ryzen/AVX2
 measurements remain deferred to an optional G4 portability extension.
 
 ## Claim classes

@@ -1,12 +1,19 @@
-//! Minimal Apple-only scalar dylib construction.
+//! Minimal Apple-only scalar dylib construction and checked runtime handoff.
 //!
-//! This is intentionally not a runtime loader or backend framework. It takes
-//! the already-verified scalar C module, compiles one fixed arm64 Mach-O dylib
-//! in a private temporary directory, and audits the hidden helper before the
-//! owner is returned.
+//! This is intentionally not a backend or cache framework. It takes the
+//! already-verified scalar C module, compiles one fixed arm64 Mach-O dylib in
+//! a private temporary directory, audits the hidden helper, and can consume
+//! that build owner into one safe runtime executable.
 
 mod audit;
 mod macho;
+
+// The sole production compiler-side unsafe operation is the provenance
+// handoff from the unforgeable AppleScalarDylib owner to the runtime's unsafe
+// constructor. Architecture-specific tests in this module also inspect FPCR.
+#[allow(unsafe_code)]
+mod load;
+
 mod toolchain;
 
 use crate::{Result, ScalarCModule, invalid};
@@ -14,6 +21,7 @@ use std::fs::File;
 use tempfile::TempDir;
 
 pub use audit::ScalarDylibAuditReport;
+pub use load::{AppleScalarExecutableV1, ScalarRuntimeError, ScalarStatusV1, load_apple_scalar_v1};
 
 /// Upper bound for a generated dylib retained by the build owner.
 pub const MAX_SCALAR_DYLIB_BYTES: usize = 8 * 1024 * 1024;
@@ -90,8 +98,9 @@ impl AppleToolchainProvenance {
 /// Owner of a checked scalar dylib and its private retained backing file.
 ///
 /// The original build directory is removed before this value is returned.
-/// Dropping it removes the separate audit directory. The crate does not load
-/// the dylib or retain a dynamic-library handle.
+/// Dropping it removes the separate retained-artifact directory. This build
+/// owner does not itself retain a dynamic-library handle; loading consumes it
+/// through [`load_apple_scalar_v1`].
 pub struct AppleScalarDylib {
     // Fields are ordered so the descriptor closes before its backing directory
     // is removed.

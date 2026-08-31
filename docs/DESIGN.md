@@ -7,9 +7,9 @@ binds that result to its source, toolchain, host profile, numeric mode, and
 artifact hashes without making a native-kernel or performance claim. The G1
 contract/IR, shared OI4 packing, frozen generated-module ABI, deterministic
 strict scalar C, and exact Apple-arm64 artifact construction/audit are
-implemented; native execution, NEON, and performance evidence do not yet exist.
-The normative contract is
-[Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+implemented. Checked scalar loading and bit-exact execution of all 16 frozen
+fixtures now exist; NEON and performance evidence do not. The normative
+contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
@@ -562,8 +562,28 @@ exports, the expected local text helper, and no initializer/interposition or
 rpath surface. `llvm-objdump` audits that retained copy; the held descriptor,
 path identity, metadata, and bytes are revalidated after disassembly. The
 artifact owner exposes immutable bytes and hashes, not a public mutable path.
-This checkpoint constructs inspectable machine code but does not load or call
-it; native correctness begins only at the safe-runtime execution gate.
+
+The checked runtime consumes that unforgeable compiler owner and revalidates
+the region, schedule, pack, shape, and module identity before entering its one
+documented unsafe boundary. It copies the exact audited image into another
+owner-only directory, closes the writable descriptor, retains a read-only
+descriptor, and loads through `/dev/fd` so pathname replacement cannot redirect
+the image. Because dyld applies launch-time search overrides even to paths
+containing a slash, the runtime rejects every visible `DYLD_*` variable before
+loading. It uses eager, local, first-image symbol lookup and rechecks pathname
+identity, mode `0400`, and every byte after `dlopen`. Its ABI version,
+fixed-length module ID, input extent, pack extent/alignment, status, and
+complete finite output are checked. A failed call exposes no partial output.
+Tests execute all 16 frozen fixtures bit-exactly, reject cross-shape binding,
+and exercise two distinct modules interleaved to catch image or symbol
+aliasing.
+
+The safe compiler entrypoint assumes an ordinary safe process: no hostile
+same-UID actor changes the retained inode in place, and no C or unsafe code
+erases a launch-time `DYLD_*` variable after dyld has cached it. Those stronger
+process-compromise cases require code-signature or mapped-image attestation and
+are outside the G1 threat model. A launch-time subprocess regression and a
+pathname-substitution regression enforce the supported boundary.
 
 ### 11.4 Why C/intrinsics first
 
