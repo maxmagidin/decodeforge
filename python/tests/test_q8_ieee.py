@@ -6,7 +6,12 @@ import os
 import random
 from fractions import Fraction
 
-from decodeforge.q8 import f32_add_bits, f32_div_bits, f32_mul_bits
+from decodeforge.q8 import (
+    f32_add_bits,
+    f32_div_bits,
+    f32_mul_bits,
+    quantize_f32_bits,
+)
 
 SIGN_MASK = 0x80000000
 EXP_MASK = 0x7F800000
@@ -105,6 +110,21 @@ def _oracle_div(numerator: int, denominator: int) -> int:
     )
 
 
+def _next_bits(bits: int, direction: int) -> int:
+    """Return the adjacent finite encoding in the requested numeric direction."""
+
+    if bits & SIGN_MASK:
+        return bits - direction
+    return bits + direction
+
+
+def _round_fraction_to_int(value: Fraction) -> int:
+    sign = -1 if value < 0 else 1
+    magnitude = abs(value)
+    rounded = _round_positive(magnitude.numerator, magnitude.denominator)
+    return sign * rounded
+
+
 def test_directed_division_goldens_are_exact() -> None:
     cases = (
         (ONE_BITS, 0x40400000),  # 1 / 3
@@ -121,6 +141,26 @@ def test_directed_division_goldens_are_exact() -> None:
             _bits_to_fraction(numerator) / _bits_to_fraction(denominator)
         )
         assert f32_div_bits(numerator, denominator) == expected
+
+
+def test_every_quantization_midpoint_and_adjacent_f32() -> None:
+    one_twenty_seven = 0x42FE0000
+    for integer in range(-127, 127):
+        midpoint = Fraction(2 * integer + 1, 2)
+        midpoint_bits = _fraction_to_bits(midpoint)
+        for candidate in (
+            _next_bits(midpoint_bits, -1),
+            midpoint_bits,
+            _next_bits(midpoint_bits, 1),
+        ):
+            source = [one_twenty_seven, candidate]
+            expected = max(
+                -127,
+                min(127, _round_fraction_to_int(_bits_to_fraction(candidate))),
+            )
+            weights = quantize_f32_bits(1, 2, source)
+            assert weights.scale_bits == (ONE_BITS,)
+            assert weights.q_at(0, 0, 1) == expected
 
 
 def _random_class_word(rng: random.Random, index: int) -> int:
