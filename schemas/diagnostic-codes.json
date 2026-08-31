@@ -45,6 +45,7 @@
     {"code": "DFE-COMP-003", "name": "compiler-layout-length", "component": "compiler", "required_context": []},
     {"code": "DFE-COMP-004", "name": "compiler-identity-mismatch", "component": "compiler", "required_context": []},
     {"code": "DFE-COMP-005", "name": "compiler-payload-integrity", "component": "compiler", "required_context": []},
-    {"code": "DFE-COMP-006", "name": "compiler-invariant-violation", "component": "compiler", "required_context": []}
+    {"code": "DFE-COMP-006", "name": "compiler-invariant-violation", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-007", "name": "unsupported-kernel-variant", "component": "compiler", "required_context": []}
   ]
 }

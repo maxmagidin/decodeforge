@@ -62,9 +62,10 @@ G0 is complete. Independent in-memory Rust generation plus read-only
 verification matches the frozen Python fixture bytes, and the checked-in Apple
 M4 correctness bundle records source revision `cc838b0`, toolchain,
 CPU/features, numeric mode, and artifact hashes. CI runs both portable and Git
-provenance verification over that bundle. The G1 contract/IR and shared OI4
-packing slice is implemented. The next active work is generated scalar/NEON
-code and its correctness/disassembly evidence; no performance claim exists yet.
+provenance verification over that bundle. The G1 contract/IR, shared OI4 pack,
+generated-module ABI, and deterministic strict scalar C are implemented. The
+next active work is native scalar build/load execution and then NEON code with
+correctness/disassembly evidence; no performance claim exists yet.
 
 ### Stop condition
 

@@ -1,13 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! Target-independent G1 Region/Loop IR and deterministic OI4 packing.
+//! Verified G1 lowering, OI4 packing, and deterministic scalar code generation.
 //!
-//! This crate deliberately contains no code emitter, host compiler, dynamic
-//! loader, or host-selection policy. It freezes the smallest useful compiler
-//! contract:
-//! an `M=1` Q8 linear region, a verified fixed loop kernel, and the
-//! `DFQ8_B32_OI4_V1` payload consumed identically by future scalar and NEON
-//! implementations.
+//! The target-independent contract is an `M=1` Q8 linear region, a verified
+//! fixed loop kernel, and the shared `DFQ8_B32_OI4_V1` payload. The first
+//! backend deterministically emits strict scalar C. Native compilation,
+//! dynamic loading, and execution remain separate follow-on stages.
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("decodeforge-compiler requires a 64-bit target");
@@ -17,9 +15,15 @@ compile_error!("decodeforge-compiler requires a little-endian target");
 
 use std::fmt;
 
+pub mod codegen;
 pub mod ir;
 pub mod lower;
 pub mod pack;
+
+pub use codegen::{
+    GENERATED_ABI_VERSION_V1, MAX_SCALAR_C_SOURCE_BYTES, SCALAR_C_SOURCE_FORMAT_V1, ScalarCModule,
+    emit_scalar_c,
+};
 
 pub use ir::{
     ArithmeticContract, KPadding, KernelVariant, LoopKernelV1, NTail, Q8LinearRegion,

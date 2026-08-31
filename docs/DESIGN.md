@@ -5,8 +5,9 @@ fixture schemas, and the deterministic corpus pass parity gates. The checked-in
 [Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds that result to its source, toolchain, host profile, numeric mode, and
 artifact hashes without making a native-kernel or performance claim. The G1
-contract/IR and shared OI4 packing slice is implemented; generated kernels and
-performance evidence do not yet exist. The normative contract is
+contract/IR, shared OI4 packing, frozen generated-module ABI, and deterministic
+strict scalar C are implemented; native execution, NEON, and performance
+evidence do not yet exist. The normative contract is
 [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
@@ -523,8 +524,12 @@ The canonical call descriptor and function declarations live in
 code and ABI checks must include that header rather than copying a pseudocode
 struct into this document.
 
-All sizes, strides, pointers, alignment, target features, and artifact versions
-are guarded before entry. Generated inner loops can rely on proven assumptions.
+The first scalar generated-module contract, including its frozen status values,
+72-byte artifact-ID C string, exact `M=1` shape/stride rules, OI4 byte count,
+16-byte packed-data alignment, deterministic guard order, and whole-output
+failure behavior, is specified in [ADR 0003](decisions/0003-scalar-generated-abi.md).
+Generated inner loops can rely on the assumptions proven by those guards; the
+ABI does not prove buffer extents, aliasing, or packed-weight identity.
 
 ### 11.3 Compilation
 
@@ -758,7 +763,7 @@ only way to inspect a result.
 | Component | Responsibility |
 |---|---|
 | `decodeforge-core` | G0 DFQ8 semantics, reference quantizer/evaluator, identities, fixture gates |
-| `decodeforge-compiler` | G1 target-independent Region/Loop IR verification, lowering, and deterministic OI4 packing; generated kernels are future work in this crate |
+| `decodeforge-compiler` | G1 Region/Loop verification, lowering, deterministic OI4 packing, and scalar/NEON code generation |
 | `decodeforge-runtime` | cache, artifact validation, guards, dynamic loading |
 | Python package | model transformation, backend registration, FX normalization/partition |
 | native bridge | ATen tensors, output allocation, PyTorch CPU parallel runtime, ABI |

@@ -7,6 +7,27 @@
 #define DF_GENERATED_ABI_VERSION_V1 UINT32_C(1)
 
 /*
+ * Frozen df_run_v1 results.  These values are part of the generated-module
+ * ABI; keep them representable as int32_t, the return type of df_run_v1.
+ */
+#define DF_STATUS_OK_V1 INT32_C(0)
+#define DF_STATUS_NULL_ARGUMENT_V1 INT32_C(1)
+#define DF_STATUS_ABI_VERSION_V1 INT32_C(2)
+#define DF_STATUS_STRUCT_SIZE_V1 INT32_C(3)
+#define DF_STATUS_FLAGS_V1 INT32_C(4)
+#define DF_STATUS_RESERVED_V1 INT32_C(5)
+#define DF_STATUS_SHAPE_V1 INT32_C(6)
+#define DF_STATUS_STRIDE_V1 INT32_C(7)
+#define DF_STATUS_PACKED_WEIGHT_BYTES_V1 INT32_C(8)
+#define DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1 INT32_C(9)
+#define DF_STATUS_FP_ENVIRONMENT_V1 INT32_C(10)
+#define DF_STATUS_NONFINITE_INPUT_V1 INT32_C(11)
+#define DF_STATUS_NONFINITE_RESULT_V1 INT32_C(12)
+
+/* The artifact ID C string length includes its terminating NUL byte. */
+#define DF_ARTIFACT_ID_CSTR_BYTES_V1 UINT32_C(72)
+
+/*
  * The fixed generated-module call ABI.  Keep this definition in one header:
  * generated C, the future runtime bridge, and layout smoke tests all consume
  * it directly.  Pointers are intentionally passed separately from this
@@ -24,6 +45,16 @@ typedef struct df_call_v1 {
     uint32_t reserved0;
     uint64_t packed_weight_bytes;
 } df_call_v1;
+
+/*
+ * Scalar G1 contract (the full guard and failure semantics are in ADR 0003):
+ * strides count float elements; flags and reserved0 are zero; m is one;
+ * x_stride is k and y_stride is n.  For P=ceil(n/4), B=ceil(k/32), the
+ * headerless DFQ8_B32_OI4_V1 payload is P*B*144 bytes and its pointer is
+ * required to be 16-byte aligned.  The implementation checks guards in a
+ * fixed order and leaves y untouched through NONFINITE_INPUT; a caller or
+ * runtime must discard the whole output if any later check fails.
+ */
 
 #if defined(__cplusplus)
 static_assert(sizeof(df_call_v1) == 48, "df_call_v1 must be 48 bytes");
