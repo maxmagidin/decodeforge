@@ -134,6 +134,41 @@ pub struct GeneratedExecutableV1 {
     packed_weight_bytes: u64,
 }
 
+/// One validated, allocation-free invocation of a generated module.
+///
+/// Preparation borrows the executable, input, and caller-owned output for the
+/// lifetime of this object and validates both buffer lengths once. Each
+/// [`invoke`](Self::invoke) reuses those exact buffers. Its measured boundary
+/// includes the full-output sentinel fill, native ABI call, status handling,
+/// and finite-output scan; compilation, loading, weight packing, and output
+/// allocation are outside that boundary.
+pub struct PreparedCallV1<'executable, 'buffers> {
+    executable: &'executable GeneratedExecutableV1,
+    input: &'buffers [f32],
+    output: &'buffers mut [f32],
+    call: DfCallV1,
+}
+
+impl PreparedCallV1<'_, '_> {
+    /// Invoke the generated module without allocating or changing buffers.
+    ///
+    /// Before every native call the complete output is overwritten with the
+    /// fixed `0x7fc0_0000` quiet-NaN sentinel. Any nonzero status, unknown
+    /// status, or nonfinite success output restores that sentinel across the
+    /// complete caller buffer before returning an error.
+    pub fn invoke(&mut self) -> Result<&[f32]> {
+        let executable = self.executable;
+        let input = self.input;
+        let call = &self.call;
+        invoke_with_output_policy(self.output, |output| {
+            executable
+                .module
+                .invoke(call, input, &executable.pack, output)
+        })?;
+        Ok(self.output)
+    }
+}
+
 impl GeneratedExecutableV1 {
     pub(super) fn from_trusted_parts(
         module: LoadedGeneratedDylib,
@@ -171,12 +206,35 @@ impl GeneratedExecutableV1 {
         self.k
     }
 
+    /// Validate and prepare one allocation-free generated-module call.
+    ///
+    /// Both slice lengths are checked here and are fixed by the returned
+    /// borrows. Invocation therefore performs no extent validation and no
+    /// allocation. The caller retains ownership of `output` and may reuse the
+    /// same allocation through repeated [`PreparedCallV1::invoke`] calls.
+    pub fn prepare_call<'executable, 'buffers>(
+        &'executable self,
+        x: &'buffers [f32],
+        output: &'buffers mut [f32],
+    ) -> Result<PreparedCallV1<'executable, 'buffers>> {
+        validate_call_lengths(self.k as usize, self.n as usize, x.len(), output.len())?;
+        Ok(PreparedCallV1 {
+            executable: self,
+            input: x,
+            output,
+            call: DfCallV1::new(self.n, self.k, self.packed_weight_bytes),
+        })
+    }
+
     /// Execute one `M=1` input and return a fresh complete output.
     ///
     /// The output allocation is never exposed on a nonzero or unknown kernel
     /// status.  The private pack, input, and output are distinct Rust-owned
     /// borrows at the point where the raw ABI is entered.
     pub fn run(&self, x: &[f32]) -> Result<Vec<f32>> {
+        // Preserve the allocating API's fail-before-allocation behavior for an
+        // invalid input. `prepare_call` still owns the authoritative paired
+        // input/output validation after the exact output has been allocated.
         let expected_input = self.k as usize;
         if x.len() != expected_input {
             return Err(RuntimeError::InputLength {
@@ -190,10 +248,8 @@ impl GeneratedExecutableV1 {
             .try_reserve_exact(output_len)
             .map_err(|_| RuntimeError::AllocationFailed { object: "output" })?;
         output.resize(output_len, f32::from_bits(QUIET_NAN_BITS));
-
-        let call = DfCallV1::new(self.n, self.k, self.packed_weight_bytes);
-        let raw_status = self.module.invoke(&call, x, &self.pack, &mut output);
-        finish_output(raw_status, output)
+        self.prepare_call(x, &mut output)?.invoke()?;
+        Ok(output)
     }
 }
 
@@ -202,9 +258,35 @@ impl GeneratedExecutableV1 {
 /// This is a direct re-export, not a second owner or execution implementation.
 pub use GeneratedExecutableV1 as ScalarExecutableV1;
 
-fn finish_output(raw_status: i32, output: Vec<f32>) -> Result<Vec<f32>> {
+fn validate_call_lengths(
+    expected_input: usize,
+    expected_output: usize,
+    actual_input: usize,
+    actual_output: usize,
+) -> Result<()> {
+    if actual_input != expected_input {
+        return Err(RuntimeError::InputLength {
+            expected: expected_input,
+            actual: actual_input,
+        });
+    }
+    if actual_output != expected_output {
+        return Err(RuntimeError::OutputLength {
+            expected: expected_output,
+            actual: actual_output,
+        });
+    }
+    Ok(())
+}
+
+fn invoke_with_output_policy(
+    output: &mut [f32],
+    invoke: impl FnOnce(&mut [f32]) -> i32,
+) -> Result<()> {
+    scrub_output(output);
+    let raw_status = invoke(output);
     if raw_status != GeneratedStatusV1::Ok.as_i32() {
-        drop(output);
+        scrub_output(output);
         return match GeneratedStatusV1::from_i32(raw_status) {
             Some(GeneratedStatusV1::Ok) => unreachable!("nonzero status decoded as success"),
             Some(status) => Err(RuntimeError::KernelStatus(status)),
@@ -215,10 +297,14 @@ fn finish_output(raw_status: i32, output: Vec<f32>) -> Result<Vec<f32>> {
         .iter()
         .position(|value| !is_finite_f32_bits(value.to_bits()))
     {
-        drop(output);
+        scrub_output(output);
         return Err(RuntimeError::InvalidSuccessOutput { index });
     }
-    Ok(output)
+    Ok(())
+}
+
+fn scrub_output(output: &mut [f32]) {
+    output.fill(f32::from_bits(QUIET_NAN_BITS));
 }
 
 fn expected_payload_bytes(n: u32, k: u32) -> Result<usize> {
@@ -325,25 +411,115 @@ mod tests {
     }
 
     #[test]
-    fn every_failure_status_and_unknown_status_discards_output() {
-        for raw in 1..=12 {
-            assert!(matches!(
-                finish_output(raw, vec![1.0]),
-                Err(RuntimeError::KernelStatus(_))
-            ));
-        }
+    fn call_lengths_are_validated_once_at_preparation() {
+        assert_eq!(validate_call_lengths(3, 2, 3, 2), Ok(()));
         assert_eq!(
-            finish_output(99, vec![1.0]),
-            Err(RuntimeError::UnknownKernelStatus(99))
+            validate_call_lengths(3, 2, 1, 2),
+            Err(RuntimeError::InputLength {
+                expected: 3,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            validate_call_lengths(3, 2, 3, 1),
+            Err(RuntimeError::OutputLength {
+                expected: 2,
+                actual: 1,
+            })
+        );
+        assert_eq!(
+            validate_call_lengths(3, 2, 3, 4),
+            Err(RuntimeError::OutputLength {
+                expected: 2,
+                actual: 4,
+            })
+        );
+        assert_eq!(
+            validate_call_lengths(3, 2, 1, 4),
+            Err(RuntimeError::InputLength {
+                expected: 3,
+                actual: 1,
+            }),
+            "input validation remains the first failure"
         );
     }
 
     #[test]
-    fn successful_output_must_be_complete_and_finite() {
-        assert_eq!(finish_output(0, vec![1.0, -0.0]).unwrap(), [1.0, -0.0]);
+    fn every_failure_status_and_unknown_status_scrubs_the_complete_output() {
+        for raw in 1..=12 {
+            let mut output = vec![1.0, 2.0, 3.0];
+            let result = invoke_with_output_policy(&mut output, |buffer| {
+                assert!(buffer.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+                buffer[0] = 99.0;
+                raw
+            });
+            assert!(matches!(result, Err(RuntimeError::KernelStatus(_))));
+            assert!(output.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+        }
+        let mut output = vec![1.0, 2.0, 3.0];
         assert_eq!(
-            finish_output(0, vec![1.0, f32::from_bits(QUIET_NAN_BITS)]),
+            invoke_with_output_policy(&mut output, |buffer| {
+                buffer[1] = 99.0;
+                99
+            }),
+            Err(RuntimeError::UnknownKernelStatus(99))
+        );
+        assert!(output.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+    }
+
+    #[test]
+    fn successful_output_must_be_complete_and_finite_or_is_scrubbed() {
+        let mut complete = vec![9.0, 9.0];
+        invoke_with_output_policy(&mut complete, |output| {
+            output.copy_from_slice(&[1.0, -0.0]);
+            0
+        })
+        .unwrap();
+        assert_eq!(complete, [1.0, -0.0]);
+
+        let mut incomplete = vec![9.0, 9.0];
+        assert_eq!(
+            invoke_with_output_policy(&mut incomplete, |output| {
+                output[0] = 1.0;
+                0
+            }),
             Err(RuntimeError::InvalidSuccessOutput { index: 1 })
         );
+        assert!(
+            incomplete
+                .iter()
+                .all(|value| value.to_bits() == QUIET_NAN_BITS)
+        );
+
+        let mut infinite = vec![9.0, 9.0];
+        assert_eq!(
+            invoke_with_output_policy(&mut infinite, |output| {
+                output.copy_from_slice(&[1.0, f32::INFINITY]);
+                0
+            }),
+            Err(RuntimeError::InvalidSuccessOutput { index: 1 })
+        );
+        assert!(
+            infinite
+                .iter()
+                .all(|value| value.to_bits() == QUIET_NAN_BITS)
+        );
+    }
+
+    #[test]
+    fn repeat_invocation_refills_the_same_output_allocation() {
+        let mut output = vec![1.0, 2.0, 3.0];
+        let address = output.as_ptr();
+        for expected in [4.0, 5.0, 6.0] {
+            invoke_with_output_policy(&mut output, |buffer| {
+                assert_eq!(buffer.as_ptr(), address);
+                assert!(buffer.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+                buffer.fill(expected);
+                0
+            })
+            .unwrap();
+            assert_eq!(output, [expected; 3]);
+            assert_eq!(output.as_ptr(), address);
+        }
     }
 }

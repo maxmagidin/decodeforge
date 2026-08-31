@@ -30,7 +30,7 @@ mod scalar;
 #[doc(hidden)]
 pub use dylib::{load_trusted_apple_generated_v1, load_trusted_apple_scalar_v1};
 pub use error::RuntimeError;
-pub use scalar::{GeneratedExecutableV1, ScalarExecutableV1};
+pub use scalar::{GeneratedExecutableV1, PreparedCallV1, ScalarExecutableV1};
 
 pub use abi::{GeneratedStatusV1, ScalarStatusV1};
 

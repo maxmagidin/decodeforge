@@ -102,6 +102,14 @@ candidate timing.
 
 ## Timing protocol
 
+The generated-kernel timing boundary uses a prepared safe call with borrowed
+input and caller-owned output storage. Each measured invocation includes the
+complete `0x7fc0_0000` quiet-NaN sentinel fill, the native `df_run_v1` ABI
+call, status decoding, and the complete finite-output scan. Compilation,
+dynamic loading, weight packing, and input/output allocation happen before
+measurement. Reports must name this checked boundary; they must not relabel it
+as raw kernel-only latency.
+
 Each run:
 
 1. pins the source, model revision, inputs, schedule candidates, compiler, flags,

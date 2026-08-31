@@ -418,6 +418,96 @@ mod tests {
     }
 
     #[test]
+    fn prepared_scalar_call_reuses_one_output_and_scrubs_native_failures() {
+        if rerun_without_dyld_overrides_if_needed(
+            "prepared_scalar_call_reuses_one_output_and_scrubs_native_failures",
+        ) {
+            return;
+        }
+        const QUIET_NAN_BITS: u32 = 0x7fc0_0000;
+
+        let (region, kernel, packed, input, expected) = fixture_parts("k-33");
+        let executable = build_and_load(&region, &kernel, &packed);
+
+        let mut short_output = vec![0.0; expected.len() - 1];
+        let error = match executable.prepare_call(&input, &mut short_output) {
+            Ok(_) => panic!("preparation must reject a short output"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error,
+            RuntimeError::OutputLength {
+                expected: expected.len(),
+                actual: expected.len() - 1,
+            }
+        );
+
+        let mut output = vec![123.0; expected.len()];
+        let output_address = output.as_ptr() as usize;
+        {
+            let mut prepared = executable.prepare_call(&input, &mut output).unwrap();
+            for _ in 0..4 {
+                let actual = prepared.invoke().unwrap();
+                assert_eq!(actual.as_ptr() as usize, output_address);
+                assert_eq!(
+                    actual
+                        .iter()
+                        .map(|value| value.to_bits())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+        assert_eq!(output.as_ptr() as usize, output_address);
+
+        let mut nonfinite_input = input;
+        nonfinite_input[0] = f32::NAN;
+        output.fill(321.0);
+        let error = {
+            let mut prepared = executable
+                .prepare_call(&nonfinite_input, &mut output)
+                .unwrap();
+            prepared.invoke().unwrap_err()
+        };
+        assert_eq!(
+            error,
+            RuntimeError::KernelStatus(ScalarStatusV1::NonFiniteInput)
+        );
+        assert!(output.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+
+        let overflow_weights = Q8Weights::try_new(
+            5,
+            33,
+            2,
+            [127].into_iter().chain([0; 5 * 2 * 32 - 1]).collect(),
+            [0x7f7f_ffff].into_iter().chain([0x3f80_0000; 9]).collect(),
+        )
+        .unwrap();
+        let overflow_packed = PackedWeightsV1::pack(&overflow_weights).unwrap();
+        let overflow_region = Q8LinearRegion::from_weights(&overflow_weights).unwrap();
+        let overflow_kernel = LoopKernelV1::new(&overflow_region, KernelVariant::Scalar).unwrap();
+        let overflow_executable =
+            build_and_load(&overflow_region, &overflow_kernel, &overflow_packed);
+        let overflow_input = [f32::MAX].into_iter().chain([0.0; 32]).collect::<Vec<_>>();
+        let mut overflow_output = vec![654.0; 5];
+        let error = {
+            let mut overflow_call = overflow_executable
+                .prepare_call(&overflow_input, &mut overflow_output)
+                .unwrap();
+            overflow_call.invoke().unwrap_err()
+        };
+        assert_eq!(
+            error,
+            RuntimeError::KernelStatus(ScalarStatusV1::NonFiniteResult)
+        );
+        assert!(
+            overflow_output
+                .iter()
+                .all(|value| value.to_bits() == QUIET_NAN_BITS)
+        );
+    }
+
+    #[test]
     fn shape_mismatch_is_rejected_and_releases_the_builder_snapshot() {
         if rerun_without_dyld_overrides_if_needed(
             "shape_mismatch_is_rejected_and_releases_the_builder_snapshot",
