@@ -327,6 +327,38 @@ def _validate_quant_fixture(instance: JsonObject) -> list[Diagnostic]:
 def _validate_fixture_manifest(instance: JsonObject) -> list[Diagnostic]:
     """Validate the closed, sorted path/hash manifest used by fixture checks."""
 
+    recipe = instance.get("corpus_recipe")
+    if isinstance(recipe, dict):
+        counter = recipe.get("counter")
+        if isinstance(counter, dict):
+            integer_fields = {
+                "counter_start": 0,
+                "counter_bytes": 8,
+                "digest_word_bytes": 4,
+            }
+            mapping = counter.get("mapping")
+            if isinstance(mapping, dict):
+                integer_fields["mapping.forced_exponent"] = 124
+            streams = counter.get("streams")
+            if isinstance(streams, dict):
+                integer_fields["streams.source.word_count"] = 99
+                integer_fields["streams.input.word_count"] = 33
+            for field, expected in integer_fields.items():
+                current: Any = counter
+                for component in field.split("."):
+                    if not isinstance(current, dict):
+                        break
+                    current = current.get(component)
+                if type(current) is not int or current != expected:
+                    return [
+                        _diagnostic(
+                            "DFE-SCHEMA-007",
+                            "schema",
+                            "The corpus recipe integer is not canonical.",
+                            {"path": ["corpus_recipe", "counter", *field.split(".")]},
+                        )
+                    ]
+
     raw_artifacts = instance.get("artifacts")
     if not isinstance(raw_artifacts, list):
         return []

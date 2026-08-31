@@ -11,11 +11,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import struct
 import sys
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal, cast
 
 from decodeforge.contracts import load_json, validate_data
 from decodeforge.q8 import (
@@ -32,28 +31,72 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "v1"
 MANIFEST_PATH = FIXTURE_ROOT / "manifest.json"
 
+EXPECTED_CORPUS_RECIPE: dict[str, Any] = {
+    "corpus_version": "dfq8_corpus_v1",
+    "counter": {
+        "algorithm": "sha256",
+        "domain_hex": (
+            "4465636f6465466f7267652f444651385f4233325f56312f636f727075732f763100"
+        ),
+        "counter_start": 0,
+        "counter_bytes": 8,
+        "counter_byte_order": "little",
+        "digest_word_bytes": 4,
+        "digest_word_byte_order": "little",
+        "mapping": {
+            "kind": "finite-binary32-exponent",
+            "preserve_mask_hex": "807fffff",
+            "forced_exponent": 124,
+        },
+        "streams": {
+            "source": {"seed_hex": "736f75726365", "word_count": 99},
+            "input": {"seed_hex": "696e707574", "word_count": 33},
+        },
+    },
+}
+
 
 def _f32(value: float) -> int:
     return float_to_f32_bits(value)
 
 
-def _counter_words(domain: bytes, count: int) -> list[int]:
-    """Produce finite words from a SHA-256 counter stream."""
+def _counter_words(recipe: dict[str, Any], stream_name: str) -> list[int]:
+    """Produce finite words by consuming the closed manifest recipe."""
+
+    counter_recipe = cast(dict[str, Any], recipe["counter"])
+    mapping = cast(dict[str, Any], counter_recipe["mapping"])
+    streams = cast(dict[str, Any], counter_recipe["streams"])
+    stream = cast(dict[str, Any], streams[stream_name])
+    domain = bytes.fromhex(cast(str, counter_recipe["domain_hex"]))
+    seed = bytes.fromhex(cast(str, stream["seed_hex"]))
+    count = cast(int, stream["word_count"])
+    counter_bytes = cast(int, counter_recipe["counter_bytes"])
+    counter_byte_order = cast(
+        Literal["little", "big"], counter_recipe["counter_byte_order"]
+    )
+    word_bytes = cast(int, counter_recipe["digest_word_bytes"])
+    word_byte_order = cast(
+        Literal["little", "big"], counter_recipe["digest_word_byte_order"]
+    )
+    preserve_mask = int(cast(str, mapping["preserve_mask_hex"]), 16)
+    forced_exponent = cast(int, mapping["forced_exponent"])
 
     words: list[int] = []
-    counter = 0
+    counter = cast(int, counter_recipe["counter_start"])
     while len(words) < count:
         digest = hashlib.sha256(
-            b"DecodeForge/DFQ8_B32_V1/corpus/v1\0" + domain + struct.pack("<Q", counter)
+            domain
+            + seed
+            + counter.to_bytes(counter_bytes, counter_byte_order, signed=False)
         ).digest()
-        for offset in range(0, len(digest), 4):
-            word = int.from_bytes(digest[offset : offset + 4], "little")
+        for offset in range(0, len(digest), word_bytes):
+            word = int.from_bytes(digest[offset : offset + word_bytes], word_byte_order)
             # Preserve signs and broad exponent coverage while avoiding NaN or
             # infinity in a fixture that must be accepted by the quantizer.
             # Keep the counter stream's sign and fraction bits while placing
             # values in a moderate finite range so canonical evaluation cannot
             # overflow merely because a random exponent was sampled.
-            word = (word & 0x807FFFFF) | (124 << 23)
+            word = (word & preserve_mask) | (forced_exponent << 23)
             words.append(word)
             if len(words) == count:
                 break
@@ -61,7 +104,9 @@ def _counter_words(domain: bytes, count: int) -> list[int]:
     return words
 
 
-def _case_sources() -> Iterable[tuple[str, int, int, list[int], list[int]]]:
+def _case_sources(
+    recipe: dict[str, Any],
+) -> Iterable[tuple[str, int, int, list[int], list[int]]]:
     """Yield (name, N, K, source bits, input bits) in canonical order."""
 
     yield "zero-signed-zero", 1, 1, [0x80000000], [0x80000000]
@@ -138,8 +183,8 @@ def _case_sources() -> Iterable[tuple[str, int, int, list[int], list[int]]]:
         "random-sha256-counter",
         n,
         k,
-        _counter_words(b"source", n * k),
-        _counter_words(b"input", k),
+        _counter_words(recipe, "source"),
+        _counter_words(recipe, "input"),
     )
 
 
@@ -185,9 +230,9 @@ def _fixture_document(
     }
 
 
-def _generated_documents() -> dict[str, bytes]:
+def _generated_documents(recipe: dict[str, Any]) -> dict[str, bytes]:
     documents: dict[str, bytes] = {}
-    for name, n, k, source, inputs in _case_sources():
+    for name, n, k, source, inputs in _case_sources(recipe):
         relative = f"fixtures/{name}.json"
         documents[relative] = _canonical_json(
             _fixture_document(name, n, k, source, inputs)
@@ -195,7 +240,7 @@ def _generated_documents() -> dict[str, bytes]:
     return dict(sorted(documents.items()))
 
 
-def _manifest(documents: dict[str, bytes]) -> bytes:
+def _manifest(documents: dict[str, bytes], recipe: dict[str, Any]) -> bytes:
     artifacts = [
         {
             "path": path,
@@ -209,6 +254,7 @@ def _manifest(documents: dict[str, bytes]) -> bytes:
             "schema_version": 1,
             "format": FORMAT,
             "numeric_mode": NUMERIC_MODE,
+            "corpus_recipe": recipe,
             "artifacts": artifacts,
         }
     )
@@ -265,9 +311,8 @@ def _diagnostic(message: str) -> None:
     print(f"fixture-check: {message}", file=sys.stderr)
 
 
-def _check(documents: dict[str, bytes]) -> list[str]:
+def _check() -> list[str]:
     errors: list[str] = []
-    expected_manifest = _manifest(documents)
     if not MANIFEST_PATH.is_file() or MANIFEST_PATH.is_symlink():
         errors.append("manifest.json is missing or is a symlink")
         return errors
@@ -281,6 +326,13 @@ def _check(documents: dict[str, bytes]) -> list[str]:
             json.dumps(item, sort_keys=True, separators=(",", ":"))
             for item in diagnostics
         )
+        return errors
+    raw_recipe = manifest.get("corpus_recipe")
+    if not isinstance(raw_recipe, dict):
+        return ["manifest.json has no closed corpus recipe"]
+    recipe = cast(dict[str, Any], raw_recipe)
+    documents = _generated_documents(recipe)
+    expected_manifest = _manifest(documents, recipe)
     expected_records = load_json_bytes(expected_manifest)["artifacts"]
     if manifest.get("artifacts") != expected_records:
         errors.append("manifest contents differ from deterministic regeneration")
@@ -329,7 +381,7 @@ def load_json_bytes(content: bytes) -> dict[str, Any]:
     return value
 
 
-def _write(documents: dict[str, bytes]) -> None:
+def _write(documents: dict[str, bytes], recipe: dict[str, Any]) -> None:
     # Resolve and inspect every destination first.  This preflight is
     # deliberately before mkdir or any write, including the manifest, so a
     # symlink cannot redirect one artifact while another has already changed.
@@ -354,7 +406,7 @@ def _write(documents: dict[str, bytes]) -> None:
         path.write_bytes(content)
     if _contains_symlink(MANIFEST_PATH):
         raise RuntimeError("refusing to write manifest through symlink")
-    MANIFEST_PATH.write_bytes(_manifest(documents))
+    MANIFEST_PATH.write_bytes(_manifest(documents, recipe))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -365,22 +417,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     mode.add_argument("--check", action="store_true", help="verify without writing")
     args = parser.parse_args(argv)
-    documents = _generated_documents()
     if args.write:
-        _write(documents)
-        errors = _check(documents)
+        documents = _generated_documents(EXPECTED_CORPUS_RECIPE)
+        _write(documents, EXPECTED_CORPUS_RECIPE)
+        errors = _check()
         if errors:
             for error in errors:
                 _diagnostic(error)
             return 1
         print(f"fixture-check: wrote and verified {len(documents)} fixtures")
         return 0
-    errors = _check(documents)
+    errors = _check()
     if errors:
         for error in errors:
             _diagnostic(error)
         return 1
-    print(f"fixture-check: ok ({len(documents)} deterministic fixtures)")
+    count = len(_generated_documents(EXPECTED_CORPUS_RECIPE))
+    print(f"fixture-check: ok ({count} deterministic fixtures)")
     return 0
 
 

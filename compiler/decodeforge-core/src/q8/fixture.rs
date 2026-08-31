@@ -9,8 +9,8 @@ use super::{
     BLOCK_SIZE, FORMAT, NUMERIC_MODE, Q8Error, Q8Weights, canonical_linear_f32_bits, f32_from_int,
     f32_from_ratio, fixture_identity, logical_weight_identity, quantize_f32_bits,
 };
-use serde::Deserialize as DeriveDeserialize;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize as DeriveDeserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,6 +24,10 @@ const MANIFEST_NAME: &str = "manifest.json";
 const EXPECTED_ERROR_POLICY: &str = "strict_f32_v1";
 const EXPECTED_ERROR_COMPARATOR: &str = "dfq8_forward_v1";
 const DUPLICATE_SENTINEL: &str = "decodeforge-private-duplicate-json-key:";
+const CORPUS_VERSION: &str = "dfq8_corpus_v1";
+const COUNTER_DOMAIN_HEX: &str =
+    "4465636f6465466f7267652f444651385f4233325f56312f636f727075732f763100";
+const PRESERVE_MASK_HEX: &str = "807fffff";
 
 /// A typed artifact record from the closed fixture manifest.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,8 +49,71 @@ pub struct FixtureManifest {
     pub format: String,
     /// Pinned numeric mode.
     pub numeric_mode: String,
+    /// Complete deterministic recipe for the counter-derived corpus case.
+    pub corpus_recipe: CorpusRecipe,
     /// Canonically sorted artifact records.
     pub artifacts: Vec<ArtifactRecord>,
+}
+
+/// Closed deterministic recipe recorded in the fixture manifest.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CorpusRecipe {
+    /// Frozen recipe version.
+    pub corpus_version: String,
+    /// SHA-256 counter-stream parameters.
+    pub counter: CounterRecipe,
+}
+
+/// Exact counter-stream and binary32 mapping parameters.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CounterRecipe {
+    /// Pinned digest algorithm name.
+    pub algorithm: String,
+    /// Hex encoding of the exact counter-stream domain bytes.
+    pub domain_hex: String,
+    /// First counter value consumed by each stream.
+    pub counter_start: u64,
+    /// Width of the encoded counter in bytes.
+    pub counter_bytes: usize,
+    /// Byte order used to encode the counter.
+    pub counter_byte_order: String,
+    /// Width of each digest word in bytes.
+    pub digest_word_bytes: usize,
+    /// Byte order used to decode each digest word.
+    pub digest_word_byte_order: String,
+    /// Pinned mapping from digest words to finite binary32 values.
+    pub mapping: MappingRecipe,
+    /// Pinned source and input counter streams.
+    pub streams: StreamRecipes,
+}
+
+/// Exact digest-word-to-finite-binary32 mapping.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MappingRecipe {
+    /// Name of the finite-binary32 mapping.
+    pub kind: String,
+    /// Hex mask preserving selected digest-word bits.
+    pub preserve_mask_hex: String,
+    /// Binary32 exponent forced into each generated word.
+    pub forced_exponent: u32,
+}
+
+/// The two closed random-case streams.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StreamRecipes {
+    /// Stream used for source weight words.
+    pub source: StreamRecipe,
+    /// Stream used for input activation words.
+    pub input: StreamRecipe,
+}
+
+/// Seed and output length for one counter stream.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StreamRecipe {
+    /// Hex seed appended after the domain and before the counter.
+    pub seed_hex: String,
+    /// Number of generated binary32 words required from this stream.
+    pub word_count: usize,
 }
 
 /// The fixed policy/comparator declaration carried by every quant fixture.
@@ -140,7 +207,51 @@ struct ManifestWire {
     schema_version: u32,
     format: String,
     numeric_mode: String,
+    corpus_recipe: CorpusRecipeWire,
     artifacts: Vec<ArtifactWire>,
+}
+
+#[derive(DeriveDeserialize)]
+#[serde(deny_unknown_fields)]
+struct CorpusRecipeWire {
+    corpus_version: String,
+    counter: CounterRecipeWire,
+}
+
+#[derive(DeriveDeserialize)]
+#[serde(deny_unknown_fields)]
+struct CounterRecipeWire {
+    algorithm: String,
+    domain_hex: String,
+    counter_start: u64,
+    counter_bytes: usize,
+    counter_byte_order: String,
+    digest_word_bytes: usize,
+    digest_word_byte_order: String,
+    mapping: MappingRecipeWire,
+    streams: StreamRecipesWire,
+}
+
+#[derive(DeriveDeserialize)]
+#[serde(deny_unknown_fields)]
+struct MappingRecipeWire {
+    kind: String,
+    preserve_mask_hex: String,
+    forced_exponent: u32,
+}
+
+#[derive(DeriveDeserialize)]
+#[serde(deny_unknown_fields)]
+struct StreamRecipesWire {
+    source: StreamRecipeWire,
+    input: StreamRecipeWire,
+}
+
+#[derive(DeriveDeserialize)]
+#[serde(deny_unknown_fields)]
+struct StreamRecipeWire {
+    seed_hex: String,
+    word_count: usize,
 }
 
 /// A serde-only recursive value used to detect duplicate object members.
@@ -465,6 +576,39 @@ pub fn parse_fixture_manifest(bytes: &[u8]) -> Result<FixtureManifest, Q8Error> 
             "The document does not satisfy its pinned schema.",
         ));
     }
+    let recipe = CorpusRecipe {
+        corpus_version: wire.corpus_recipe.corpus_version,
+        counter: CounterRecipe {
+            algorithm: wire.corpus_recipe.counter.algorithm,
+            domain_hex: wire.corpus_recipe.counter.domain_hex,
+            counter_start: wire.corpus_recipe.counter.counter_start,
+            counter_bytes: wire.corpus_recipe.counter.counter_bytes,
+            counter_byte_order: wire.corpus_recipe.counter.counter_byte_order,
+            digest_word_bytes: wire.corpus_recipe.counter.digest_word_bytes,
+            digest_word_byte_order: wire.corpus_recipe.counter.digest_word_byte_order,
+            mapping: MappingRecipe {
+                kind: wire.corpus_recipe.counter.mapping.kind,
+                preserve_mask_hex: wire.corpus_recipe.counter.mapping.preserve_mask_hex,
+                forced_exponent: wire.corpus_recipe.counter.mapping.forced_exponent,
+            },
+            streams: StreamRecipes {
+                source: StreamRecipe {
+                    seed_hex: wire.corpus_recipe.counter.streams.source.seed_hex,
+                    word_count: wire.corpus_recipe.counter.streams.source.word_count,
+                },
+                input: StreamRecipe {
+                    seed_hex: wire.corpus_recipe.counter.streams.input.seed_hex,
+                    word_count: wire.corpus_recipe.counter.streams.input.word_count,
+                },
+            },
+        },
+    };
+    if recipe != expected_recipe() {
+        return Err(schema_error(
+            "DFE-SCHEMA-007",
+            "The document does not satisfy its pinned schema.",
+        ));
+    }
     if wire.artifacts.is_empty() {
         return Err(schema_error(
             "DFE-SCHEMA-007",
@@ -523,8 +667,39 @@ pub fn parse_fixture_manifest(bytes: &[u8]) -> Result<FixtureManifest, Q8Error> 
         schema_version: wire.schema_version,
         format: wire.format,
         numeric_mode: wire.numeric_mode,
+        corpus_recipe: recipe,
         artifacts,
     })
+}
+
+fn expected_recipe() -> CorpusRecipe {
+    CorpusRecipe {
+        corpus_version: CORPUS_VERSION.to_owned(),
+        counter: CounterRecipe {
+            algorithm: "sha256".to_owned(),
+            domain_hex: COUNTER_DOMAIN_HEX.to_owned(),
+            counter_start: 0,
+            counter_bytes: 8,
+            counter_byte_order: "little".to_owned(),
+            digest_word_bytes: 4,
+            digest_word_byte_order: "little".to_owned(),
+            mapping: MappingRecipe {
+                kind: "finite-binary32-exponent".to_owned(),
+                preserve_mask_hex: PRESERVE_MASK_HEX.to_owned(),
+                forced_exponent: 124,
+            },
+            streams: StreamRecipes {
+                source: StreamRecipe {
+                    seed_hex: "736f75726365".to_owned(),
+                    word_count: 99,
+                },
+                input: StreamRecipe {
+                    seed_hex: "696e707574".to_owned(),
+                    word_count: 33,
+                },
+            },
+        },
+    }
 }
 
 fn safe_relative_path(path: &str) -> bool {
@@ -549,28 +724,44 @@ struct CorpusCase {
     input: Vec<u32>,
 }
 
-fn counter_words(domain: &[u8], count: usize) -> Vec<u32> {
-    let mut words = Vec::with_capacity(count);
-    let mut counter = 0u64;
-    while words.len() < count {
+fn hex_bytes(value: &str) -> Vec<u8> {
+    let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
+    debug_assert!(remainder.is_empty());
+    pairs
+        .iter()
+        .map(|pair| {
+            let text = std::str::from_utf8(pair).expect("validated recipe hex is ASCII");
+            u8::from_str_radix(text, 16).expect("validated recipe hex decodes")
+        })
+        .collect()
+}
+
+fn counter_words(recipe: &CounterRecipe, stream: &StreamRecipe) -> Vec<u32> {
+    let domain = hex_bytes(&recipe.domain_hex);
+    let seed = hex_bytes(&stream.seed_hex);
+    let preserve_mask = u32::from_str_radix(&recipe.mapping.preserve_mask_hex, 16)
+        .expect("validated preserve mask decodes");
+    let mut words = Vec::with_capacity(stream.word_count);
+    let mut counter = recipe.counter_start;
+    while words.len() < stream.word_count {
         let mut hash = Sha256::new();
-        hash.update(b"DecodeForge/DFQ8_B32_V1/corpus/v1\0");
-        hash.update(domain);
-        hash.update(counter.to_le_bytes());
+        hash.update(&domain);
+        hash.update(&seed);
+        hash.update(&counter.to_le_bytes()[..recipe.counter_bytes]);
         let digest = hash.finalize();
-        for chunk in digest.chunks(4) {
-            if words.len() == count {
+        for chunk in digest.chunks(recipe.digest_word_bytes) {
+            if words.len() == stream.word_count {
                 break;
             }
             let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            words.push((word & 0x807f_ffff) | (124 << 23));
+            words.push((word & preserve_mask) | (recipe.mapping.forced_exponent << 23));
         }
         counter += 1;
     }
     words
 }
 
-fn corpus_cases() -> Vec<CorpusCase> {
+fn corpus_cases(recipe: &CorpusRecipe) -> Vec<CorpusCase> {
     let mut cases = Vec::with_capacity(FIXTURE_COUNT);
     cases.push(CorpusCase {
         name: "zero-signed-zero",
@@ -707,8 +898,8 @@ fn corpus_cases() -> Vec<CorpusCase> {
         name: "random-sha256-counter",
         n: 3,
         k: 33,
-        source: counter_words(b"source", 3 * 33),
-        input: counter_words(b"input", 33),
+        source: counter_words(&recipe.counter, &recipe.counter.streams.source),
+        input: counter_words(&recipe.counter, &recipe.counter.streams.input),
     });
     cases
 }
@@ -762,15 +953,24 @@ fn fixture_json(case: &CorpusCase) -> Result<Vec<u8>, Q8Error> {
 
 /// Generate all corpus documents and their canonical paths in sorted order.
 pub fn generated_documents() -> Result<Vec<(String, Vec<u8>)>, Q8Error> {
+    generated_documents_from_recipe(&expected_recipe())
+}
+
+fn generated_documents_from_recipe(
+    recipe: &CorpusRecipe,
+) -> Result<Vec<(String, Vec<u8>)>, Q8Error> {
     let mut documents = Vec::with_capacity(FIXTURE_COUNT);
-    for case in corpus_cases() {
+    for case in corpus_cases(recipe) {
         documents.push((format!("fixtures/{}.json", case.name), fixture_json(&case)?));
     }
     documents.sort_by(|left, right| left.0.cmp(&right.0));
     Ok(documents)
 }
 
-fn manifest_json(documents: &[(String, Vec<u8>)]) -> Result<Vec<u8>, Q8Error> {
+fn manifest_json(
+    documents: &[(String, Vec<u8>)],
+    recipe: &CorpusRecipe,
+) -> Result<Vec<u8>, Q8Error> {
     let artifacts = documents
         .iter()
         .map(|(path, bytes)| {
@@ -786,6 +986,15 @@ fn manifest_json(documents: &[(String, Vec<u8>)]) -> Result<Vec<u8>, Q8Error> {
         .collect::<Vec<_>>();
     let mut object = BTreeMap::<String, Value>::new();
     object.insert("artifacts".to_owned(), Value::Array(artifacts));
+    object.insert(
+        "corpus_recipe".to_owned(),
+        serde_json::to_value(recipe).map_err(|_| {
+            Q8Error::new(
+                "DFE-QUANT-002",
+                "Fixture JSON allocation or serialization failed.",
+            )
+        })?,
+    );
     object.insert("format".to_owned(), json!(FORMAT));
     object.insert("numeric_mode".to_owned(), json!(NUMERIC_MODE));
     object.insert("schema_version".to_owned(), json!(1));
@@ -864,7 +1073,6 @@ fn path_from_safe(root: &Path, raw: &str) -> PathBuf {
 
 /// Verify a complete closed fixture tree against deterministic in-memory generation.
 pub fn verify_fixture_root(root: &Path) -> Result<usize, Q8Error> {
-    let documents = generated_documents()?;
     if path_has_symlink(root).map_err(io_error)? || !root.is_dir() {
         return Err(Q8Error::new(
             "DFE-QUANT-012",
@@ -882,7 +1090,8 @@ pub fn verify_fixture_root(root: &Path) -> Result<usize, Q8Error> {
     }
     let manifest_bytes = fs::read(&manifest_path).map_err(io_error)?;
     let manifest = parse_fixture_manifest(&manifest_bytes)?;
-    let expected_manifest = manifest_json(&documents)?;
+    let documents = generated_documents_from_recipe(&manifest.corpus_recipe)?;
+    let expected_manifest = manifest_json(&documents, &manifest.corpus_recipe)?;
     if manifest_bytes != expected_manifest {
         return Err(Q8Error::new(
             "DFE-QUANT-011",
@@ -983,7 +1192,11 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, bytes).unwrap();
         }
-        fs::write(root.join(MANIFEST_NAME), manifest_json(&documents).unwrap()).unwrap();
+        fs::write(
+            root.join(MANIFEST_NAME),
+            manifest_json(&documents, &expected_recipe()).unwrap(),
+        )
+        .unwrap();
         (parent, root)
     }
 
@@ -992,7 +1205,7 @@ mod tests {
         let documents = generated_documents().unwrap();
         assert_eq!(documents.len(), FIXTURE_COUNT);
         assert!(documents.windows(2).all(|pair| pair[0].0 < pair[1].0));
-        let manifest = manifest_json(&documents).unwrap();
+        let manifest = manifest_json(&documents, &expected_recipe()).unwrap();
         let parsed = parse_fixture_manifest(&manifest).unwrap();
         assert_eq!(parsed.artifacts.len(), FIXTURE_COUNT);
     }
@@ -1032,6 +1245,56 @@ mod tests {
         );
         assert_eq!(
             parse_fixture_manifest(br#"{"schema_version":"1","format":"DFQ8_B32_V1","numeric_mode":"strict_f32_v1","artifacts":[]}"#)
+                .unwrap_err()
+                .code,
+            "DFE-SCHEMA-006"
+        );
+    }
+
+    #[test]
+    fn parser_rejects_recipe_mutation_and_nested_unknown_fields() {
+        let documents = generated_documents().unwrap();
+        let bytes = manifest_json(&documents, &expected_recipe()).unwrap();
+        let mut mutated: Value = serde_json::from_slice(&bytes).unwrap();
+        mutated["corpus_recipe"]["counter"]["mapping"]["forced_exponent"] = json!(123);
+        assert_eq!(
+            parse_fixture_manifest(&serde_json::to_vec(&mutated).unwrap())
+                .unwrap_err()
+                .code,
+            "DFE-SCHEMA-007"
+        );
+
+        let mut unknown: Value = serde_json::from_slice(&bytes).unwrap();
+        unknown["corpus_recipe"]["counter"]["streams"]["source"]
+            .as_object_mut()
+            .unwrap()
+            .insert("salt".to_owned(), json!("no"));
+        assert_eq!(
+            parse_fixture_manifest(&serde_json::to_vec(&unknown).unwrap())
+                .unwrap_err()
+                .code,
+            "DFE-SCHEMA-005"
+        );
+    }
+
+    #[test]
+    fn parser_rejects_recipe_integral_floats_and_booleans_before_generation() {
+        let documents = generated_documents().unwrap();
+        let bytes = manifest_json(&documents, &expected_recipe()).unwrap();
+
+        let mut integral_float: Value = serde_json::from_slice(&bytes).unwrap();
+        integral_float["corpus_recipe"]["counter"]["counter_start"] = json!(0.0);
+        assert_eq!(
+            parse_fixture_manifest(&serde_json::to_vec(&integral_float).unwrap())
+                .unwrap_err()
+                .code,
+            "DFE-SCHEMA-006"
+        );
+
+        let mut boolean: Value = serde_json::from_slice(&bytes).unwrap();
+        boolean["corpus_recipe"]["counter"]["streams"]["source"]["word_count"] = json!(false);
+        assert_eq!(
+            parse_fixture_manifest(&serde_json::to_vec(&boolean).unwrap())
                 .unwrap_err()
                 .code,
             "DFE-SCHEMA-006"
