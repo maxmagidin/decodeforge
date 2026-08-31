@@ -15,6 +15,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -38,7 +39,7 @@ pub struct SessionResult {
     pub cases: Vec<CaseSessionResult>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HostInfo {
     pub os: &'static str,
     pub os_version: String,
@@ -57,7 +58,7 @@ pub struct HostInfo {
     pub affinity_policy: &'static str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CheckoutInfo {
     pub revision: String,
     pub dirty: bool,
@@ -223,6 +224,14 @@ pub fn run_session(bundle: &CaseBundle, session_id: &str) -> Result<SessionResul
             "run-session requires a macOS arm64 host; preparation and parsing remain portable",
         ));
     }
+    let checkout = capture_checkout()?;
+    if checkout.dirty {
+        return Err(BenchError::new(
+            "DFE-G1-HOST",
+            "run-session requires the compiler's anchored checkout to be clean",
+        ));
+    }
+    let host = capture_host()?;
     let first_case = bundle.cases.first().ok_or_else(|| {
         BenchError::new("DFE-G1-ASSET", "case bundle must contain one prepared case")
     })?;
@@ -230,6 +239,14 @@ pub fn run_session(bundle: &CaseBundle, session_id: &str) -> Result<SessionResul
     let mut cases = Vec::with_capacity(bundle.cases.len());
     for asset in &bundle.cases {
         cases.push(run_case(asset, &activation)?);
+    }
+    let final_checkout = capture_checkout()?;
+    let final_host = capture_host()?;
+    if final_checkout != checkout || final_host != host {
+        return Err(BenchError::new(
+            "DFE-G1-HOST",
+            "checkout or host identity changed during the benchmark session",
+        ));
     }
     Ok(SessionResult {
         schema_version: 1,
@@ -241,8 +258,8 @@ pub fn run_session(bundle: &CaseBundle, session_id: &str) -> Result<SessionResul
         source: bundle.manifest.source.clone(),
         numeric_mode: NUMERIC_MODE,
         pack_format: PACK_FORMAT,
-        checkout: capture_checkout()?,
-        host: capture_host()?,
+        checkout,
+        host,
         timing: TimingPolicy {
             boundary: "PreparedCall::invoke plus fixed Rust repetition loop and timer: sentinel fill + df_run_v1 + status decode + finite scan; no allocation",
             warmup_min_calls: MIN_WARMUP_CALLS,
@@ -604,19 +621,27 @@ fn activation_digest(session_id: &str, case_id: &str, pair_index: usize) -> [u8;
     hasher.finalize().into()
 }
 
-fn probe(program: &str, arguments: &[&str], label: &str) -> Result<String, BenchError> {
-    let mut child = Command::new(program)
+fn probe_in(
+    current_dir: Option<&Path>,
+    program: &str,
+    arguments: &[&str],
+    label: &str,
+) -> Result<String, BenchError> {
+    let mut command = Command::new(program);
+    command
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            BenchError::new(
-                "DFE-G1-HOST",
-                format!("unable to start {label} probe: {error}"),
-            )
-        })?;
+        .stderr(Stdio::null());
+    if let Some(directory) = current_dir {
+        command.current_dir(directory);
+    }
+    let mut child = command.spawn().map_err(|error| {
+        BenchError::new(
+            "DFE-G1-HOST",
+            format!("unable to start {label} probe: {error}"),
+        )
+    })?;
     let mut stdout = child
         .stdout
         .take()
@@ -665,6 +690,10 @@ fn probe(program: &str, arguments: &[&str], label: &str) -> Result<String, Bench
         .map_err(|_| BenchError::new("DFE-G1-HOST", format!("{label} probe was not UTF-8")))
 }
 
+fn probe(program: &str, arguments: &[&str], label: &str) -> Result<String, BenchError> {
+    probe_in(None, program, arguments, label)
+}
+
 fn parse_probe_u32(program: &str, arguments: &[&str], label: &str) -> Result<u32, BenchError> {
     let value = probe(program, arguments, label)?;
     value.parse::<u32>().map_err(|_| {
@@ -676,7 +705,36 @@ fn parse_probe_u32(program: &str, arguments: &[&str], label: &str) -> Result<u32
 }
 
 fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
-    let revision = probe("git", &["rev-parse", "HEAD"], "Git revision")?;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .map_err(|error| {
+            BenchError::new(
+                "DFE-G1-HOST",
+                format!("compiler workspace root is unavailable: {error}"),
+            )
+        })?;
+    let reported_root = probe_in(
+        Some(&root),
+        "git",
+        &["rev-parse", "--show-toplevel"],
+        "Git workspace root",
+    )?;
+    let reported_root = PathBuf::from(reported_root)
+        .canonicalize()
+        .map_err(|error| {
+            BenchError::new(
+                "DFE-G1-HOST",
+                format!("reported Git workspace root is unavailable: {error}"),
+            )
+        })?;
+    if reported_root != root {
+        return Err(BenchError::new(
+            "DFE-G1-HOST",
+            "benchmark binary is not anchored to its compiler workspace",
+        ));
+    }
+    let revision = probe_in(Some(&root), "git", &["rev-parse", "HEAD"], "Git revision")?;
     if revision.len() != 40
         || !revision
             .bytes()
@@ -687,7 +745,8 @@ fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
             "Git revision probe did not return one full lowercase object ID",
         ));
     }
-    let status = probe(
+    let status = probe_in(
+        Some(&root),
         "git",
         &["status", "--porcelain=v1", "--untracked-files=normal"],
         "Git status",

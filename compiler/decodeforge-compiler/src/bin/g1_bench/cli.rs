@@ -164,6 +164,16 @@ fn validate_session_id(session_id: &str) -> Result<(), BenchError> {
         ));
     }
     if !session_id
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphanumeric)
+    {
+        return Err(BenchError::new(
+            "DFE-G1-CLI",
+            "session ID must begin with an ASCII letter or digit",
+        ));
+    }
+    if !session_id
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     {
@@ -183,6 +193,7 @@ mod tests {
     fn session_ids_are_closed_and_path_options_are_not_optional() {
         assert!(validate_session_id("m4-session-1").is_ok());
         assert!(validate_session_id("../escape").is_err());
+        assert!(validate_session_id(".hidden").is_err());
         assert!(validate_session_id("").is_err());
         assert!(required_string(&[], "--session-id").is_err());
     }
