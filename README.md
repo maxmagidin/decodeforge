@@ -215,7 +215,9 @@ provenance. It deliberately makes no native-kernel or performance claim. The
 first G1 slice now implements verified Region/Loop lowering, one shared OI4
 pack, the frozen generated-module ABI, deterministic strict scalar C, and an
 Apple-arm64 builder that retains and structurally audits the exact private
-Mach-O artifact and scalar helper disassembly. Loading/executing that artifact,
+Mach-O artifact and scalar helper disassembly. A checked runtime now consumes
+that owner, makes an independently verified read-only load copy, binds the
+frozen ABI, and executes all 16 fixtures bit-exactly through a safe Rust API.
 NEON code generation, benchmark evidence, and performance claims do not yet
 exist. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
