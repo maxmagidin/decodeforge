@@ -93,6 +93,12 @@ subnormal canaries, nonfinite input, and nonfinite output. Thus the call
 preserves the caller's rounding mode, exception flags, and trap configuration;
 a hold or restore failure reports `DF_STATUS_FP_ENVIRONMENT_V1`.
 
+The gradual-underflow canaries compare the object-representation bits of their
+computed subnormal results. A floating-point comparison is insufficient: when
+flush-to-zero or flush-inputs-to-zero is active, ARM can treat both a flushed
+result and the expected subnormal comparison operand as zero. Integer bit
+checks make either mode an observable `DF_STATUS_FP_ENVIRONMENT_V1` failure.
+
 This ABI freezes correctness and failure semantics only. It is not evidence of
 native code generation, throughput, latency, or any other performance result.
 

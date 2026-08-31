@@ -416,6 +416,7 @@ mod tests {
         const ROUNDING_MODE_MASK: u64 = 3 << 22;
         const ROUND_UP: u64 = 1 << 22;
         const FLUSH_TO_ZERO: u64 = 1 << 24;
+        const FLUSH_INPUTS_TO_ZERO: u64 = 1;
         const INVALID_TRAP_ENABLE: u64 = 1 << 8;
         const INVALID_FLAG: u64 = 1;
 
@@ -423,22 +424,28 @@ mod tests {
         let executable = build_and_load(&region, &kernel, &packed);
         let restore = RestoreFloatingEnvironment::new();
         let original = restore.0;
-        let compatible_fpcr = original.fpcr & !(ROUNDING_MODE_MASK | FLUSH_TO_ZERO);
+        let compatible_fpcr =
+            original.fpcr & !(ROUNDING_MODE_MASK | FLUSH_TO_ZERO | FLUSH_INPUTS_TO_ZERO);
 
-        for fpcr_bits in [ROUND_UP, FLUSH_TO_ZERO] {
+        for fpcr_bits in [ROUND_UP, FLUSH_TO_ZERO, FLUSH_INPUTS_TO_ZERO] {
             let requested = FloatingEnvironment {
                 fpcr: compatible_fpcr | fpcr_bits,
                 fpsr: original.fpsr | INVALID_FLAG,
             };
             // SAFETY: `restore` is live and will restore the original state.
             unsafe { requested.install() };
+            let installed = FloatingEnvironment::capture();
+            if fpcr_bits == FLUSH_INPUTS_TO_ZERO && installed.fpcr & FLUSH_INPUTS_TO_ZERO == 0 {
+                continue;
+            }
             assert_eq!(
                 executable.run(&input),
-                Err(RuntimeError::KernelStatus(ScalarStatusV1::FpEnvironment))
+                Err(RuntimeError::KernelStatus(ScalarStatusV1::FpEnvironment)),
+                "FPCR mode {fpcr_bits:#x} must be rejected"
             );
             let after = FloatingEnvironment::capture();
-            assert_eq!(after.fpcr, requested.fpcr);
-            assert_eq!(after.fpsr, requested.fpsr);
+            assert_eq!(after.fpcr, installed.fpcr);
+            assert_eq!(after.fpsr, installed.fpsr);
         }
 
         let trap_state = FloatingEnvironment {
