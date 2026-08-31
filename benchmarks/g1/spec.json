@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g1-prepared-call-paired-v1",
+  "format": "decodeforge_g1_benchmark_v1",
+  "numeric_mode": "strict_f32_v1",
+  "pack_format": "DFQ8_B32_OI4_V1",
+  "activation_stream": "sha256-counter-v1",
+  "real_tensor": {
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "tensor_name": "model.layers.0.self_attn.q_proj.weight",
+    "dtype": "BF16",
+    "shape": [2048, 2048],
+    "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+    "model_file": {
+      "filename": "model.safetensors",
+      "size_bytes": 2200119864,
+      "sha256": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
+    },
+    "raw_tensor_sha256": "5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac",
+    "metadata_keys": [
+      "model",
+      "revision",
+      "model_filename",
+      "model_size_bytes",
+      "model_sha256",
+      "tensor_name",
+      "tensor_sha256"
+    ]
+  },
+  "real_case": {
+    "case_id": "tinyllama-q-proj-2048x2048",
+    "input_identity": "sha256:03263339062e7a0839f45a28b256b1e1585e5a35e4281853283049017859c590",
+    "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a",
+    "logical_weight_identity": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2",
+    "packed_weight_identity": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc"
+  },
+  "planned_not_executed_synthetic_tail_shapes": [
+    [2051, 2048],
+    [2048, 2049],
+    [2051, 2049]
+  ],
+  "timing": {
+    "warmup_min_calls": 16,
+    "warmup_min_ns": 500000000,
+    "calibration_target_ns": 25000000,
+    "calibration_max_repetitions": 1048576,
+    "paired_rounds": 40,
+    "scalar_first_pairs": 20,
+    "neon_first_pairs": 20,
+    "independent_sessions": 3,
+    "drift_rejection_fraction": 0.10,
+    "bootstrap_method": "paired_bca",
+    "bootstrap_replicates": 10000,
+    "bootstrap_seed": "sha256-counter-v1/bootstrap"
+  },
+  "limits": {
+    "max_safetensors_bytes": 16777216,
+    "max_header_bytes": 1048576,
+    "max_output_bytes": 268435456,
+    "max_json_bytes": 16777216
+  }
+}
