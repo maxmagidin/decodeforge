@@ -49,7 +49,7 @@ Implementation advances through evidence gates rather than component count:
 
 | Gate | Exit evidence |
 |---|---|
-| G0: semantics | Pinned quantization contract, cross-language scalar agreement, edge-case corpus, and manifest schema |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree |
 | G1: M4 vertical slice | One real TinyLlama shape flows through minimal IR to generated scalar and ARM64 NEON code on the M4; the bundle contains source, assembly, correctness, timings, and host metadata |
 | G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured |
 | G3: Mac PyTorch slice | A guarded `torch.compile` region runs end to end on the M4, demonstrates a guard miss, and reports supported-region coverage |
@@ -108,7 +108,7 @@ A compiler backend should not quietly change FP32 model semantics. Weight-only
 Q8 is therefore an explicit model transformation:
 
 ```python
-model = decodeforge.quantize(model, format="dfq8_b32")
+model = decodeforge.quantize(model, format="DFQ8_B32_V1")
 compiled = torch.compile(model, backend="decodeforge", fullgraph=False)
 ```
 
@@ -195,7 +195,10 @@ not by a mutable `main` reference.
 
 ## 6. Quantization semantics
 
-Initial logical format: `DFQ8_B32`.
+The normative readable contract, including exact raw-bit identities and the
+fixture/check command, is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+
+Initial logical format: `DFQ8_B32_V1`.
 
 For every consecutive block of 32 weights:
 
@@ -219,9 +222,17 @@ Contract:
 - scales are FP32 initially;
 - activations and accumulation are FP32;
 - block length is exactly 32; a padded tail is zero-filled and guarded;
-- rounding rule is specified and tested across Python/Rust/native code;
+- rounding rule is specified here; subsequent implementation PRs must prove
+  Python, Rust, and native parity before claiming the matching gate;
 - NaN/Inf source weights are rejected by default;
-- Q8 quality is evaluated separately from compiler schedule correctness.
+- source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
+  separately from generated-kernel comparator correctness.
+
+The complete bit-level contract is frozen in
+[`docs/Q8_FORMAT_V1.md`](Q8_FORMAT_V1.md), including raw-word finite checks,
+strict operation order, gradual underflow, identities, and the generated
+fixture corpus. The q layout is physically `[N][B][32]`; only logical lanes
+participate in `amax` and evaluation, and all tail lanes serialize as zero.
 
 Logical storage is approximately 36 bytes per 32 weights (32 int8 + one FP32
 scale) before target packing, versus 128 bytes in FP32.
@@ -444,7 +455,7 @@ The first kernels dequantize int8 weights into FP32 vectors and accumulate with
 FP32 activations. This contract cannot directly use integer dot-product
 instructions because one operand remains FP32. Dot-product, VNNI, or similar
 claims require a future activation-quantized numeric mode with its own accuracy
-and baseline results; they are not variants of `DFQ8_B32`.
+and baseline results; they are not variants of `DFQ8_B32_V1`.
 
 #### Reference SIMD dataflow
 
@@ -794,7 +805,7 @@ usable without schedule enumeration or code generation.
 - no KV paging, HTTP server, work stealing, GPU backend, Q4, or generic MLIR
   frontend in the first project;
 - generated-source backend before any MLIR experiment;
-- no integer dot-product claim for the FP32-activation `DFQ8_B32` path;
+- no integer dot-product claim for the FP32-activation `DFQ8_B32_V1` path;
 - checked-in source, disassembly, raw measurements, and manifests are required
   evidence, not optional polish;
 - dashboard, both fusions, multi-core tuning, small-batch support, and AVX2 are

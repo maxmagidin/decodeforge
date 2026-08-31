@@ -27,6 +27,18 @@
     {"code": "DFE-SCHED-005", "name": "k-block-boundary-violation", "component": "schedule", "required_context": []},
     {"code": "DFE-SCHED-006", "name": "unsafe-n-tail", "component": "schedule", "required_context": []},
     {"code": "DFE-SCHED-007", "name": "packed-offset-overflow", "component": "schedule", "required_context": []},
-    {"code": "DFE-SCHED-008", "name": "candidate-budget-exceeded", "component": "schedule", "required_context": []}
+    {"code": "DFE-SCHED-008", "name": "candidate-budget-exceeded", "component": "schedule", "required_context": []},
+    {"code": "DFE-QUANT-001", "name": "invalid-dimension", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-002", "name": "size-overflow", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-003", "name": "length-mismatch", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-004", "name": "nonfinite-source", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-005", "name": "nonfinite-input", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-006", "name": "invalid-scale", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-007", "name": "invalid-q-or-padding", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-008", "name": "identity-mismatch", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-009", "name": "comparator-domain", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-010", "name": "nonfinite-evaluation", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-011", "name": "mismatch", "component": "quant", "required_context": []},
+    {"code": "DFE-QUANT-012", "name": "unsafe-fixture-artifact", "component": "quant", "required_context": []}
   ]
 }

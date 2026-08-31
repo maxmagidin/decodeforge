@@ -136,7 +136,7 @@ substituting an estimate.
 
 | Gate | Required result | Scope unlocked |
 |---|---|---|
-| G0: semantics | Frozen `DFQ8_B32` specification and matching Python/Rust scalar oracles | native codegen |
+| G0: semantics | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, and schema agree | generated scalar code |
 | G1: M4 vertical slice | A TinyLlama `M=1` projection lowers to generated scalar and ARM64 NEON on the M4, with source, disassembly, correctness, and timings | bounded Mac schedule evidence |
 | G2: Mac schedule evidence | Bounded schedule selection on the M4 is correctness-gated, reproducible, and measured | guarded Mac PyTorch integration |
 | G3: Mac framework proof | A guarded `torch.compile` region executes end to end on the M4, falls back safely, and reports coverage | evidence-selected extension |
