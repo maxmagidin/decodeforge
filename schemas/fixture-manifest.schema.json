@@ -4,7 +4,7 @@
   "title": "DecodeForge deterministic fixture manifest V1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "format", "numeric_mode", "artifacts"],
+  "required": ["schema_version", "format", "numeric_mode", "corpus_recipe", "artifacts"],
   "properties": {
     "schema_version": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
@@ -14,6 +14,108 @@
     },
     "numeric_mode": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
+    },
+    "corpus_recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpus_version", "counter"],
+      "properties": {
+        "corpus_version": {
+          "type": "string",
+          "const": "dfq8_corpus_v1"
+        },
+        "counter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "domain_hex", "counter_start", "counter_bytes", "counter_byte_order", "digest_word_bytes", "digest_word_byte_order", "mapping", "streams"],
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "const": "sha256"
+            },
+            "domain_hex": {
+              "type": "string",
+              "const": "4465636f6465466f7267652f444651385f4233325f56312f636f727075732f763100"
+            },
+            "counter_start": {
+              "type": "integer",
+              "const": 0
+            },
+            "counter_bytes": {
+              "type": "integer",
+              "const": 8
+            },
+            "counter_byte_order": {
+              "type": "string",
+              "const": "little"
+            },
+            "digest_word_bytes": {
+              "type": "integer",
+              "const": 4
+            },
+            "digest_word_byte_order": {
+              "type": "string",
+              "const": "little"
+            },
+            "mapping": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "preserve_mask_hex", "forced_exponent"],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "finite-binary32-exponent"
+                },
+                "preserve_mask_hex": {
+                  "type": "string",
+                  "const": "807fffff"
+                },
+                "forced_exponent": {
+                  "type": "integer",
+                  "const": 124
+                }
+              }
+            },
+            "streams": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "input"],
+              "properties": {
+                "source": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["seed_hex", "word_count"],
+                  "properties": {
+                    "seed_hex": {
+                      "type": "string",
+                      "const": "736f75726365"
+                    },
+                    "word_count": {
+                      "type": "integer",
+                      "const": 99
+                    }
+                  }
+                },
+                "input": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["seed_hex", "word_count"],
+                  "properties": {
+                    "seed_hex": {
+                      "type": "string",
+                      "const": "696e707574"
+                    },
+                    "word_count": {
+                      "type": "integer",
+                      "const": 33
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "artifacts": {
       "type": "array",

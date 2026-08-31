@@ -109,7 +109,22 @@ and exactly one terminal newline. The manifest root pins `format` to
 `DFQ8_B32_V1` and `numeric_mode` to `strict_f32_v1`; it requires at least one
 artifact and each artifact record contains only a safe relative `path`, `bytes`,
 and SHA-256 value. Hashed artifacts contain no timestamps or free-form
-metadata. The committed corpus is listed by the closed, sorted
+metadata.
+
+The same manifest freezes `dfq8_corpus_v1`, the complete recipe for the
+`random-sha256-counter` case. Its source and input streams are
+`SHA256(domain || seed || LE64(counter))`, starting at counter zero, where the
+domain is the exact bytes represented by
+`4465636f6465466f7267652f444651385f4233325f56312f636f727075732f763100`.
+Each digest is consumed in four-byte little-endian words. A word is mapped to
+a finite binary32 bit pattern as `(word & 0x807fffff) | (124 << 23)`. The
+source seed is `736f75726365` for 99 words; the input seed is `696e707574` for
+33 words. Every algorithm, byte-order, mask, exponent, seed, and count field is
+closed and constant in the schema. Both references parse these recorded
+values before regenerating the corpus and reject a changed or unknown recipe
+field.
+
+The committed corpus is listed by the closed, sorted
 `tests/fixtures/v1/manifest.json`. Run
 `uv run --frozen python scripts/generate_q8_fixtures.py --check` to verify it
 without writing. Rust independently generates the expected documents in memory,

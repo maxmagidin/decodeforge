@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -55,6 +56,83 @@ def test_every_committed_fixture_passes_semantic_schema() -> None:
         assert validate_path(path, "quant-fixture") == []
         document = json.loads(path.read_text(encoding="utf-8"))
         assert document["blocks"] == (document["k"] + 31) // 32
+
+
+def test_manifest_freezes_and_drives_the_counter_recipe() -> None:
+    manifest = load_json(FIXTURE_ROOT / "manifest.json")
+    recipe = manifest["corpus_recipe"]
+    assert recipe == fixture_generator.EXPECTED_CORPUS_RECIPE
+    counter = recipe["counter"]
+    assert bytes.fromhex(counter["domain_hex"]) == (
+        b"DecodeForge/DFQ8_B32_V1/corpus/v1\0"
+    )
+    assert counter["mapping"] == {
+        "kind": "finite-binary32-exponent",
+        "preserve_mask_hex": "807fffff",
+        "forced_exponent": 124,
+    }
+    assert counter["streams"] == {
+        "input": {"seed_hex": "696e707574", "word_count": 33},
+        "source": {"seed_hex": "736f75726365", "word_count": 99},
+    }
+
+    documents = fixture_generator._generated_documents(recipe)
+    records = manifest["artifacts"]
+    assert [
+        {
+            "path": path,
+            "bytes": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+        for path, content in documents.items()
+    ] == records
+
+
+def test_manifest_recipe_mutation_and_unknown_fields_are_rejected() -> None:
+    manifest = load_json(FIXTURE_ROOT / "manifest.json")
+
+    mutated = deepcopy(manifest)
+    mutated["corpus_recipe"]["counter"]["mapping"]["forced_exponent"] = 123
+    diagnostics = validate_data(mutated, "fixture-manifest")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-007"]
+    _assert_closed_diagnostics(diagnostics)
+
+    unknown = deepcopy(manifest)
+    unknown["corpus_recipe"]["counter"]["streams"]["source"]["salt"] = "no"
+    diagnostics = validate_data(unknown, "fixture-manifest")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-005"]
+    _assert_closed_diagnostics(diagnostics)
+
+
+def test_manifest_recipe_integral_floats_and_booleans_are_rejected_before_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = load_json(FIXTURE_ROOT / "manifest.json")
+
+    integral_float = deepcopy(manifest)
+    integral_float["corpus_recipe"]["counter"]["counter_start"] = 0.0
+    diagnostics = validate_data(integral_float, "fixture-manifest")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-007"]
+    _assert_closed_diagnostics(diagnostics)
+
+    boolean = deepcopy(manifest)
+    boolean["corpus_recipe"]["counter"]["streams"]["source"]["word_count"] = False
+    diagnostics = validate_data(boolean, "fixture-manifest")
+    assert "DFE-SCHEMA-006" in {item["code"] for item in diagnostics}
+    _assert_closed_diagnostics(diagnostics)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(integral_float), encoding="utf-8")
+    monkeypatch.setattr(fixture_generator, "FIXTURE_ROOT", tmp_path)
+    monkeypatch.setattr(fixture_generator, "MANIFEST_PATH", manifest_path)
+
+    def _must_not_generate(_: dict[str, Any]) -> dict[str, bytes]:
+        raise AssertionError("an invalid recipe reached corpus generation")
+
+    monkeypatch.setattr(fixture_generator, "_generated_documents", _must_not_generate)
+    errors = fixture_generator._check()
+    assert errors
+    assert "DFE-SCHEMA-007" in errors[0]
 
 
 def _mutable_fixture() -> dict[str, Any]:
@@ -162,7 +240,8 @@ def test_fixture_write_refuses_target_ancestor_and_manifest_symlinks(
             {
                 "fixtures/safe.json": b"safe",
                 "fixtures/redirected.json": b"redirected",
-            }
+            },
+            fixture_generator.EXPECTED_CORPUS_RECIPE,
         )
     assert not (fixture_root / "fixtures" / "safe.json").exists()
     assert not (outside / "safe.json").exists()
@@ -180,7 +259,10 @@ def test_fixture_write_refuses_target_ancestor_and_manifest_symlinks(
     monkeypatch.setattr(fixture_generator, "MANIFEST_PATH", direct_manifest)
 
     with pytest.raises(RuntimeError):
-        fixture_generator._write({"fixtures/artifact.json": b"artifact"})
+        fixture_generator._write(
+            {"fixtures/artifact.json": b"artifact"},
+            fixture_generator.EXPECTED_CORPUS_RECIPE,
+        )
     assert not (direct_outside / "artifact.json").exists()
     assert not direct_manifest.exists()
 
@@ -194,6 +276,9 @@ def test_fixture_write_refuses_target_ancestor_and_manifest_symlinks(
     monkeypatch.setattr(fixture_generator, "MANIFEST_PATH", manifest_link)
 
     with pytest.raises(RuntimeError):
-        fixture_generator._write({"fixtures/artifact.json": b"artifact"})
+        fixture_generator._write(
+            {"fixtures/artifact.json": b"artifact"},
+            fixture_generator.EXPECTED_CORPUS_RECIPE,
+        )
     assert not (clean_root / "fixtures" / "artifact.json").exists()
     assert not (clean_outside / "manifest.json").exists()

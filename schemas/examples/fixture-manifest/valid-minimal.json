@@ -2,6 +2,23 @@
   "schema_version": 1,
   "format": "DFQ8_B32_V1",
   "numeric_mode": "strict_f32_v1",
+  "corpus_recipe": {
+    "corpus_version": "dfq8_corpus_v1",
+    "counter": {
+      "algorithm": "sha256",
+      "domain_hex": "4465636f6465466f7267652f444651385f4233325f56312f636f727075732f763100",
+      "counter_start": 0,
+      "counter_bytes": 8,
+      "counter_byte_order": "little",
+      "digest_word_bytes": 4,
+      "digest_word_byte_order": "little",
+      "mapping": {"kind": "finite-binary32-exponent", "preserve_mask_hex": "807fffff", "forced_exponent": 124},
+      "streams": {
+        "source": {"seed_hex": "736f75726365", "word_count": 99},
+        "input": {"seed_hex": "696e707574", "word_count": 33}
+      }
+    }
+  },
   "artifacts": [
     {"path": "fixtures/example.json", "bytes": 1, "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
   ]
