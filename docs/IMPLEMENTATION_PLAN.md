@@ -66,9 +66,9 @@ provenance verification over that bundle. The G1 contract/IR, shared OI4 pack,
 generated-module ABI, deterministic strict scalar C, and the private Apple-arm64
 build plus structural machine-code audit are implemented. The checked runtime
 loads that exact image and executes the complete frozen fixture corpus
-bit-exactly. The next active work is NEON code with matching runtime,
-correctness, and disassembly evidence; no timing or performance claim exists
-yet.
+bit-exactly, and deterministic fixed-schedule NEON C source is implemented. The
+next active work is NEON native build/load with correctness and disassembly
+evidence; no timing or performance claim exists yet.
 
 ### Stop condition
 
