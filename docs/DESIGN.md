@@ -4,13 +4,19 @@
 fixture schemas, and the deterministic corpus pass parity gates. The checked-in
 [Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds that result to its source, toolchain, host profile, numeric mode, and
-artifact hashes without making a native-kernel or performance claim. G1 is now
-the active gate. The normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+artifact hashes without making a native-kernel or performance claim. The G1
+contract/IR and shared OI4 packing slice is implemented; generated kernels and
+performance evidence do not yet exist. The normative contract is
+[Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
 M4 using ARM64 NEON. x86-64 AVX2 is a deferred optional portability extension,
 as recorded in [ADR 0001](decisions/0001-mac-first-required-path.md).
+
+The compiler and generated-runtime contract is limited to 64-bit little-endian
+hosts. The scalar target label `portable` means portable within that supported
+host class, not across 32-bit or big-endian systems.
 
 ## 1. Goals
 
@@ -424,6 +430,14 @@ It ranks candidates; it does not claim to predict exact latency.
 Logical Q8 values are target-independent. The packer creates immutable physical
 panels selected by a schedule.
 
+The first fixed target panel is `DFQ8_B32_OI4_V1`: `T=4`, `B=ceil(K/32)`,
+`P=ceil(N/4)`, and a headerless payload of exactly `P*B*144` bytes. Record
+`(p,b)` starts at `(p*B+b)*144`; bytes `0..15` are four exact little-endian
+scale words and bytes `16..143` are q bytes at `16+4*l+j` for logical lane `l`
+and output lane `j`. Missing output lanes and physical K padding are zero, but
+padding is never evaluated. The payload requirement is 16-byte alignment and
+is carried by the pack specification/manifest, not by a hidden header.
+
 Example panel concept:
 
 ```text
@@ -433,14 +447,14 @@ Example panel concept:
   ...
 ```
 
-The exact inner order differs by backend. Every packed blob carries:
-
-- format/ABI version;
-- source logical-weight hash;
-- target architecture and required features;
-- logical `N`, `K`, padded sizes;
-- tile/unroll/layout parameters;
-- byte length, alignment, and checksum.
+Scalar and NEON consume this same exact byte order; the payload never changes
+with the target backend. A separate `PackManifestV1` carries format/schema,
+logical shape and identity, packed identity, payload byte count, and required
+alignment. Target schedule metadata belongs to the schedule/artifact manifest,
+not to the headerless payload. Artifact parsing validates the manifest and
+payload together, including their identities and byte count. Before kernel
+entry, the runtime copies or maps those bytes into storage that actually meets
+the manifest's alignment requirement and checks the resulting pointer.
 
 Packing is compile time. It never occurs in the hot inference path. The compiler
 reports padding and scale overhead, and the cache deduplicates identical packs.
@@ -457,8 +471,9 @@ selection, object generation, and linking.
    compiler validation where necessary.
 2. **ARM64 NEON (required):** uses AArch64 NEON widening/conversion and FP32
    arithmetic primitives supported by the guarded M4 target.
-3. **x86-64 AVX2/FMA (deferred):** uses AVX2 widening/conversion and FP32 vector
-   arithmetic if selected as the G4 portability extension; no AVX-512/VNNI
+3. **x86-64 AVX2 (deferred):** may use AVX2 widening/conversion and FP32 vector
+   arithmetic if selected as the G4 portability extension, but strict-f32
+   lowering still requires separate multiply and add; no AVX-512/VNNI
    assumption on Zen 2.
 
 The first kernels dequantize int8 weights into FP32 vectors and accumulate with
@@ -473,59 +488,40 @@ The initial vector mapping is deliberately simple and inspectable. For each
 output channel and 32-weight block:
 
 ```text
-x0..31 = load 32 FP32 activations
-q0..31 = load 32 packed int8 weights
-s      = broadcast the block's FP32 scale
-block  = zero vector accumulator
-
-for each native vector group:
-    qi32 = sign_extend_i8_to_i32(q_group)
-    qf32 = convert_i32_to_f32(qi32)
-    block = fma(x_group, qf32, block)
-
-acc[n] += s * horizontal_reduce(block)
+for output lane n:
+    out = +0
+    for block b in ascending order:
+        block_sum = +0
+        for logical lane l in ascending order:
+            product   = RN32(x[b*32+l] * float32(q[n,b,l]))
+            block_sum = RN32(block_sum + product)
+        scaled = RN32(block_sum * scale[n,b])
+        out    = RN32(out + scaled)
 ```
 
 The required NEON group widens through int16/int32 and converts four lanes at a
-time. This semantics-first mapping applies the scale after each 32-value block
-reduction. A separately represented schedule may instead scale vector lanes and
-carry partial sums across blocks if the numeric mode permits the changed
-reduction order. Schedules may keep several output-channel or block accumulators
-live so activation vectors are reused.
-`Ntile` and `K` unroll are therefore constrained by the target register budget;
-the assembly audit verifies whether the estimated budget avoided spills.
+time, but the fixed G1 Loop IR retains one `K` partial accumulator and the same
+logical block/lane recurrence. It does not use FMA, horizontal reduction,
+reassociation, or a second `K` accumulator. A vector variant maps four output
+lanes to one panel record; scalar cleanup handles an `N` tail. The assembly
+audit for future generated kernels must confirm this contract.
 
-The deferred AVX2 design widens eight int8 values into eight int32 lanes,
-converts them to FP32, and combines them with eight FP32 activations. It is
-retained for a possible G4 portability extension and is not a G0–G3 dependency.
+The deferred AVX2 design is a target extension only. If selected for G4 it must
+implement the same separate RN32 multiply/add recurrence; a fused multiply-add
+is not a strict-f32 schedule and is not implied by this G1 contract.
 
-The packer pads `K` to the 32-weight block boundary with zero weights, making the
-hot `K` loop full-width. Logical `K`, padded `K`, and byte bounds remain in the
-manifest and guards. `N` tails use an explicitly selected scalar-cleanup or
-padded-panel strategy; padding must never permit a store beyond the logical
-output tensor.
+The packer stores `K` tails in full 32-lane records with zero q bytes, but the
+logical evaluator and any future kernel must never evaluate padded lanes.
+Logical `K`, padded `K`, and byte bounds remain in the manifest and guards.
+`N` tails use scalar cleanup and never permit a store beyond the logical output
+tensor.
 
 ### 11.2 Generated function ABI
 
-```c
-typedef struct {
-  uint32_t abi_version;
-  uint32_t flags;
-  uint32_t m;
-  uint32_t n;
-  uint32_t k;
-  uint32_t x_stride;
-  uint32_t y_stride;
-} df_call;
-
-int df_kernel_<hash>(
-    const df_call* call,
-    const float* x,
-    const void* packed_weight,
-    const float* gamma_or_null,
-    float* y,
-    void* scratch);
-```
+The canonical call descriptor and function declarations live in
+[`include/decodeforge/abi_v1.h`](../include/decodeforge/abi_v1.h); generated
+code and ABI checks must include that header rather than copying a pseudocode
+struct into this document.
 
 All sizes, strides, pointers, alignment, target features, and artifact versions
 are guarded before entry. Generated inner loops can rely on proven assumptions.
@@ -537,7 +533,8 @@ optimization without fast-math. Target modes:
 
 - portable scalar;
 - explicit ARM64 feature set;
-- explicit x86-64 AVX2/FMA (deferred optional G4 extension);
+- explicit x86-64 AVX2 (deferred optional G4 extension; strict-f32 kernels must
+  still use separate multiply and add);
 - optional host-native artifact, labeled non-portable.
 
 macOS emits a `.dylib`; Linux emits a `.so`. Generated source is retained in a
@@ -559,8 +556,9 @@ the intended loop. Each selected schedule's evidence bundle includes an
 `objdump` or `llvm-objdump` listing and a short audit of:
 
 - the hot-loop boundaries and vector width;
-- widening/conversion, multiply/FMA, load, prefetch, and horizontal-reduction
-  instructions actually emitted;
+- widening/conversion, separate multiply and add, load, and prefetch
+  instructions actually emitted; a horizontal reduction or fused multiply-add
+  is a contract failure for this strict-f32 slice;
 - loop branches, tail handling, and unexpected scalarization;
 - stack-frame size and accumulator spills;
 - alignment assumptions visible in the generated loads;
@@ -760,10 +758,7 @@ only way to inspect a result.
 | Component | Responsibility |
 |---|---|
 | `decodeforge-core` | G0 DFQ8 semantics, reference quantizer/evaluator, identities, fixture gates |
-| `decodeforge-ir` | IR, type/shape/layout model, verifier, text form (future G1) |
-| `decodeforge-quant` | Future G1 target packing and quantization interfaces |
-| `decodeforge-schedule` | fusion, schedule enumeration, legality, cost/ranking, tuner data |
-| `decodeforge-codegen` | Loop IR lowering and scalar/NEON source emission; deferred AVX2 extension |
+| `decodeforge-compiler` | G1 target-independent Region/Loop IR verification, lowering, and deterministic OI4 packing; generated kernels are future work in this crate |
 | `decodeforge-runtime` | cache, artifact validation, guards, dynamic loading |
 | Python package | model transformation, backend registration, FX normalization/partition |
 | native bridge | ATen tensors, output allocation, PyTorch CPU parallel runtime, ABI |

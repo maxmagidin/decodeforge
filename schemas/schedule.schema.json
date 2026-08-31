@@ -7,40 +7,77 @@
   "required": [
     "schema_version",
     "shape",
+    "variant",
     "vector_axis",
     "vector_lanes",
     "n_tile",
     "k_block",
     "k_unroll",
     "accumulators",
+    "reduction_order",
+    "arithmetic",
+    "k_padding",
     "pack",
     "n_tail",
     "target",
     "numeric_mode"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "variant": { "const": "scalar" } }
+      },
+      "then": {
+        "properties": {
+          "vector_lanes": { "const": 1 },
+          "target": { "const": { "triple": "portable", "features": [] } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "variant": { "const": "neon" } }
+      },
+      "then": {
+        "properties": {
+          "vector_lanes": { "const": 4 },
+          "target": { "const": { "triple": "aarch64-apple-darwin", "features": ["neon"] } }
+        }
+      }
+    }
   ],
   "properties": {
     "schema_version": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
     },
     "shape": {
-      "$ref": "urn:decodeforge:schema:common-v1#/$defs/shape"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m", "n", "k"],
+      "properties": {
+        "m": { "type": "integer", "const": 1 },
+        "n": { "type": "integer", "minimum": 1, "maximum": 4294967292 },
+        "k": { "type": "integer", "minimum": 1, "maximum": 4294967264 }
+      }
+    },
+    "variant": {
+      "type": "string",
+      "enum": ["scalar", "neon"]
     },
     "vector_axis": {
       "type": "string",
-      "enum": [
-        "output",
-        "reduction"
-      ]
+      "const": "output"
     },
     "vector_lanes": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 255
+      "enum": [
+        1,
+        4
+      ]
     },
     "n_tile": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 65535
+      "const": 4
     },
     "k_block": {
       "type": "integer",
@@ -48,16 +85,23 @@
     },
     "k_unroll": {
       "type": "integer",
-      "enum": [
-        1,
-        2,
-        4
-      ]
+      "const": 1
     },
     "accumulators": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 255
+      "const": 1
+    },
+    "reduction_order": {
+      "type": "string",
+      "const": "ascending-block-lane"
+    },
+    "arithmetic": {
+      "type": "string",
+      "const": "separate-mul-add"
+    },
+    "k_padding": {
+      "type": "string",
+      "const": "logical-only"
     },
     "pack": {
       "type": "object",
@@ -69,27 +113,17 @@
       "properties": {
         "layout": {
           "type": "string",
-          "enum": [
-            "row-major",
-            "output-interleaved"
-          ]
+          "const": "output-interleaved"
         },
         "alignment": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 256
-        },
-        "metadata": {
-          "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
+          "const": 16
         }
       }
     },
     "n_tail": {
       "type": "string",
-      "enum": [
-        "scalar-cleanup",
-        "padded-panel"
-      ]
+      "const": "scalar-cleanup"
     },
     "prefetch_bytes": {
       "type": [
@@ -100,13 +134,20 @@
       "maximum": 65535
     },
     "target": {
-      "$ref": "urn:decodeforge:schema:common-v1#/$defs/target"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["triple", "features"],
+      "properties": {
+        "triple": { "type": "string" },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
     },
     "numeric_mode": {
       "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
-    },
-    "metadata": {
-      "$ref": "urn:decodeforge:schema:common-v1#/$defs/metadata"
     }
   }
 }
