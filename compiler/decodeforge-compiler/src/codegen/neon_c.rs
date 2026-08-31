@@ -5,6 +5,11 @@
 //! block/lane reduction order.  This keeps the numerical contract identical
 //! to the scalar emitter without asking a compiler to rediscover the layout.
 
+use super::GENERATED_ABI_VERSION_V1;
+use super::c_abi_v1::{
+    AbiV1Spec, render_abi_version_entrypoint, render_artifact_id_entrypoint,
+    render_artifact_id_storage, render_run_v1_entrypoint,
+};
 use crate::ir::{KernelVariant, LoopKernelV1, Q8LinearRegion};
 use crate::pack::{PACK_BLOCK_SIZE, PACK_RECORD_BYTES, PackManifestV1, PackedWeightsV1};
 use crate::{Result, hex_lower, invalid};
@@ -22,6 +27,10 @@ const MODULE_ID_DOMAIN: &[u8] = b"DecodeForge/generated-module/neon-c/v1\0";
 pub struct NeonCModule {
     module_id: String,
     hidden_kernel_symbol: String,
+    /// Frozen logical output size compiled into the helper.
+    n: u32,
+    /// Frozen logical reduction size compiled into the helper.
+    k: u32,
     source: String,
 }
 
@@ -34,6 +43,16 @@ impl NeonCModule {
     }
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Logical output size compiled into this module.
+    pub const fn n(&self) -> u32 {
+        self.n
+    }
+
+    /// Logical reduction size compiled into this module.
+    pub const fn k(&self) -> u32 {
+        self.k
     }
 }
 
@@ -69,6 +88,8 @@ pub fn emit_neon_c(
     Ok(NeonCModule {
         module_id,
         hidden_kernel_symbol,
+        n: region.shape().n(),
+        k: region.shape().k(),
         source,
     })
 }
@@ -91,7 +112,7 @@ fn neon_c_module_id(region: &Q8LinearRegion, kernel: &LoopKernelV1) -> Result<St
     frame(&mut hasher, region.operator().as_bytes());
     frame(&mut hasher, schedule_json.as_bytes());
     frame(&mut hasher, region.numeric_mode().as_bytes());
-    frame(&mut hasher, &1_u32.to_le_bytes());
+    frame(&mut hasher, &GENERATED_ABI_VERSION_V1.to_le_bytes());
     frame(&mut hasher, NEON_C_SOURCE_FORMAT_V1.as_bytes());
     Ok(format!("sha256:{}", hex_lower(&hasher.finalize())))
 }
@@ -152,7 +173,7 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
     let k = shape.k();
     let panels = shape.panels();
     let blocks = shape.blocks();
-    let payload_bytes = shape.payload_bytes()?;
+    let abi = AbiV1Spec::new(module_id, helper, n, k, panels, blocks, PACK_RECORD_BYTES);
     let mut source = String::new();
     source.push_str("/* DecodeForge generated source format: decodeforge_neon_c_v1. */\n");
     source.push_str(
@@ -168,15 +189,14 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
     source.push_str("#pragma STDC FENV_ACCESS ON\n#pragma STDC FP_CONTRACT OFF\n\n");
     source.push_str("_Static_assert(sizeof(float) == 4, \"binary32 required\");\n_Static_assert(FLT_RADIX == 2, \"binary32 radix required\");\n_Static_assert(FLT_MANT_DIG == 24, \"binary32 mantissa required\");\n_Static_assert(FLT_MAX_EXP == 128, \"binary32 exponent required\");\n_Static_assert(FLT_MIN_EXP == -125, \"binary32 exponent required\");\n_Static_assert(FLT_EVAL_METHOD == 0, \"no excess precision required\");\n\n");
     source.push_str("#define DF_PUBLIC_V1 __attribute__((visibility(\"default\")))\n#define DF_HIDDEN_V1 __attribute__((visibility(\"hidden\")))\n#define DF_USED_V1 __attribute__((used))\n#define DF_NOINLINE_V1 __attribute__((noinline))\n\n");
-    source.push_str("static const char df_artifact_id_cstr_v1[] = \"");
-    source.push_str(module_id);
-    source.push_str("\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\n");
+    render_artifact_id_storage(&mut source, &abi);
     source.push_str("DF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int ");
     source.push_str(helper);
     source.push_str("(const float *x, const uint8_t *packed_weight, float *y) {\n");
     source.push_str(&format!("    for (uint32_t panel = 0; panel < UINT32_C({panels}); ++panel) {{\n        const uint32_t row_base = panel * UINT32_C(4);\n        if (row_base + UINT32_C(4) <= UINT32_C({n})) {{\n            float32x4_t accumulator = vdupq_n_f32(0.0f);\n            for (uint32_t block = 0; block < UINT32_C({blocks}); ++block) {{\n                const uint8_t *record = packed_weight + ((size_t)panel * (size_t){blocks} + (size_t)block) * (size_t){PACK_RECORD_BYTES};\n                float32x4_t block_sum = vdupq_n_f32(0.0f);\n                const uint32_t block_start = block * UINT32_C({PACK_BLOCK_SIZE});\n                const uint32_t lane_count = (UINT32_C({k}) - block_start < UINT32_C({PACK_BLOCK_SIZE}) ? UINT32_C({k}) - block_start : UINT32_C({PACK_BLOCK_SIZE}));\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {{\n                    const size_t q_offset = 16u + (size_t)lane * 4u;\n                    const uint64_t q_word = (uint64_t)record[q_offset] | ((uint64_t)record[q_offset + 1u] << 8) | ((uint64_t)record[q_offset + 2u] << 16) | ((uint64_t)record[q_offset + 3u] << 24);\n                    const int8x8_t q8 = vreinterpret_s8_u64(vcreate_u64(q_word));\n                    const int16x8_t q16 = vmovl_s8(q8);\n                    const int32x4_t q32 = vmovl_s16(vget_low_s16(q16));\n                    const float32x4_t qf = vcvtq_f32_s32(q32);\n                    const float32x4_t xv = vdupq_n_f32(x[(size_t)block_start + (size_t)lane]);\n                    block_sum = vaddq_f32(block_sum, vmulq_f32(qf, xv));\n                }}\n                float scales[4];\n                for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {{\n                    const size_t scale_offset = (size_t)output_lane * 4u;\n                    const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                    memcpy(&scales[output_lane], &scale_bits, sizeof(float));\n                }}\n                block_sum = vmulq_f32(block_sum, vld1q_f32(scales));\n                accumulator = vaddq_f32(accumulator, block_sum);\n            }}\n            vst1q_f32(y + row_base, accumulator);\n        }} else {{\n            for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {{\n                const uint32_t row = row_base + output_lane;\n                if (row >= UINT32_C({n})) break;\n                float accumulator = 0.0f;\n                for (uint32_t block = 0; block < UINT32_C({blocks}); ++block) {{\n                    const uint8_t *record = packed_weight + ((size_t)panel * (size_t){blocks} + (size_t)block) * (size_t){PACK_RECORD_BYTES};\n                    const size_t scale_offset = (size_t)output_lane * 4u;\n                    const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                    float scale;\n                    memcpy(&scale, &scale_bits, sizeof(scale));\n                    const uint32_t block_start = block * UINT32_C({PACK_BLOCK_SIZE});\n                    const uint32_t lane_count = (UINT32_C({k}) - block_start < UINT32_C({PACK_BLOCK_SIZE}) ? UINT32_C({k}) - block_start : UINT32_C({PACK_BLOCK_SIZE}));\n                    float block_sum = 0.0f;\n                    for (uint32_t lane = 0; lane < lane_count; ++lane) {{\n                        const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                        const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                        const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                        block_sum = block_sum + product;\n                    }}\n                    block_sum = block_sum * scale;\n                    accumulator = accumulator + block_sum;\n                }}\n                y[row] = accumulator;\n            }}\n        }}\n    }}\n    return 0;\n}}\n\n"));
-    source.push_str("DF_PUBLIC_V1 uint32_t df_abi_version(void) { return DF_GENERATED_ABI_VERSION_V1; }\n\nDF_PUBLIC_V1 const char *df_artifact_id(void) { return df_artifact_id_cstr_v1; }\n\n");
-    source.push_str(&format!("DF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {{\n    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n    if (call->m != UINT32_C(1) || call->n != UINT32_C({n}) || call->k != UINT32_C({k})) return DF_STATUS_SHAPE_V1;\n    if (call->x_stride != UINT32_C({k}) || call->y_stride != UINT32_C({n})) return DF_STATUS_STRIDE_V1;\n    if (call->packed_weight_bytes != UINT64_C({payload_bytes})) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n    fenv_t df_saved_environment;\n    int32_t df_status = DF_STATUS_OK_V1;\n    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    if (fegetround() != FE_TONEAREST) {{ df_status = DF_STATUS_FP_ENVIRONMENT_V1; goto df_restore_environment; }}\n    {{ volatile float df_probe_true_min = FLT_TRUE_MIN; volatile float df_probe_one = 1.0f; volatile float df_probe_min = FLT_MIN; volatile float df_probe_half = 0.5f; if (df_probe_true_min * df_probe_one != FLT_TRUE_MIN || df_probe_min * df_probe_half != 0x1p-127f) {{ df_status = DF_STATUS_FP_ENVIRONMENT_V1; goto df_restore_environment; }} }}\n    for (uint32_t input = 0; input < UINT32_C({k}); ++input) {{ if (!isfinite(x[input])) {{ df_status = DF_STATUS_NONFINITE_INPUT_V1; goto df_restore_environment; }} }}\n    (void){helper}(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C({n}); ++output) {{ if (!isfinite(y[output])) {{ df_status = DF_STATUS_NONFINITE_RESULT_V1; goto df_restore_environment; }} }}\ndf_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}}\n"));
+    render_abi_version_entrypoint(&mut source);
+    render_artifact_id_entrypoint(&mut source);
+    render_run_v1_entrypoint(&mut source, &abi);
     Ok(source)
 }
 
@@ -215,8 +235,10 @@ mod tests {
         );
         assert_eq!(
             hex_lower(&Sha256::digest(first.source().as_bytes())),
-            "760787a2e6b98f1dc36b8568268b6f26d4544a30812b3085d104d34018529689"
+            "6b674d163c736359ef8276617f602ce556e843239927150e9b53b39537128baa"
         );
+        assert_eq!(first.n(), 5);
+        assert_eq!(first.k(), 33);
         assert!(first.source.is_ascii());
         assert!(first.source.ends_with('\n'));
         assert!(!first.source.ends_with("\n\n"));
@@ -233,6 +255,19 @@ mod tests {
         assert!(first.source.contains("vaddq_f32"));
         assert!(first.source.contains("if (row_base + UINT32_C(4)"));
         assert!(first.source.contains("output_lane < UINT32_C(4)"));
+        assert!(
+            first
+                .source
+                .contains("df_probe_true_min_bits != UINT32_C(0x00000001)")
+        );
+        assert!(
+            first
+                .source
+                .contains("df_probe_half_min_bits != UINT32_C(0x00400000)")
+        );
+        assert!(!first.source.contains("df_probe_true_min * df_probe_one !="));
+        assert!(!first.source.contains("df_probe_min * df_probe_half !="));
+        assert!(!first.source.contains("0x1p-127f"));
         assert!(!first.source.contains("vfmaq"));
         assert!(!first.source.contains("vaddvq"));
         assert!(!first.source.contains("CARGO_MANIFEST_DIR"));
@@ -263,6 +298,45 @@ mod tests {
         let changed = emit_neon_c(&changed_region, &changed_kernel, &changed_packed).unwrap();
         assert_eq!(first.module_id(), changed.module_id());
         assert_eq!(first.source(), changed.source());
+
+        let (different_region, different_kernel, different_packed) = sample(5, 34);
+        let different =
+            emit_neon_c(&different_region, &different_kernel, &different_packed).unwrap();
+        assert_ne!(first.module_id(), different.module_id());
+        assert_ne!(first.source(), different.source());
+        assert_eq!(different.n(), 5);
+        assert_eq!(different.k(), 34);
+    }
+
+    #[test]
+    fn every_committed_fixture_emits_for_its_exact_shape() {
+        let documents = decodeforge_core::q8::fixture::generated_documents().unwrap();
+        assert_eq!(documents.len(), 16);
+        for (case_id, bytes) in documents {
+            let fixture = decodeforge_core::q8::fixture::parse_quant_fixture(&bytes).unwrap();
+            let q_bytes = fixture
+                .expected_q_bytes
+                .iter()
+                .map(|value| *value as i8 as u8)
+                .collect();
+            let weights = Q8Weights::try_new(
+                fixture.n,
+                fixture.k,
+                fixture.blocks,
+                q_bytes,
+                fixture.expected_scale_bits,
+            )
+            .unwrap();
+            let packed = PackedWeightsV1::pack(&weights).unwrap();
+            let region = Q8LinearRegion::from_weights(&weights).unwrap();
+            let kernel = LoopKernelV1::new(&region, KernelVariant::Neon).unwrap();
+            let module = emit_neon_c(&region, &kernel, &packed)
+                .unwrap_or_else(|error| panic!("fixture {case_id}: {error}"));
+            assert_eq!(module.n(), fixture.n, "fixture {case_id}");
+            assert_eq!(module.k(), fixture.k, "fixture {case_id}");
+            assert_eq!(module.module_id().len(), 71, "fixture {case_id}");
+            assert_eq!(module.hidden_kernel_symbol().len(), 82, "fixture {case_id}");
+        }
     }
 
     #[test]
