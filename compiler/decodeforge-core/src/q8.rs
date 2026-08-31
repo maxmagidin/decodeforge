@@ -1,10 +1,10 @@
-//! Exact binary32 primitives for `DFQ8_B32_V1`.
+//! Exact binary32 arithmetic and Q8 storage for `DFQ8_B32_V1`.
 //!
 //! The public API intentionally deals in binary32 bit words.  This keeps
 //! signed zeroes and NaN payloads observable and makes the Rust oracle
 //! independent of a tensor library or a host language's floating point
-//! conversions.  This layer supplies host-independent integer/rational
-//! arithmetic; Q8 storage and evaluation are introduced separately.
+//! conversions.  This layer adds immutable validated Q8 storage,
+//! quantization, and dequantization; evaluation is introduced separately.
 
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{One, ToPrimitive, Zero};
@@ -28,6 +28,8 @@ const SIGN_MASK: u32 = 0x8000_0000;
 const EXP_MASK: u32 = 0x7f80_0000;
 const FRAC_MASK: u32 = 0x007f_ffff;
 const POSITIVE_MASK: u32 = 0x7fff_ffff;
+const F32_127_BITS: u32 = 0x42fe_0000;
+const I64_MAX_U64: u64 = i64::MAX as u64;
 
 /// A stable semantic rejection with a machine-readable diagnostic code.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +48,12 @@ impl Q8Error {
             summary,
             context: BTreeMap::new(),
         }
+    }
+
+    fn with(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
+        let value = serde_json::to_value(value).expect("diagnostic context values serialize");
+        self.context.insert(key.into(), value);
+        self
     }
 
     /// Render the closed diagnostic object as canonical JSON.
@@ -89,6 +97,71 @@ fn component_for_code(code: &str) -> &'static str {
     } else {
         "quant"
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Shape {
+    blocks: u32,
+    source_len: usize,
+    q_len: usize,
+    scale_len: usize,
+}
+
+fn checked_len(name: &'static str, left: u64, right: u64) -> Result<usize, Q8Error> {
+    let value = left.checked_mul(right).ok_or_else(|| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", name)
+    })?;
+    // The Python reference deliberately performs this check before result
+    // allocation, even on 64-bit hosts where usize can represent a little
+    // more than the accepted sequence size.
+    if value > I64_MAX_U64 || value > usize::MAX as u64 {
+        return Err(
+            quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", name),
+        );
+    }
+    Ok(value as usize)
+}
+
+fn shape(n: u32, k: u32) -> Result<Shape, Q8Error> {
+    if n == 0 || k == 0 {
+        return Err(
+            quant_error("DFE-QUANT-001", "N and K must both be positive.")
+                .with("n", n)
+                .with("k", k),
+        );
+    }
+    let blocks_u64 = (k as u64).div_ceil(BLOCK_SIZE as u64);
+    let blocks = u32::try_from(blocks_u64).map_err(|_| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", "blocks")
+    })?;
+    let source_len = checked_len("source", n as u64, k as u64)?;
+    let q_lanes = checked_len("q", blocks as u64, BLOCK_SIZE as u64)?;
+    let q_len = checked_len("q", n as u64, q_lanes as u64)?;
+    let scale_len = checked_len("scale", n as u64, blocks as u64)?;
+    Ok(Shape {
+        blocks,
+        source_len,
+        q_len,
+        scale_len,
+    })
+}
+
+fn try_zeroed_u8(length: usize, field: &'static str) -> Result<Vec<u8>, Q8Error> {
+    let mut result = Vec::new();
+    result.try_reserve_exact(length).map_err(|_| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", field)
+    })?;
+    result.resize(length, 0);
+    Ok(result)
+}
+
+fn try_zeroed_u32(length: usize, field: &'static str) -> Result<Vec<u32>, Q8Error> {
+    let mut result = Vec::new();
+    result.try_reserve_exact(length).map_err(|_| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", field)
+    })?;
+    result.resize(length, 0);
+    Ok(result)
 }
 
 /// Whether a bit word encodes a finite binary32 number.
@@ -345,14 +418,315 @@ pub fn f32_from_int(value: i32) -> u32 {
     )
 }
 
+fn round_f32_to_i32(bits: u32) -> i32 {
+    let (sign, numerator, power, is_zero) = finite_components(bits);
+    if is_zero {
+        return 0;
+    }
+    let magnitude = round_scaled(&numerator, &BigUint::one(), power);
+    match magnitude.to_i32() {
+        Some(value) => i32::from(sign) * value,
+        None if sign < 0 => i32::MIN,
+        None => i32::MAX,
+    }
+}
+
+fn ratio_to_q(ratio_bits: u32) -> Result<i16, Q8Error> {
+    if !is_finite_f32_bits(ratio_bits) {
+        if ratio_bits & FRAC_MASK != 0 {
+            return Err(
+                quant_error("DFE-QUANT-010", "A quantization ratio is not finite.")
+                    .with("bits", ratio_bits),
+            );
+        }
+        return Ok(if ratio_bits & SIGN_MASK == 0 {
+            Q_MAX
+        } else {
+            Q_MIN
+        });
+    }
+    let rounded = round_f32_to_i32(ratio_bits);
+    Ok(rounded.clamp(Q_MIN as i32, Q_MAX as i32) as i16)
+}
+
+/// Immutable logical shape and physical Q8/scales storage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Q8Weights {
+    /// Number of output rows.
+    n: u32,
+    /// Number of logical input columns.
+    k: u32,
+    /// Number of physical 32-lane blocks.
+    blocks: u32,
+    /// Row-major `[N][B][32]` two's-complement bytes.
+    q_bytes: Vec<u8>,
+    /// Row-major `[N][B]` binary32 scale words.
+    scale_bits: Vec<u32>,
+}
+
+impl Q8Weights {
+    /// Construct and validate immutable-in-practice Q8 storage.
+    pub fn try_new(
+        n: u32,
+        k: u32,
+        blocks: u32,
+        q_bytes: Vec<u8>,
+        scale_bits: Vec<u32>,
+    ) -> Result<Self, Q8Error> {
+        let shape = shape(n, k)?;
+        if blocks != shape.blocks {
+            return Err(quant_error(
+                "DFE-QUANT-001",
+                "The declared block count does not equal ceil(K/32).",
+            )
+            .with("expected", shape.blocks)
+            .with("actual", blocks));
+        }
+        if q_bytes.len() != shape.q_len || scale_bits.len() != shape.scale_len {
+            return Err(quant_error(
+                "DFE-QUANT-003",
+                "Stored q or scale length does not match the shape.",
+            )
+            .with("expected_q", shape.q_len)
+            .with("actual_q", q_bytes.len())
+            .with("expected_scales", shape.scale_len)
+            .with("actual_scales", scale_bits.len()));
+        }
+        for (index, bits) in scale_bits.iter().copied().enumerate() {
+            if !is_finite_f32_bits(bits) || bits & SIGN_MASK != 0 {
+                return Err(quant_error(
+                    "DFE-QUANT-006",
+                    "A scale must be finite and non-negative.",
+                )
+                .with("index", index)
+                .with("bits", bits));
+            }
+        }
+        for row in 0..n as usize {
+            for block in 0..shape.blocks as usize {
+                let scale = scale_bits[row * shape.blocks as usize + block];
+                let start = (row * shape.blocks as usize + block) * BLOCK_SIZE;
+                for lane in 0..BLOCK_SIZE {
+                    let raw = q_bytes[start + lane];
+                    let q = raw as i16 - if raw >= 128 { 256 } else { 0 };
+                    if !(Q_MIN..=Q_MAX).contains(&q) {
+                        return Err(quant_error(
+                            "DFE-QUANT-007",
+                            "A q byte is outside the signed DFQ8 range.",
+                        )
+                        .with("index", start + lane)
+                        .with("value", q));
+                    }
+                    if block * BLOCK_SIZE + lane >= k as usize && raw != 0 {
+                        return Err(quant_error("DFE-QUANT-007", "A padded q lane is not zero.")
+                            .with("row", row)
+                            .with("block", block)
+                            .with("lane", lane));
+                    }
+                    if scale == 0 && raw != 0 {
+                        return Err(quant_error(
+                            "DFE-QUANT-007",
+                            "A zero-scale block contains a nonzero q lane.",
+                        )
+                        .with("row", row)
+                        .with("block", block));
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            n,
+            k,
+            blocks,
+            q_bytes,
+            scale_bits,
+        })
+    }
+
+    /// Compatibility alias for the physical block count.
+    pub const fn b(&self) -> u32 {
+        self.blocks
+    }
+
+    /// Number of output rows.
+    pub const fn n(&self) -> u32 {
+        self.n
+    }
+
+    /// Number of logical input columns.
+    pub const fn k(&self) -> u32 {
+        self.k
+    }
+
+    /// Number of physical 32-lane blocks.
+    pub const fn blocks(&self) -> u32 {
+        self.blocks
+    }
+
+    /// Raw physical q bytes in row-major order.
+    pub fn q_bytes(&self) -> &[u8] {
+        &self.q_bytes
+    }
+
+    /// Scale words in row-major order.
+    pub fn scale_bits(&self) -> &[u32] {
+        &self.scale_bits
+    }
+
+    /// Signed q value at one physical lane, or `None` for an invalid index.
+    pub fn q_at(&self, row: u32, block: u32, lane: usize) -> Option<i8> {
+        if row >= self.n || block >= self.blocks || lane >= BLOCK_SIZE {
+            return None;
+        }
+        let raw = self.q_bytes
+            [(row as usize * self.blocks as usize + block as usize) * BLOCK_SIZE + lane];
+        Some((raw as i16 - if raw >= 128 { 256 } else { 0 }) as i8)
+    }
+
+    /// Scale word at one block, or `None` for an invalid index.
+    pub fn scale_at(&self, row: u32, block: u32) -> Option<u32> {
+        if row >= self.n || block >= self.blocks {
+            return None;
+        }
+        Some(self.scale_bits[row as usize * self.blocks as usize + block as usize])
+    }
+
+    /// Signed q bytes in row-major physical order.
+    pub fn q_values(&self) -> Vec<i16> {
+        self.q_bytes
+            .iter()
+            .map(|raw| (*raw as i16 - if *raw >= 128 { 256 } else { 0 }) as i8)
+            .map(i16::from)
+            .collect()
+    }
+
+    /// Alias exposing raw q storage without granting mutable access.
+    pub fn raw_q_bytes(&self) -> &[u8] {
+        &self.q_bytes
+    }
+
+    /// Alias exposing scale storage without granting mutable access.
+    pub fn scales(&self) -> &[u32] {
+        &self.scale_bits
+    }
+
+    /// Scale words serialized little-endian.
+    pub fn scale_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.scale_bits.len() * 4);
+        for bits in &self.scale_bits {
+            bytes.extend_from_slice(&bits.to_le_bytes());
+        }
+        bytes
+    }
+}
+
+/// Quantize row-major source binary32 words into DFQ8 storage.
+pub fn quantize_f32_bits(n: u32, k: u32, source_bits: &[u32]) -> Result<Q8Weights, Q8Error> {
+    let shape = shape(n, k)?;
+    if source_bits.len() != shape.source_len {
+        return Err(
+            quant_error("DFE-QUANT-003", "A bit-word sequence has the wrong length.")
+                .with("field", "source_fp32_bits")
+                .with("expected", shape.source_len)
+                .with("actual", source_bits.len()),
+        );
+    }
+    for (index, bits) in source_bits.iter().copied().enumerate() {
+        if !is_finite_f32_bits(bits) {
+            return Err(
+                quant_error("DFE-QUANT-004", "A binary32 value is not finite.")
+                    .with("field", "source_fp32_bits")
+                    .with("index", index)
+                    .with("bits", bits),
+            );
+        }
+    }
+    let mut q = try_zeroed_u8(shape.q_len, "q")?;
+    let mut scales = try_zeroed_u32(shape.scale_len, "scale")?;
+    for row in 0..n as usize {
+        let source_row = &source_bits[row * k as usize..(row + 1) * k as usize];
+        for block in 0..shape.blocks as usize {
+            let first = block * BLOCK_SIZE;
+            let last = (first + BLOCK_SIZE).min(k as usize);
+            let mut amax = 0u32;
+            for bits in &source_row[first..last] {
+                amax = amax.max(*bits & POSITIVE_MASK);
+            }
+            let scale = if amax == 0 {
+                0
+            } else {
+                let scale = f32_div_bits(amax, F32_127_BITS)?;
+                if !is_finite_f32_bits(scale) || scale & SIGN_MASK != 0 {
+                    return Err(quant_error(
+                        "DFE-QUANT-006",
+                        "Quantization produced an invalid scale.",
+                    )
+                    .with("row", row)
+                    .with("block", block)
+                    .with("bits", scale));
+                }
+                scale
+            };
+            scales[row * shape.blocks as usize + block] = scale;
+            if scale == 0 {
+                continue;
+            }
+            let q_start = (row * shape.blocks as usize + block) * BLOCK_SIZE;
+            for lane in 0..last - first {
+                let ratio = f32_div_bits(source_row[first + lane], scale)?;
+                q[q_start + lane] = ratio_to_q(ratio)? as i8 as u8;
+            }
+        }
+    }
+    Q8Weights::try_new(n, k, shape.blocks, q, scales)
+}
+
+/// Dequantize logical row-major weights into binary32 words.
+pub fn dequantize_f32_bits(weights: &Q8Weights) -> Result<Vec<u32>, Q8Error> {
+    let length = (weights.n as usize)
+        .checked_mul(weights.k as usize)
+        .ok_or_else(|| quant_error("DFE-QUANT-002", "Derived storage size overflows."))?;
+    let mut result = Vec::new();
+    result.try_reserve_exact(length).map_err(|_| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", "dequantized")
+    })?;
+    for row in 0..weights.n {
+        for logical_k in 0..weights.k {
+            let (block, lane) = (
+                logical_k / BLOCK_SIZE as u32,
+                (logical_k % BLOCK_SIZE as u32) as usize,
+            );
+            let q = weights.q_at(row, block, lane).ok_or_else(|| {
+                quant_error("DFE-QUANT-007", "A q index is outside the stored layout.")
+            })?;
+            let product = f32_mul_bits(
+                f32_from_int(i32::from(q)),
+                weights.scale_at(row, block).unwrap(),
+            )?;
+            result.push(product);
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn f32_from_ratio(numerator: u32, denominator: u32, negative: bool) -> u32 {
+        assert!(denominator != 0);
+        round_rational_f32(
+            BigUint::from(numerator),
+            BigUint::from(denominator),
+            0,
+            if negative { -1 } else { 1 },
+        )
+    }
+
     #[test]
     fn arithmetic_and_subnormal_boundaries_match_contract() {
-        assert_eq!(f32_div_bits(0x0000_003f, 0x42fe_0000).unwrap(), 0);
-        assert_eq!(f32_div_bits(0x0000_0040, 0x42fe_0000).unwrap(), 1);
+        assert_eq!(f32_div_bits(0x0000_003f, F32_127_BITS).unwrap(), 0);
+        assert_eq!(f32_div_bits(0x0000_0040, F32_127_BITS).unwrap(), 1);
         assert_eq!(f32_mul_bits(0x3f80_0000, 0xbf00_0000).unwrap(), 0xbf00_0000);
         assert_eq!(f32_add_bits(0x3f80_0000, 0x3400_0000).unwrap(), 0x3f80_0001);
     }
@@ -396,5 +770,79 @@ mod tests {
         for (numerator, denominator, expected) in divisions {
             assert_eq!(f32_div_bits(numerator, denominator).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn q_ratio_rounding_handles_half_and_above_half() {
+        // 0.5 ties to the even integer zero, while the next representable
+        // value and 0.75 round away from zero.  Negative ties mirror the same
+        // magnitude rule.
+        assert_eq!(ratio_to_q(0x3f00_0000).unwrap(), 0);
+        assert_eq!(ratio_to_q(0x3f00_0001).unwrap(), 1);
+        assert_eq!(ratio_to_q(0x3f40_0000).unwrap(), 1);
+        assert_eq!(ratio_to_q(0xbf00_0000).unwrap(), 0);
+        assert_eq!(ratio_to_q(0xbf00_0001).unwrap(), -1);
+        assert_eq!(ratio_to_q(0x3fc0_0000).unwrap(), 2);
+        assert_eq!(ratio_to_q(0xbfc0_0000).unwrap(), -2);
+        assert_eq!(ratio_to_q(0x3fc0_0000).unwrap(), 2); // 1.5 ties to even 2
+        assert_eq!(ratio_to_q(0x4020_0000).unwrap(), 2); // 2.5 ties to even 2
+    }
+
+    fn next_down(bits: u32) -> u32 {
+        if bits & SIGN_MASK != 0 {
+            bits + 1
+        } else {
+            bits - 1
+        }
+    }
+
+    fn next_up(bits: u32) -> u32 {
+        if bits & SIGN_MASK != 0 {
+            bits - 1
+        } else {
+            bits + 1
+        }
+    }
+
+    #[test]
+    fn every_interior_half_integer_and_adjacent_f32_values_round_correctly() {
+        // There is one midpoint between each neighboring integer in the
+        // interior of [-127, 127].  Test the exact tie and both neighboring
+        // binary32 values against the Python oracle's RNE result.
+        for lower in -127i32..=126 {
+            let midpoint = if lower < 0 {
+                f32_from_ratio((-2 * lower - 1) as u32, 2, true)
+            } else {
+                f32_from_ratio((2 * lower + 1) as u32, 2, false)
+            };
+            let expected_tie = if lower % 2 == 0 { lower } else { lower + 1 };
+            assert_eq!(ratio_to_q(next_down(midpoint)).unwrap(), lower as i16);
+            assert_eq!(ratio_to_q(midpoint).unwrap(), expected_tie as i16);
+            assert_eq!(ratio_to_q(next_up(midpoint)).unwrap(), (lower + 1) as i16);
+        }
+    }
+
+    #[test]
+    fn q_layout_and_rounding_are_deterministic() {
+        let weights = quantize_f32_bits(1, 33, &[0x3f80_0000; 33]).unwrap();
+        assert_eq!(weights.blocks, 2);
+        assert_eq!(weights.q_at(0, 1, 0), Some(127));
+        assert!(weights.q_bytes[33..64].iter().all(|value| *value == 0));
+        let ties = quantize_f32_bits(
+            1,
+            8,
+            &[
+                0x42fe_0000,
+                0xc2fe_0000,
+                0x4020_0000,
+                0x4060_0000,
+                0xc020_0000,
+                0xc060_0000,
+                0,
+                0x8000_0000,
+            ],
+        )
+        .unwrap();
+        assert_eq!(ties.q_values()[2..6], [2, 4, -2, -4]);
     }
 }
