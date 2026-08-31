@@ -350,6 +350,7 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use std::os::unix::fs::symlink;
         use std::process::Command;
 
         #[test]
@@ -383,6 +384,18 @@ mod platform {
             );
         }
 
+        #[test]
+        fn private_copy_identity_check_rejects_path_substitution() {
+            let copy = PrivateDylibCopy::new(&[0_u8; 64]).unwrap();
+            let displaced = copy.directory.path().join("displaced.dylib");
+            fs::rename(&copy.path, &displaced).unwrap();
+            symlink(&displaced, &copy.path).unwrap();
+
+            assert_eq!(
+                verify_path_identity(&copy.path, &copy.file, copy.device, copy.inode, copy.length,),
+                Err(RuntimeError::PrivateCopyFailed)
+            );
+        }
         #[test]
         fn dyld_key_detection_is_prefix_exact_and_value_independent() {
             assert!(is_dyld_environment_key(OsStr::new("DYLD_LIBRARY_PATH")));
