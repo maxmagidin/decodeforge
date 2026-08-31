@@ -1,6 +1,7 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
-	capture-g0-evidence verify-g0-repository verify-g0-result
+	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
+	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -63,6 +64,42 @@ test-native:
 	$(UV) run --frozen python scripts/check_headers.py
 	$(CARGO) test --locked --all-features -p decodeforge-runtime -p decodeforge-compiler
 	$(CARGO) test --locked --all-features --release -p decodeforge-runtime -p decodeforge-compiler
+
+test-g1-tools:
+	$(CARGO) test --locked -p decodeforge-compiler --bin decodeforge-g1-bench
+	$(UV) run --frozen --extra g1-benchmark python -m pytest -q \
+		python/tests/test_prepare_g1_inputs.py python/tests/test_g1_evidence.py
+
+prepare-g1-input:
+	@test -n "$(WEIGHTS)" || { echo "prepare-g1-input: WEIGHTS=<full model.safetensors> is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "prepare-g1-input: OUTPUT=<one-tensor safetensors> is required" >&2; exit 2; }
+	$(UV) run --frozen --extra g1-benchmark python scripts/prepare_g1_inputs.py \
+		--weights "$(WEIGHTS)" --output "$(OUTPUT)"
+
+prepare-g1-cases:
+	@test -n "$(PREPARED_WEIGHTS)" || { echo "prepare-g1-cases: PREPARED_WEIGHTS=<one-tensor safetensors> is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "prepare-g1-cases: OUTPUT=<case directory> is required" >&2; exit 2; }
+	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-g1-bench -- prepare-cases \
+		--weights "$(PREPARED_WEIGHTS)" --output "$(OUTPUT)"
+
+run-g1-session:
+	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
+		echo "run-g1-session: requires an Apple-arm64 macOS host" >&2; exit 2; }
+	@test -n "$(CASES)" || { echo "run-g1-session: CASES=<case manifest> is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "run-g1-session: OUTPUT=<session JSON> is required" >&2; exit 2; }
+	@test -n "$(SESSION_ID)" || { echo "run-g1-session: SESSION_ID=<unique ID> is required" >&2; exit 2; }
+	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-g1-bench -- run-session --cases "$(CASES)" \
+		--output "$(OUTPUT)" --session-id "$(SESSION_ID)"
+
+analyze-g1:
+	@test -n "$(SESSION_1)" -a -n "$(SESSION_2)" -a -n "$(SESSION_3)" || { \
+		echo "analyze-g1: SESSION_1, SESSION_2, and SESSION_3 are required" >&2; exit 2; }
+	@test -n "$(OUTPUT_DIR)" || { echo "analyze-g1: OUTPUT_DIR=<directory> is required" >&2; exit 2; }
+	$(UV) run --frozen --extra g1-benchmark python scripts/analyze_g1_benchmark.py \
+		--sessions "$(SESSION_1)" "$(SESSION_2)" "$(SESSION_3)" \
+		--output-dir "$(OUTPUT_DIR)"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
