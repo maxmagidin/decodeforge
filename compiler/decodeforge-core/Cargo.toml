@@ -8,5 +8,11 @@ description = "Target-independent DecodeForge compiler contract."
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+num-bigint = "=0.5.1"
+num-traits = "=0.2.19"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+
 [lints.rust]
 unsafe_code = "forbid"
