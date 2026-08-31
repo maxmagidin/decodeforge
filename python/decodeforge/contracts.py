@@ -434,6 +434,81 @@ def _validate_fixture_manifest(instance: JsonObject) -> list[Diagnostic]:
     return diagnostics
 
 
+def _validate_schedule(instance: JsonObject) -> list[Diagnostic]:
+    """Mirror the Loop IR's checked cross-field OI4 size arithmetic.
+
+    JSON Schema closes each field's domain, but draft 2020-12 has no integer
+    multiplication keyword. The semantic contract therefore rejects shapes
+    whose combined panel/block payload cannot be represented by the frozen
+    64-bit size calculation.
+    """
+
+    integer_fields: tuple[tuple[str, ...], ...] = (
+        ("schema_version",),
+        ("shape", "m"),
+        ("shape", "n"),
+        ("shape", "k"),
+        ("vector_lanes",),
+        ("n_tile",),
+        ("k_block",),
+        ("k_unroll",),
+        ("accumulators",),
+        ("pack", "alignment"),
+    )
+    for path in integer_fields:
+        value: Any = instance
+        for component in path:
+            if not isinstance(value, dict) or component not in value:
+                break
+            value = value[component]
+        else:
+            if type(value) is not int:
+                return [
+                    _diagnostic(
+                        "DFE-SCHEMA-006",
+                        "schema",
+                        "A Loop IR integer must use a canonical JSON integer token.",
+                        {"path": list(path)},
+                    )
+                ]
+    prefetch = instance.get("prefetch_bytes")
+    if prefetch is not None and type(prefetch) is not int:
+        return [
+            _diagnostic(
+                "DFE-SCHEMA-006",
+                "schema",
+                "A Loop IR integer must use a canonical JSON integer token.",
+                {"path": ["prefetch_bytes"]},
+            )
+        ]
+
+    shape = instance.get("shape")
+    if not isinstance(shape, dict):
+        return []
+    n = shape.get("n")
+    k = shape.get("k")
+    if (
+        not isinstance(n, int)
+        or isinstance(n, bool)
+        or not isinstance(k, int)
+        or isinstance(k, bool)
+    ):
+        return []
+    panels = (n + 3) // 4
+    blocks = (k + 31) // 32
+    payload_bytes = panels * blocks * 144
+    if payload_bytes > (1 << 64) - 1:
+        return [
+            _diagnostic(
+                "DFE-SCHED-007",
+                "schedule",
+                "The derived OI4 payload size overflows the 64-bit contract.",
+                {"n": n, "k": k},
+            )
+        ]
+    return []
+
+
 def validate_data(
     instance: JsonObject, schema_name: str, *, document_name: str | None = None
 ) -> list[Diagnostic]:
@@ -482,6 +557,8 @@ def validate_data(
         return _validate_quant_fixture(instance)
     if schema_name == "fixture-manifest":
         return _validate_fixture_manifest(instance)
+    if schema_name == "schedule":
+        return _validate_schedule(instance)
     return diagnostics
 
 
@@ -543,6 +620,28 @@ def _check_code_registry() -> list[str]:
     return errors
 
 
+def _check_compiler_source_codes() -> list[str]:
+    """Ensure every diagnostic literal emitted by the compiler is catalogued."""
+
+    source_dir = ROOT / "compiler" / "decodeforge-compiler" / "src"
+    if not source_dir.is_dir():
+        return []
+    registry = load_json(SCHEMA_DIR / "diagnostic-codes.json")
+    registered = {
+        entry.get("code")
+        for entry in registry.get("codes", [])
+        if isinstance(entry, dict)
+    }
+    literals: set[str] = set()
+    pattern = re.compile(r'"(DFE-[A-Z0-9]+-[0-9]{3})"')
+    for path in source_dir.rglob("*.rs"):
+        literals.update(pattern.findall(path.read_text(encoding="utf-8")))
+    return [
+        f"compiler diagnostic literal is missing from registry: {code}"
+        for code in sorted(literals - registered)
+    ]
+
+
 def check_all() -> list[str]:
     """Validate the catalog, registry, and every directed example offline."""
 
@@ -554,6 +653,7 @@ def check_all() -> list[str]:
         return errors
 
     errors.extend(_check_code_registry())
+    errors.extend(_check_compiler_source_codes())
     for schema_name in sorted(SCHEMA_FILES):
         directory = SCHEMA_DIR / "examples" / schema_name
         examples = sorted(directory.glob("*.json"))

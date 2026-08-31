@@ -21,6 +21,20 @@ objects reject unknown properties. Quant fixtures and their manifests are
 closed vocabularies with no free-form metadata; their fixed format and numeric
 mode are `DFQ8_B32_V1` and `strict_f32_v1`.
 
+The schedule schema currently describes the fixed G1 Loop IR contract: explicit
+scalar or NEON target variants with exact lane/target pairings, a fixed `N` tile
+of four, one ascending logical `K` accumulator, separate rounded multiply/add
+steps, output-interleaved OI4 packing with 16-byte alignment, logical-only `K`
+padding, and scalar cleanup for an `N` tail. Generated kernels and performance
+evidence are not part of this contract yet. Because JSON Schema cannot express
+the product of panel and block counts, the offline semantic validator also
+rejects any combined shape whose `P*B*144` payload size exceeds the frozen
+64-bit representation. That validator also requires integer-valued Loop IR
+fields to use JSON integer tokens, matching Rust's canonical serde boundary.
+
+The `portable` scalar target is the architecture-neutral baseline for the
+project's supported 64-bit little-endian hosts; it is not a 32-bit target.
+
 Run the complete offline contract check with:
 
 ```sh

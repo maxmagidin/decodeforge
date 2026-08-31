@@ -62,8 +62,9 @@ G0 is complete. Independent in-memory Rust generation plus read-only
 verification matches the frozen Python fixture bytes, and the checked-in Apple
 M4 correctness bundle records source revision `cc838b0`, toolchain,
 CPU/features, numeric mode, and artifact hashes. CI runs both portable and Git
-provenance verification over that bundle. The bundle makes no native-kernel or
-performance claim; G1 is now the active gate.
+provenance verification over that bundle. The G1 contract/IR and shared OI4
+packing slice is implemented. The next active work is generated scalar/NEON
+code and its correctness/disassembly evidence; no performance claim exists yet.
 
 ### Stop condition
 
@@ -106,7 +107,8 @@ and stable. This section is not a G0–G3 acceptance dependency.
 
 ### Build
 
-- Add AVX2/FMA widening/conversion and FP32 accumulation lowering.
+- Add AVX2 widening/conversion and FP32 accumulation lowering with separate
+  multiply and add for the strict-f32 contract (no FMA).
 - Add x86 feature detection and negative feature-guard tests.
 - Re-run the same fixture and real-shape suites on the Ryzen 5 3600 only after
   the M4 path is complete.

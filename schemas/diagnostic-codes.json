@@ -39,6 +39,12 @@
     {"code": "DFE-QUANT-009", "name": "comparator-domain", "component": "quant", "required_context": []},
     {"code": "DFE-QUANT-010", "name": "nonfinite-evaluation", "component": "quant", "required_context": []},
     {"code": "DFE-QUANT-011", "name": "mismatch", "component": "quant", "required_context": []},
-    {"code": "DFE-QUANT-012", "name": "unsafe-fixture-artifact", "component": "quant", "required_context": []}
+    {"code": "DFE-QUANT-012", "name": "unsafe-fixture-artifact", "component": "quant", "required_context": []},
+    {"code": "DFE-COMP-001", "name": "invalid-compiler-input", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-002", "name": "compiler-size-overflow", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-003", "name": "compiler-layout-length", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-004", "name": "compiler-identity-mismatch", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-005", "name": "compiler-payload-integrity", "component": "compiler", "required_context": []},
+    {"code": "DFE-COMP-006", "name": "compiler-invariant-violation", "component": "compiler", "required_context": []}
   ]
 }

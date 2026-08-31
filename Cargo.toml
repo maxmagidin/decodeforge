@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "compiler/decodeforge-core",
+    "compiler/decodeforge-compiler",
     "compiler/decodeforge-runtime",
     "compiler/decodeforge-cli",
 ]

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "shape": {"m": 1, "n": 4, "k": 32},
+  "variant": "neon",
   "vector_axis": "output",
   "vector_lanes": 4,
   "n_tile": 4,

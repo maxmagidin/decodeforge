@@ -57,9 +57,14 @@ The required development host is:
 
 - Apple M4 MacBook Air: ARM64 NEON, 10 physical cores.
 
+The compiler/runtime contract targets 64-bit little-endian hosts. In schedule
+records, `portable` means the scalar baseline across those supported hosts; it
+does not claim 32-bit or big-endian portability.
+
 The deferred portability host is:
 
-- Ryzen 5 3600: x86-64, AVX2/FMA, 6 cores / 12 threads.
+- Ryzen 5 3600: x86-64 AVX2 hardware, 6 cores / 12 threads (the strict-f32
+  compiler contract still requires separate multiply and add).
 - Radeon RX 5700 XT: intentionally out of scope.
 
 The initial weight-only format keeps activations in FP32, so its vector kernels
@@ -150,10 +155,7 @@ surface area. The dashboard is presentation polish and comes after G3.
 ```text
 compiler/                 Rust workspace
   decodeforge-core/       G0 Q8 semantic oracle, identities, fixture gates
-  decodeforge-ir/         typed ops, verifier, canonical text form (future G1)
-  decodeforge-quant/      future G1 target packing and quantization interfaces
-  decodeforge-schedule/   legal schedule space, cost data, tuner
-  decodeforge-codegen/    scalar, NEON, AVX2 C/intrinsics emission
+  decodeforge-compiler/   G1 contract/IR, lowering, and deterministic OI4 packing
   decodeforge-runtime/    module cache, guards, loading, ABI
 python/decodeforge/       torch.compile backend, FX partitioning, test harness
 native/torch_bridge/      thin ATen/PyTorch pointer/shape bridge
@@ -209,10 +211,10 @@ schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
 [Apple M4 correctness bundle](results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds those checks to source revision `cc838b0`, the exact toolchain and host
 profile, and hashed artifacts; CI verifies both its portable contents and Git
-provenance. It deliberately makes no native-kernel or performance claim. G1 is
-now the active gate: Region/Loop lowering, one shared OI4 pack, and generated
-strict scalar/NEON kernels on the M4. See [the normative Q8
-contract](docs/Q8_FORMAT_V1.md).
+provenance. It deliberately makes no native-kernel or performance claim. The
+first G1 slice now implements verified Region/Loop lowering and one shared OI4
+pack. Generated scalar/NEON kernels, disassembly, benchmarks, and performance
+claims do not yet exist. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
 Rust independently generates the expected fixture documents in memory, and
 `q8 verify` only reads and verifies an existing fixture tree. Run the read-only

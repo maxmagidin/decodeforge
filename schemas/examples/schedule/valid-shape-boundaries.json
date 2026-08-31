@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "shape": {"m": 1, "n": 4294967292, "k": 1},
+  "variant": "scalar", "vector_axis": "output", "vector_lanes": 1, "n_tile": 4,
+  "k_block": 32, "k_unroll": 1, "accumulators": 1,
+  "reduction_order": "ascending-block-lane", "arithmetic": "separate-mul-add",
+  "k_padding": "logical-only", "pack": {"layout": "output-interleaved", "alignment": 16},
+  "n_tail": "scalar-cleanup", "target": {"triple": "portable", "features": []},
+  "numeric_mode": "strict_f32_v1"
+}
