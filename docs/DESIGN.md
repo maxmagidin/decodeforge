@@ -523,8 +523,12 @@ The canonical call descriptor and function declarations live in
 code and ABI checks must include that header rather than copying a pseudocode
 struct into this document.
 
-All sizes, strides, pointers, alignment, target features, and artifact versions
-are guarded before entry. Generated inner loops can rely on proven assumptions.
+The first scalar generated-module contract, including its frozen status values,
+72-byte artifact-ID C string, exact `M=1` shape/stride rules, OI4 byte count,
+16-byte packed-data alignment, deterministic guard order, and whole-output
+failure behavior, is specified in [ADR 0003](decisions/0003-scalar-generated-abi.md).
+Generated inner loops can rely on the assumptions proven by those guards; the
+ABI does not prove buffer extents, aliasing, or packed-weight identity.
 
 ### 11.3 Compilation
 
