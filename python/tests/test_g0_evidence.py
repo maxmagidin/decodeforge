@@ -95,6 +95,26 @@ def test_canonical_g0_json_rejects_floats_and_non_ascii() -> None:
     )
 
 
+def test_canonical_g0_json_bounds_depth_and_reused_containers() -> None:
+    deep: dict[str, object] = {}
+    cursor = deep
+    for _ in range(64):
+        child: dict[str, object] = {}
+        cursor["child"] = child
+        cursor = child
+    with pytest.raises(ValueError):
+        canonical_json_bytes(deep)
+
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+    with pytest.raises(ValueError):
+        canonical_json_bytes(cyclic)
+
+    shared: list[object] = []
+    with pytest.raises(ValueError):
+        canonical_json_bytes({"left": shared, "right": shared})
+
+
 def test_g0_reproduction_is_closed_and_ordered() -> None:
     reproduction = g0_reproduction(REVISION)
     assert reproduction["cwd"] == "."

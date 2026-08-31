@@ -1,5 +1,6 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
-	validate-contracts verify-bundle fixture-check rust-fixture-check
+	validate-contracts verify-bundle fixture-check rust-fixture-check \
+	capture-g0-evidence verify-g0-repository
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -71,3 +72,13 @@ fixture-check:
 rust-fixture-check:
 	$(CARGO) run --quiet --offline --locked -p decodeforge -- q8 verify
 	$(CARGO) run --quiet --offline --locked --release -p decodeforge -- q8 verify
+
+capture-g0-evidence:
+	@test -n "$(OUTPUT)" || { echo "capture-g0-evidence: OUTPUT=<path> is required" >&2; exit 2; }
+	@test -n "$(CHECKOUT)" || { echo "capture-g0-evidence: CHECKOUT=<path> is required" >&2; exit 2; }
+	UV_OFFLINE=true CARGO_NET_OFFLINE=true $(UV) run --frozen python scripts/capture_g0_evidence.py --output "$(OUTPUT)" --checkout "$(CHECKOUT)"
+
+verify-g0-repository:
+	@test -n "$(BUNDLE)" || { echo "verify-g0-repository: BUNDLE=<path> is required" >&2; exit 2; }
+	@test -n "$(CHECKOUT)" || { echo "verify-g0-repository: CHECKOUT=<path> is required" >&2; exit 2; }
+	UV_OFFLINE=true $(UV) run --frozen python scripts/verify_g0_repository.py --bundle "$(BUNDLE)" --checkout "$(CHECKOUT)"

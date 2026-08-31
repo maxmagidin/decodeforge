@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import NoReturn
 
+import decodeforge.contracts as contracts
+import pytest
 from decodeforge.contracts import (
     ROOT,
     check_all,
@@ -17,6 +20,16 @@ from decodeforge.contracts import (
 
 EXAMPLES = ROOT / "schemas" / "examples"
 BUNDLES = ROOT / "tests" / "fixtures" / "bundles"
+
+
+def _deep_not_applicable() -> list[object]:
+    values: list[object] = []
+    for _ in range(2):
+        value: object = "assembly"
+        for _ in range(900):
+            value = [value]
+        values.append(value)
+    return values
 
 
 def test_catalog_and_directed_examples_are_consistent() -> None:
@@ -63,6 +76,33 @@ def test_empty_foundation_bundle_has_exact_missing_artifacts() -> None:
 
 def test_minimal_foundation_bundle_is_accepted() -> None:
     assert verify_bundle(BUNDLES / "foundation-valid") == []
+
+
+def test_deep_foundation_manifest_is_a_stable_parse_diagnostic(tmp_path: Path) -> None:
+    bundle = tmp_path / "foundation-deep"
+    manifest_path = bundle / "run-manifest.json"
+    bundle.mkdir()
+    payload = json.dumps(
+        {"milestone": "foundation", "not_applicable": _deep_not_applicable()},
+        separators=(",", ":"),
+    )
+    assert len(payload.encode("ascii")) == 3_667
+    manifest_path.write_text(payload, encoding="ascii")
+
+    diagnostics = verify_bundle(bundle)
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-001"]
+    assert diagnostics[0]["context"] == {"path": ["run-manifest.json"]}
+
+
+def test_registry_recursion_error_is_not_masked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _trusted_registry_failure() -> NoReturn:
+        raise RecursionError("trusted schema registry")
+
+    monkeypatch.setattr(contracts, "_schema_registry", _trusted_registry_failure)
+    with pytest.raises(RecursionError, match="trusted schema registry"):
+        verify_bundle(BUNDLES / "foundation-valid")
 
 
 def test_bundle_hash_mutation_is_rejected(tmp_path: Path) -> None:
