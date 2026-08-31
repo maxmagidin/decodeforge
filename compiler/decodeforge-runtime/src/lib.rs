@@ -1,15 +1,38 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
-//! Version constants for the future versioned runtime C boundary.
+//! Ownership and safe invocation for verified generated modules.
 //!
 //! The runtime intentionally has no dependency on `decodeforge-core`.  The
-//! runtime loader and its eventual C API must remain independent of compiler
-//! and code-generation policy.
+//! loader remains independent of compiler and code-generation policy.  Its
+//! one unsafe construction boundary is reserved for a compiler-owned,
+//! locally built and audited module; ordinary callers receive only the safe
+//! [`ScalarExecutableV1`] owner.
+
+mod abi;
+
+// Every dynamic-loader operation, symbol type assertion, raw pointer read,
+// and generated C call is confined to this module.
+#[allow(unsafe_code)]
+mod dylib;
+
+mod error;
+mod scalar;
+
+#[doc(hidden)]
+pub use dylib::load_trusted_apple_scalar_v1;
+pub use error::RuntimeError;
+pub use scalar::ScalarExecutableV1;
+
+pub use abi::ScalarStatusV1;
+
+/// Result type returned by checked runtime operations.
+pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 /// Version of this crate's runtime package.
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Version of the future runtime C ABI reservation.
+/// Version of the generated-module C ABI.
 pub const RUNTIME_ABI_VERSION: u32 = 1;
 
 #[cfg(test)]
