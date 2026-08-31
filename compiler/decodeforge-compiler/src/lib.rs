@@ -6,9 +6,8 @@
 //! The target-independent contract is an `M=1` Q8 linear region, a verified
 //! fixed loop kernel, and the shared `DFQ8_B32_OI4_V1` payload. The backends
 //! deterministically emit strict scalar C and a fixed output-vector ARM64
-//! NEON C schedule. The scalar path can build, audit, and safely bind a private
-//! Apple ARM64 dylib through the isolated runtime crate; native NEON execution
-//! remains the next stage.
+//! NEON C schedule. Both paths can build, audit, and safely bind a private
+//! Apple ARM64 dylib through the isolated runtime crate.
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("decodeforge-compiler requires a 64-bit target");
@@ -31,9 +30,12 @@ pub use codegen::{
 };
 
 pub use native::{
-    APPLE_SCALAR_CLANG_FLAGS, AppleScalarDylib, AppleScalarExecutableV1, AppleToolchainProvenance,
-    MAX_SCALAR_DYLIB_BYTES, ScalarDylibAuditReport, ScalarRuntimeError, ScalarStatusV1,
-    build_apple_scalar_dylib, load_apple_scalar_v1,
+    APPLE_NEON_CLANG_FLAGS, APPLE_SCALAR_CLANG_FLAGS, AppleNeonDylib, AppleNeonExecutableV1,
+    AppleScalarDylib, AppleScalarExecutableV1, AppleToolchainProvenance, GeneratedRuntimeError,
+    GeneratedStatusV1, MAX_APPLE_GENERATED_DYLIB_BYTES, MAX_NEON_DYLIB_BYTES,
+    MAX_SCALAR_DYLIB_BYTES, NeonDylibAuditReport, ScalarDylibAuditReport, ScalarRuntimeError,
+    ScalarStatusV1, build_apple_neon_dylib, build_apple_scalar_dylib, load_apple_neon_v1,
+    load_apple_scalar_v1,
 };
 
 pub use ir::{

@@ -4,15 +4,14 @@
 variable, preserves the declared numeric contract, and produces a reproducible
 result bundle.
 
-**Current status:** G0 is complete: Python and Rust references and fixtures
-agree, and the checked-in [Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
-records their source, toolchain, host profile, numeric mode, and artifact
-hashes. The G1 contract/IR, OI4 packing, generated-module ABI, deterministic
-strict scalar C, and exact Apple-arm64 artifact construction/audit are
-implemented. The checked runtime executes the full frozen corpus bit-exactly
-through the native scalar ABI, but no timing or performance claim is made. The
-next gate is the Apple M4 ARM64 NEON path; Ryzen/AVX2
-measurements remain deferred to an optional G4 portability extension.
+**Current status:** G0 provenance is complete, and the fixed G1 scalar/NEON
+native-correctness checkpoint passes all 16 frozen fixtures bit-exactly on the
+M4. Dedicated `N=4` and `N=5` tests establish vector-only and
+vector-plus-tail execution, and retained disassembly verifies signed widening,
+conversion, lane-form activation multiply, separate scale/accumulator
+arithmetic, raw vector scale loading, and guarded stores. This is benchmark
+eligibility evidence only: no native timing sample, speedup, or completed-G1
+claim exists yet. Ryzen/AVX2 remains deferred to optional G4 work.
 
 ## Claim classes
 
@@ -140,6 +139,12 @@ Every selected kernel retains disassembly. The audit identifies:
 - unroll structure, tail branches, and horizontal reduction;
 - stack frame and spills;
 - unexpected scalarization or extra shuffles.
+
+Reports distinguish generated intrinsics from Clang-selected instructions. In
+the fixed checkpoint, direct packed-Q materialization produces the audited
+`sshll.8h -> sshll.4s -> scvtf.4s` sequence, while four scale words become one
+raw 16-byte load and bit reinterpretation. Reports describe those selected
+instructions rather than claiming that source intrinsics executed directly.
 
 At least one winning-versus-losing comparison on the M4 connects a schedule
 choice to both emitted code and a measurement. If AVX2 is selected for G4, the

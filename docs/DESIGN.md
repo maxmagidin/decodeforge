@@ -1,16 +1,13 @@
 # DecodeForge design and technical specification
 
-**Status:** G0 is complete: independent Python and Rust scalar oracles, closed
-fixture schemas, and the deterministic corpus pass parity gates. The checked-in
-[Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
-binds that result to its source, toolchain, host profile, numeric mode, and
-artifact hashes without making a native-kernel or performance claim. The G1
-contract/IR, shared OI4 packing, frozen generated-module ABI, deterministic
-strict scalar C, and exact Apple-arm64 artifact construction/audit are
-implemented. Checked scalar loading and bit-exact execution of all 16 frozen
-fixtures now exist, and the fixed strict output-vector NEON C emitter is
-implemented. Native NEON assembly/execution and performance evidence do not
-yet exist. The normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+**Status:** G0 is complete with checked-in provenance evidence. The fixed G1
+native-correctness checkpoint now includes verified lowering, shared OI4
+packing, deterministic scalar and strict output-vector NEON source, audited
+Apple-arm64 scalar/NEON dylibs, and checked loading through the frozen ABI.
+Both backends execute all 16 frozen fixtures bit-exactly; dedicated `N=4` and
+`N=5` cases verify vector-only and vector-plus-tail machine code. No timing,
+speedup, real-shape benchmark, or completed-G1 claim exists yet. The normative
+contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
@@ -237,8 +234,8 @@ Contract:
 - scales are FP32 initially;
 - activations and accumulation are FP32;
 - block length is exactly 32; a padded tail is zero-filled and guarded;
-- rounding rule is specified; Python/Rust scalar parity is complete, while
-  native parity remains future G1 work;
+- rounding is specified; Python, Rust scalar, generated scalar, and generated
+  NEON results have bit-exact parity across the 16 frozen fixtures on the M4;
 - NaN/Inf source weights are rejected by default;
 - source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
   separately from generated-kernel comparator correctness.
@@ -502,19 +499,27 @@ for output lane n:
         out    = RN32(out + scaled)
 ```
 
-The required NEON group widens through int16/int32 and converts four lanes at a
-time, but the fixed G1 Loop IR retains one `K` partial accumulator and the same
-logical block/lane recurrence. It does not use FMA, horizontal reduction,
-reassociation, or a second `K` accumulator. A vector variant maps four output
-lanes to one panel record; scalar cleanup handles an `N` tail. The assembly
-audit for future generated kernels must confirm this contract.
+The generated C expresses signed widening with `vmovl_s8` and `vmovl_s16`,
+followed by four-lane conversion. Directly materializing the packed Q word lets
+Apple Clang select the corresponding `sshll.8h -> sshll.4s -> scvtf.4s`
+sequence rather than a longer byte-reconstruction/sign-extension path. The
+four little-endian scale words are loaded as one raw `uint8x16_t` and
+bit-reinterpreted as `float32x4_t`; this preserves their bits without a
+temporary stack array or stack-canary failure path.
+
+The fixed G1 Loop IR retains one `K` partial accumulator and the same logical
+block/lane recurrence. It does not use FMA, horizontal reduction,
+reassociation, or a second `K` accumulator. Four output lanes map to one panel
+record; a 128-bit store completes a full tile and scalar cleanup handles an
+`N` tail. The assembly audit confirms that contract in the selected machine
+instructions rather than assuming it from the intrinsic names.
 
 The deferred AVX2 design is a target extension only. If selected for G4 it must
 implement the same separate RN32 multiply/add recurrence; a fused multiply-add
 is not a strict-f32 schedule and is not implied by this G1 contract.
 
 The packer stores `K` tails in full 32-lane records with zero q bytes, but the
-logical evaluator and any future kernel must never evaluate padded lanes.
+logical evaluator and every generated kernel must never evaluate padded lanes.
 Logical `K`, padded `K`, and byte bounds remain in the manifest and guards.
 `N` tails use scalar cleanup and never permit a store beyond the logical output
 tensor.
@@ -547,12 +552,14 @@ optimization without fast-math. Target modes:
 macOS emits a `.dylib`; Linux emits a `.so`. Generated source is retained in a
 debug artifact and hash-addressed in normal caches.
 
-The implemented Apple scalar checkpoint is narrower than that eventual target
-matrix. It invokes Apple Clang through `/usr/bin/xcrun` with a closed argument
-and environment policy, a pinned SDK/developer directory, strict floating-point
-flags, disabled auto-vectorization, explicit exports, and fatal linker warnings.
-The bounded runner contains the complete tool process group and drains output
-without detached threads.
+The implemented Apple native checkpoint has backend-specific fixed Clang/link
+policies for scalar and NEON modules. Both invoke Apple Clang through
+`/usr/bin/xcrun` with a closed argument and environment policy, a pinned
+SDK/developer directory, strict floating-point flags, disabled
+auto-vectorization, explicit exports, and fatal linker warnings. Accepted NEON
+work must originate from explicit generated intrinsics and survive the
+shape-aware machine-code audit. The bounded runner contains the complete tool
+process group and drains output without detached threads.
 
 Compiler output is opened once with no-follow/nonblocking semantics and must be
 one bounded, owner-controlled regular file. Those bytes are copied into a
@@ -564,20 +571,21 @@ rpath surface. `llvm-objdump` audits that retained copy; the held descriptor,
 path identity, metadata, and bytes are revalidated after disassembly. The
 artifact owner exposes immutable bytes and hashes, not a public mutable path.
 
-The checked runtime consumes that unforgeable compiler owner and revalidates
-the region, schedule, pack, shape, and module identity before entering its one
-documented unsafe boundary. It copies the exact audited image into another
-owner-only directory, closes the writable descriptor, retains a read-only
-descriptor, and loads through `/dev/fd` so pathname replacement cannot redirect
-the image. Because dyld applies launch-time search overrides even to paths
-containing a slash, the runtime rejects every visible `DYLD_*` variable before
-loading. It uses eager, local, first-image symbol lookup and rechecks pathname
-identity, mode `0400`, and every byte after `dlopen`. Its ABI version,
-fixed-length module ID, input extent, pack extent/alignment, status, and
-complete finite output are checked. A failed call exposes no partial output.
-Tests execute all 16 frozen fixtures bit-exactly, reject cross-shape binding,
-and exercise two distinct modules interleaved to catch image or symbol
-aliasing.
+The backend-neutral checked runtime consumes either unforgeable compiler owner
+and revalidates the region, schedule, pack, shape, and module identity before
+entering its documented unsafe boundary. It copies the exact audited image
+into another owner-only directory, closes the writable descriptor, retains a
+read-only descriptor, and loads through `/dev/fd` so pathname replacement
+cannot redirect the image. Because dyld applies launch-time search overrides
+even to paths containing a slash, the runtime rejects every visible `DYLD_*`
+variable before loading. It uses eager, local, first-image symbol lookup and
+rechecks pathname identity, mode `0400`, and every byte after `dlopen`. Its ABI
+version, fixed-length module ID, input extent, pack extent/alignment, status,
+and complete finite output are checked. A failed call exposes no partial
+output. Tests execute both backends across all 16 frozen fixtures bit-exactly.
+Dedicated `N=4` and `N=5` builds prove vector-only and vector-plus-tail paths,
+while mismatch, ownership, floating-point-environment, and interleaved-module
+tests exercise the guarded loading boundary.
 
 The safe compiler entrypoint assumes an ordinary safe process: no hostile
 same-UID actor changes the retained inode in place, and no C or unsafe code
@@ -609,6 +617,22 @@ the intended loop. Each selected schedule's evidence bundle includes an
 - stack-frame size and accumulator spills;
 - alignment assumptions visible in the generated loads;
 - code size and compiler version/flags.
+
+For the fixed G1 NEON checkpoint, the audit is shape-aware: `N=4` requires a
+complete vector path with no scalar floating-point recurrence, while `N=5`
+also requires a scalar tail and store. It checks register-connected signed
+widening, conversion, lane-form activation multiply, separate scale/accumulator
+arithmetic, and a 128-bit output store. It rejects fused, dot-product, matrix,
+or horizontal arithmetic; calls; indirect or out-of-range branches; malformed
+returns; and unexpected scalarization. These checks establish code-shape
+correctness, not performance.
+
+The audit does not attempt to reconstruct full general-purpose-register pointer
+provenance from arbitrary AArch64. The exact verified generated source, closed
+compiler invocation, and retained byte-identical snapshot establish the packed
+address boundary. Within that boundary, the audit requires the vector load to
+dominate its scale multiply and rejects any intervening use or redefinition of
+the loaded SIMD register, including secondary destinations of paired loads.
 
 At least one rejected or losing M4 schedule is audited far enough to connect a
 concrete machine-code difference—such as a spill, extra shuffle, or larger tail—
@@ -804,7 +828,7 @@ only way to inspect a result.
 | Component | Responsibility |
 |---|---|
 | `decodeforge-core` | G0 DFQ8 semantics, reference quantizer/evaluator, identities, fixture gates |
-| `decodeforge-compiler` | G1 Region/Loop verification, lowering, deterministic OI4 packing, and scalar/NEON code generation |
+| `decodeforge-compiler` | G1 verification, lowering, OI4 packing, scalar/NEON source generation, Apple artifact construction, and shape-aware disassembly audit |
 | `decodeforge-runtime` | cache, artifact validation, guards, dynamic loading |
 | Python package | model transformation, backend registration, FX normalization/partition |
 | native bridge | ATen tensors, output allocation, PyTorch CPU parallel runtime, ABI |

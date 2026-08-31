@@ -5,11 +5,15 @@
 //! validation; they are never executed directly.
 
 use super::{
-    APPLE_SCALAR_CLANG_FLAGS, AppleScalarDylib, AppleToolchainProvenance, MAX_SCALAR_DYLIB_BYTES,
+    APPLE_NEON_CLANG_FLAGS, APPLE_SCALAR_CLANG_FLAGS, AppleNeonDylib, AppleScalarDylib,
+    AppleToolchainProvenance, MAX_APPLE_GENERATED_DYLIB_BYTES,
 };
-use crate::native::audit::audit_scalar_helper_disassembly;
-use crate::native::macho::audit_scalar_macho;
-use crate::{MAX_SCALAR_C_SOURCE_BYTES, Result, ScalarCModule, hex_lower, invalid};
+use crate::native::audit::{audit_neon_helper_disassembly, audit_scalar_helper_disassembly};
+use crate::native::macho::{audit_neon_macho, audit_scalar_macho};
+use crate::{
+    MAX_NEON_C_SOURCE_BYTES, MAX_SCALAR_C_SOURCE_BYTES, NeonCModule, Result, ScalarCModule,
+    hex_lower, invalid,
+};
 use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl, open};
 use rustix::process::geteuid;
 use sha2::{Digest, Sha256};
@@ -35,7 +39,8 @@ const FIXED_PATH: &str = "/usr/bin:/bin";
 const FIXED_LOCALE: &str = "C";
 const SOURCE_FILE: &str = "src/module.c";
 const ABI_HEADER_FILE: &str = "include/decodeforge/abi_v1.h";
-const DYLIB_FILE: &str = "out/decodeforge_scalar_v1.dylib";
+const SCALAR_DYLIB_FILE: &str = "out/decodeforge_scalar_v1.dylib";
+const NEON_DYLIB_FILE: &str = "out/decodeforge_neon_v1.dylib";
 const TEMP_SUBDIRECTORY: &str = "tmp";
 const ABI_V1_HEADER: &str = include_str!("../../../../include/decodeforge/abi_v1.h");
 
@@ -165,22 +170,136 @@ struct SecureDylibSnapshot {
 /// Mach-O output. The public wrapper has already rejected unsupported hosts.
 pub(crate) fn build_apple_scalar_dylib(module: &ScalarCModule) -> Result<AppleScalarDylib> {
     verify_scalar_module(module)?;
+    let (common, audit_report) = build_apple_generated_dylib(
+        AppleBuildSpec {
+            backend_name: "scalar",
+            build_prefix: "decodeforge-scalar-build-",
+            artifact_prefix: "decodeforge-scalar-artifact-",
+            dylib_file: SCALAR_DYLIB_FILE,
+            flags: APPLE_SCALAR_CLANG_FLAGS,
+            module_id: module.module_id(),
+            hidden_symbol: module.hidden_kernel_symbol(),
+            source: module.source(),
+        },
+        audit_scalar_macho,
+        |disassembly| {
+            audit_scalar_helper_disassembly(
+                module.hidden_kernel_symbol(),
+                disassembly,
+                module.k() > 1,
+            )
+        },
+    )?;
 
-    let build_directory = private_tempdir("decodeforge-scalar-build-")?;
+    Ok(AppleScalarDylib {
+        _dylib_file: common.dylib_file,
+        _temp_dir: common.temp_dir,
+        module_id: common.module_id,
+        source_hash: common.source_hash,
+        abi_header_hash: common.abi_header_hash,
+        dylib_hash: common.dylib_hash,
+        dylib_bytes: common.dylib_bytes,
+        toolchain: common.toolchain,
+        flags: common.flags,
+        disassembly: common.disassembly,
+        audit_report,
+        dynamic_exports: common.dynamic_exports,
+    })
+}
+
+/// Build the fixed strict NEON source and audit its actual Mach-O output.
+pub(crate) fn build_apple_neon_dylib(module: &NeonCModule) -> Result<AppleNeonDylib> {
+    verify_neon_module(module)?;
+    let (common, audit_report) = build_apple_generated_dylib(
+        AppleBuildSpec {
+            backend_name: "NEON",
+            build_prefix: "decodeforge-neon-build-",
+            artifact_prefix: "decodeforge-neon-artifact-",
+            dylib_file: NEON_DYLIB_FILE,
+            flags: APPLE_NEON_CLANG_FLAGS,
+            module_id: module.module_id(),
+            hidden_symbol: module.hidden_kernel_symbol(),
+            source: module.source(),
+        },
+        audit_neon_macho,
+        |disassembly| {
+            audit_neon_helper_disassembly(
+                module.hidden_kernel_symbol(),
+                disassembly,
+                module.n(),
+                module.k(),
+            )
+        },
+    )?;
+
+    Ok(AppleNeonDylib {
+        _dylib_file: common.dylib_file,
+        _temp_dir: common.temp_dir,
+        module_id: common.module_id,
+        source_hash: common.source_hash,
+        abi_header_hash: common.abi_header_hash,
+        dylib_hash: common.dylib_hash,
+        dylib_bytes: common.dylib_bytes,
+        toolchain: common.toolchain,
+        flags: common.flags,
+        disassembly: common.disassembly,
+        audit_report,
+        dynamic_exports: common.dynamic_exports,
+    })
+}
+
+struct AppleBuildSpec<'a> {
+    backend_name: &'static str,
+    build_prefix: &'static str,
+    artifact_prefix: &'static str,
+    dylib_file: &'static str,
+    flags: &'static [&'static str],
+    module_id: &'a str,
+    hidden_symbol: &'a str,
+    source: &'a str,
+}
+
+struct CommonAppleDylib {
+    dylib_file: File,
+    temp_dir: tempfile::TempDir,
+    module_id: String,
+    source_hash: String,
+    abi_header_hash: String,
+    dylib_hash: String,
+    dylib_bytes: Vec<u8>,
+    toolchain: AppleToolchainProvenance,
+    flags: Vec<String>,
+    disassembly: String,
+    dynamic_exports: Vec<String>,
+}
+
+fn build_apple_generated_dylib<Report>(
+    spec: AppleBuildSpec<'_>,
+    audit_macho: fn(&[u8], &str) -> Result<Vec<String>>,
+    audit_disassembly: impl FnOnce(&str) -> Result<Report>,
+) -> Result<(CommonAppleDylib, Report)> {
+    let build_directory = private_tempdir(spec.build_prefix)?;
     let build_root = build_directory.path();
-    write_fixed_build_inputs(build_root, module)?;
+    write_fixed_build_inputs(build_root, spec.source)?;
 
     let toolchain = discover_toolchain(build_root)?;
-    let flags = APPLE_SCALAR_CLANG_FLAGS
+    let flags = spec
+        .flags
         .iter()
         .map(|flag| (*flag).to_owned())
         .collect::<Vec<_>>();
-    compile_dylib(build_root, &toolchain, &flags)?;
+    compile_dylib(
+        build_root,
+        &toolchain,
+        &flags,
+        spec.dylib_file,
+        spec.backend_name,
+    )?;
 
-    let compiler_output = secure_dylib_snapshot(&build_root.join(DYLIB_FILE))?;
-    let retained_directory = private_tempdir("decodeforge-scalar-artifact-")?;
+    let compiler_output = secure_dylib_snapshot(&build_root.join(spec.dylib_file))?;
+    let retained_directory = private_tempdir(spec.artifact_prefix)?;
     prepare_artifact_directory(retained_directory.path())?;
-    let dylib_path = retained_directory.path().join(DYLIB_FILE);
+    let dylib_path = retained_directory.path().join(spec.dylib_file);
     write_private_dylib(&dylib_path, &compiler_output.bytes)?;
     let mut retained = secure_dylib_snapshot(&dylib_path)?;
     if retained.bytes != compiler_output.bytes {
@@ -189,34 +308,33 @@ pub(crate) fn build_apple_scalar_dylib(module: &ScalarCModule) -> Result<AppleSc
             "private audit copy differs from the compiler output snapshot.",
         ));
     }
-    let dynamic_exports = audit_scalar_macho(&retained.bytes, module.hidden_kernel_symbol())?;
+    let dynamic_exports = audit_macho(&retained.bytes, spec.hidden_symbol)?;
     let disassembly = disassemble_helper(
         retained_directory.path(),
         &toolchain,
-        module.hidden_kernel_symbol(),
+        spec.hidden_symbol,
+        spec.dylib_file,
+        spec.backend_name,
     )?;
-    let audit_report = audit_scalar_helper_disassembly(
-        module.hidden_kernel_symbol(),
-        &disassembly,
-        module.k() > 1,
-    )?;
+    let audit_report = audit_disassembly(&disassembly)?;
     revalidate_retained_snapshot(&mut retained, &dylib_path)?;
-    let dylib_hash = sha256_identity(&retained.bytes);
 
-    Ok(AppleScalarDylib {
-        _dylib_file: retained.file,
-        _temp_dir: retained_directory,
-        module_id: module.module_id().to_owned(),
-        source_hash: sha256_identity(module.source().as_bytes()),
-        abi_header_hash: sha256_identity(ABI_V1_HEADER.as_bytes()),
-        dylib_hash,
-        dylib_bytes: retained.bytes,
-        toolchain: toolchain.provenance,
-        flags,
-        disassembly,
+    Ok((
+        CommonAppleDylib {
+            dylib_file: retained.file,
+            temp_dir: retained_directory,
+            module_id: spec.module_id.to_owned(),
+            source_hash: sha256_identity(spec.source.as_bytes()),
+            abi_header_hash: sha256_identity(ABI_V1_HEADER.as_bytes()),
+            dylib_hash: sha256_identity(&retained.bytes),
+            dylib_bytes: retained.bytes,
+            toolchain: toolchain.provenance,
+            flags,
+            disassembly,
+            dynamic_exports,
+        },
         audit_report,
-        dynamic_exports,
-    })
+    ))
 }
 
 fn verify_scalar_module(module: &ScalarCModule) -> Result<()> {
@@ -259,6 +377,51 @@ fn verify_scalar_module(module: &ScalarCModule) -> Result<()> {
         return Err(invalid(
             "DFE-NATIVE-002",
             "scalar C module source does not contain its hidden helper symbol.",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_neon_module(module: &NeonCModule) -> Result<()> {
+    let module_id = module.module_id();
+    let Some(hash) = module_id.strip_prefix("sha256:") else {
+        return Err(invalid(
+            "DFE-NATIVE-002",
+            "NEON C module identity is not a SHA-256 identity.",
+        ));
+    };
+    if hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(invalid(
+            "DFE-NATIVE-002",
+            "NEON C module identity is not a lowercase SHA-256 identity.",
+        ));
+    }
+    let expected_symbol = format!("df_kernel_neon_v1_{hash}");
+    if module.hidden_kernel_symbol() != expected_symbol {
+        return Err(invalid(
+            "DFE-NATIVE-002",
+            "NEON C module hidden helper symbol does not match its identity.",
+        ));
+    }
+    let source = module.source();
+    if source.len() > MAX_NEON_C_SOURCE_BYTES
+        || !source.is_ascii()
+        || !source.ends_with('\n')
+        || source.ends_with("\n\n")
+    {
+        return Err(invalid(
+            "DFE-NATIVE-002",
+            "NEON C module source violates the bounded source contract.",
+        ));
+    }
+    if !source.contains(module.hidden_kernel_symbol()) {
+        return Err(invalid(
+            "DFE-NATIVE-002",
+            "NEON C module source does not contain its hidden helper symbol.",
         ));
     }
     Ok(())
@@ -324,7 +487,7 @@ fn write_create_new(path: &Path, bytes: &[u8], mode: u32, summary: &'static str)
     Ok(file)
 }
 
-fn write_fixed_build_inputs(build_root: &Path, module: &ScalarCModule) -> Result<()> {
+fn write_fixed_build_inputs(build_root: &Path, source: &str) -> Result<()> {
     for relative in [
         "src",
         "include",
@@ -336,7 +499,7 @@ fn write_fixed_build_inputs(build_root: &Path, module: &ScalarCModule) -> Result
     }
     drop(write_create_new(
         &build_root.join(SOURCE_FILE),
-        module.source().as_bytes(),
+        source.as_bytes(),
         0o600,
         "unable to create the generated C source privately.",
     )?);
@@ -355,7 +518,7 @@ fn prepare_artifact_directory(root: &Path) -> Result<()> {
 }
 
 fn write_private_dylib(path: &Path, bytes: &[u8]) -> Result<()> {
-    if bytes.is_empty() || bytes.len() > MAX_SCALAR_DYLIB_BYTES {
+    if bytes.is_empty() || bytes.len() > MAX_APPLE_GENERATED_DYLIB_BYTES {
         return Err(invalid(
             "DFE-NATIVE-005",
             "compiler output violates the fixed dylib byte bound.",
@@ -375,7 +538,7 @@ fn write_private_dylib(path: &Path, bytes: &[u8]) -> Result<()> {
     })?;
     let mut readback = Vec::with_capacity(bytes.len());
     (&mut file)
-        .take((MAX_SCALAR_DYLIB_BYTES + 1) as u64)
+        .take((MAX_APPLE_GENERATED_DYLIB_BYTES + 1) as u64)
         .read_to_end(&mut readback)
         .map_err(|_| {
             invalid(
@@ -576,17 +739,19 @@ fn compile_dylib(
     build_root: &Path,
     toolchain: &DiscoveredToolchain,
     flags: &[String],
+    dylib_file: &str,
+    backend_name: &str,
 ) -> Result<()> {
     let mut arguments = Vec::with_capacity(1 + flags.len() + 5);
     arguments.push("clang".to_owned());
     arguments.extend(flags.iter().cloned());
     arguments.extend(
-        ["-I", "include", "-o", DYLIB_FILE, SOURCE_FILE]
+        ["-I", "include", "-o", dylib_file, SOURCE_FILE]
             .into_iter()
             .map(str::to_owned),
     );
     let output = successful_xcrun(
-        "compiling generated scalar C",
+        &format!("compiling generated {backend_name} C"),
         &arguments_as_strs(&arguments),
         XcrunEnvironment::compile(build_root, &toolchain.sdk_path, &toolchain.developer_dir),
         COMPILE_LIMITS,
@@ -603,6 +768,8 @@ fn disassemble_helper(
     build_root: &Path,
     toolchain: &DiscoveredToolchain,
     hidden_symbol: &str,
+    dylib_file: &str,
+    backend_name: &str,
 ) -> Result<String> {
     let mach_o_symbol = format!("_{hidden_symbol}");
     let arguments = [
@@ -612,10 +779,10 @@ fn disassemble_helper(
         "--no-show-raw-insn",
         "--dis-symname",
         mach_o_symbol.as_str(),
-        DYLIB_FILE,
+        dylib_file,
     ];
     let output = successful_xcrun(
-        "auditing generated scalar helper disassembly",
+        &format!("auditing generated {backend_name} helper disassembly"),
         &arguments,
         XcrunEnvironment::with_toolchain(build_root, &toolchain.sdk_path, &toolchain.developer_dir),
         AUDIT_LIMITS,
@@ -644,11 +811,11 @@ fn secure_dylib_snapshot(path: &Path) -> Result<SecureDylibSnapshot> {
 
     let mut bytes = Vec::with_capacity(
         usize::try_from(identity.length)
-            .unwrap_or(MAX_SCALAR_DYLIB_BYTES)
-            .min(MAX_SCALAR_DYLIB_BYTES),
+            .unwrap_or(MAX_APPLE_GENERATED_DYLIB_BYTES)
+            .min(MAX_APPLE_GENERATED_DYLIB_BYTES),
     );
     (&mut file)
-        .take((MAX_SCALAR_DYLIB_BYTES + 1) as u64)
+        .take((MAX_APPLE_GENERATED_DYLIB_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| invalid("DFE-NATIVE-005", "unable to read generated dylib snapshot."))?;
     let after = file.metadata().map_err(|_| {
@@ -657,7 +824,7 @@ fn secure_dylib_snapshot(path: &Path) -> Result<SecureDylibSnapshot> {
             "generated dylib metadata became unavailable.",
         )
     })?;
-    if bytes.len() > MAX_SCALAR_DYLIB_BYTES
+    if bytes.len() > MAX_APPLE_GENERATED_DYLIB_BYTES
         || bytes.len() as u64 != identity.length
         || FileIdentity::from_metadata(&after) != identity
     {
@@ -685,7 +852,7 @@ fn validate_dylib_metadata(metadata: &fs::Metadata) -> Result<()> {
         || metadata.nlink() != 1
         || metadata.uid() != geteuid().as_raw()
         || metadata.len() == 0
-        || metadata.len() > MAX_SCALAR_DYLIB_BYTES as u64
+        || metadata.len() > MAX_APPLE_GENERATED_DYLIB_BYTES as u64
     {
         return Err(invalid(
             "DFE-NATIVE-005",
@@ -720,7 +887,7 @@ fn revalidate_retained_snapshot(snapshot: &mut SecureDylibSnapshot, path: &Path)
         .map_err(|_| invalid("DFE-NATIVE-005", "unable to rewind retained dylib."))?;
     let mut bytes = Vec::with_capacity(snapshot.bytes.len());
     (&mut snapshot.file)
-        .take((MAX_SCALAR_DYLIB_BYTES + 1) as u64)
+        .take((MAX_APPLE_GENERATED_DYLIB_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| invalid("DFE-NATIVE-005", "unable to re-read retained dylib."))?;
     let metadata = snapshot.file.metadata().map_err(|_| {
@@ -1370,8 +1537,14 @@ DF_TEST_EXPORT int32_t df_run_v1(void) { return decodeforge_intentionally_missin
             .iter()
             .map(|flag| (*flag).to_owned())
             .collect::<Vec<_>>();
-        let error = compile_dylib(directory.path(), &toolchain, &flags)
-            .expect_err("the fixed link mode must reject unresolved symbols by default");
+        let error = compile_dylib(
+            directory.path(),
+            &toolchain,
+            &flags,
+            SCALAR_DYLIB_FILE,
+            "scalar",
+        )
+        .expect_err("the fixed link mode must reject unresolved symbols by default");
         assert_eq!(error.code(), "DFE-NATIVE-004");
     }
 
@@ -1425,7 +1598,7 @@ DF_TEST_EXPORT int32_t df_run_v1(void) { return decodeforge_intentionally_missin
     fn private_artifact_copy_is_exact_and_owner_only() {
         let directory = private_tempdir("decodeforge-artifact-test-").unwrap();
         prepare_artifact_directory(directory.path()).unwrap();
-        let path = directory.path().join(DYLIB_FILE);
+        let path = directory.path().join(SCALAR_DYLIB_FILE);
         write_private_dylib(&path, b"fixed dylib bytes").unwrap();
         let mut snapshot = secure_dylib_snapshot(&path).unwrap();
         assert_eq!(snapshot.bytes, b"fixed dylib bytes");
@@ -1444,7 +1617,7 @@ DF_TEST_EXPORT int32_t df_run_v1(void) { return decodeforge_intentionally_missin
     fn retained_snapshot_rejects_path_replacement() {
         let directory = private_tempdir("decodeforge-replacement-test-").unwrap();
         prepare_artifact_directory(directory.path()).unwrap();
-        let path = directory.path().join(DYLIB_FILE);
+        let path = directory.path().join(SCALAR_DYLIB_FILE);
         write_private_dylib(&path, b"original dylib bytes").unwrap();
         let mut snapshot = secure_dylib_snapshot(&path).unwrap();
 

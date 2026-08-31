@@ -1,15 +1,15 @@
-//! Safe scalar module ownership, aligned packing, and invocation.
+//! Safe generated-module ownership, aligned packing, and invocation.
 
 use crate::abi::DfCallV1;
-use crate::dylib::LoadedScalarDylib;
-use crate::{Result, RuntimeError, ScalarStatusV1};
+use crate::dylib::LoadedGeneratedDylib;
+use crate::{GeneratedStatusV1, Result, RuntimeError};
 use std::mem::{align_of, size_of};
 
 const OUTPUT_TILE: u64 = 4;
 const BLOCK_SIZE: u64 = 32;
 const RECORD_BYTES: u64 = 144;
 const PACK_ALIGNMENT: usize = 16;
-const MAX_SCALAR_DYLIB_BYTES: usize = 8 * 1024 * 1024;
+const MAX_GENERATED_DYLIB_BYTES: usize = 8 * 1024 * 1024;
 const QUIET_NAN_BITS: u32 = 0x7fc0_0000;
 
 #[repr(align(16))]
@@ -120,9 +120,12 @@ impl ValidatedLoadSpec {
     }
 }
 
-/// Owner of one loaded scalar code module and one exact aligned weight pack.
-pub struct ScalarExecutableV1 {
-    module: LoadedScalarDylib,
+/// Owner of one loaded generated code module and one exact aligned weight pack.
+///
+/// This owner is backend-neutral: scalar and NEON modules share the same
+/// frozen ABI, private aligned pack, checked invocation, and output policy.
+pub struct GeneratedExecutableV1 {
+    module: LoadedGeneratedDylib,
     pack: AlignedPack,
     module_id: String,
     packed_identity: String,
@@ -131,9 +134,9 @@ pub struct ScalarExecutableV1 {
     packed_weight_bytes: u64,
 }
 
-impl ScalarExecutableV1 {
+impl GeneratedExecutableV1 {
     pub(super) fn from_trusted_parts(
-        module: LoadedScalarDylib,
+        module: LoadedGeneratedDylib,
         pack: AlignedPack,
         spec: ValidatedLoadSpec,
     ) -> Self {
@@ -194,11 +197,16 @@ impl ScalarExecutableV1 {
     }
 }
 
+/// Source-compatible scalar spelling of [`GeneratedExecutableV1`].
+///
+/// This is a direct re-export, not a second owner or execution implementation.
+pub use GeneratedExecutableV1 as ScalarExecutableV1;
+
 fn finish_output(raw_status: i32, output: Vec<f32>) -> Result<Vec<f32>> {
-    if raw_status != ScalarStatusV1::Ok.as_i32() {
+    if raw_status != GeneratedStatusV1::Ok.as_i32() {
         drop(output);
-        return match ScalarStatusV1::from_i32(raw_status) {
-            Some(ScalarStatusV1::Ok) => unreachable!("nonzero status decoded as success"),
+        return match GeneratedStatusV1::from_i32(raw_status) {
+            Some(GeneratedStatusV1::Ok) => unreachable!("nonzero status decoded as success"),
             Some(status) => Err(RuntimeError::KernelStatus(status)),
             None => Err(RuntimeError::UnknownKernelStatus(raw_status)),
         };
@@ -231,7 +239,7 @@ fn expected_payload_bytes(n: u32, k: u32) -> Result<usize> {
 }
 
 fn validate_mach_o_header(bytes: &[u8]) -> Result<()> {
-    if bytes.is_empty() || bytes.len() > MAX_SCALAR_DYLIB_BYTES {
+    if bytes.is_empty() || bytes.len() > MAX_GENERATED_DYLIB_BYTES {
         return Err(RuntimeError::InvalidLoadContract {
             field: "dylib length",
         });

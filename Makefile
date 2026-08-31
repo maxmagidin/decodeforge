@@ -58,7 +58,11 @@ check-pytorch-pin:
 	$(UV) run --frozen --extra pytorch-cpu python -c 'import platform, torch; assert torch.__version__.split("+")[0] == "2.13.0"; print(f"pytorch-pin: ok (torch={torch.__version__}, host={platform.system()}:{platform.machine()})")'
 
 test-native:
+	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
+		echo "test-native: requires an Apple-arm64 macOS host" >&2; exit 2; }
 	$(UV) run --frozen python scripts/check_headers.py
+	$(CARGO) test --locked --all-features -p decodeforge-runtime -p decodeforge-compiler
+	$(CARGO) test --locked --all-features --release -p decodeforge-runtime -p decodeforge-compiler
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all

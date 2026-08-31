@@ -6,10 +6,10 @@ use std::mem::{offset_of, size_of};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) const ARTIFACT_ID_CSTR_BYTES_V1: usize = 72;
 
-/// Frozen results returned by `df_run_v1`.
+/// Frozen results returned by any generated module's `df_run_v1` entrypoint.
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ScalarStatusV1 {
+pub enum GeneratedStatusV1 {
     Ok = 0,
     NullArgument = 1,
     AbiVersion = 2,
@@ -25,7 +25,7 @@ pub enum ScalarStatusV1 {
     NonFiniteResult = 12,
 }
 
-impl ScalarStatusV1 {
+impl GeneratedStatusV1 {
     /// Decode one frozen C status value.
     pub const fn from_i32(value: i32) -> Option<Self> {
         match value {
@@ -51,6 +51,13 @@ impl ScalarStatusV1 {
         self as i32
     }
 }
+
+/// Source-compatible scalar spelling of [`GeneratedStatusV1`].
+///
+/// Scalar and NEON modules implement the same frozen generated-module ABI;
+/// this alias keeps existing scalar callers source compatible without
+/// introducing a second status contract.
+pub use GeneratedStatusV1 as ScalarStatusV1;
 
 /// Rust spelling of `df_call_v1` from `include/decodeforge/abi_v1.h`.
 #[repr(C)]
@@ -104,11 +111,11 @@ mod tests {
     #[test]
     fn every_frozen_status_round_trips() {
         for raw in 0..=12 {
-            let status = ScalarStatusV1::from_i32(raw).expect("frozen status");
+            let status = GeneratedStatusV1::from_i32(raw).expect("frozen status");
             assert_eq!(status.as_i32(), raw);
         }
-        assert_eq!(ScalarStatusV1::from_i32(-1), None);
-        assert_eq!(ScalarStatusV1::from_i32(13), None);
+        assert_eq!(GeneratedStatusV1::from_i32(-1), None);
+        assert_eq!(GeneratedStatusV1::from_i32(13), None);
     }
 
     #[test]

@@ -10,10 +10,25 @@ use object::{
 
 const REQUIRED_EXPORTS: [&[u8]; 3] = [b"_df_abi_version", b"_df_artifact_id", b"_df_run_v1"];
 const REQUIRED_LIBRARY: &[u8] = b"/usr/lib/libSystem.B.dylib";
-const REQUIRED_DYLIB_ID: &[u8] = b"@rpath/decodeforge_scalar_v1.dylib";
+const SCALAR_DYLIB_ID: &[u8] = b"@rpath/decodeforge_scalar_v1.dylib";
+const NEON_DYLIB_ID: &[u8] = b"@rpath/decodeforge_neon_v1.dylib";
 
 /// Validate one thin Apple ARM64 dylib and return normalized public exports.
 pub(crate) fn audit_scalar_macho(bytes: &[u8], hidden_helper: &str) -> Result<Vec<String>> {
+    audit_macho(bytes, hidden_helper, SCALAR_DYLIB_ID, "scalar")
+}
+
+/// Validate one thin Apple ARM64 NEON dylib and return normalized public exports.
+pub(crate) fn audit_neon_macho(bytes: &[u8], hidden_helper: &str) -> Result<Vec<String>> {
+    audit_macho(bytes, hidden_helper, NEON_DYLIB_ID, "NEON")
+}
+
+fn audit_macho(
+    bytes: &[u8],
+    hidden_helper: &str,
+    required_dylib_id: &[u8],
+    helper_kind: &str,
+) -> Result<Vec<String>> {
     if FileKind::parse(bytes).ok() != Some(FileKind::MachO64) {
         return Err(audit_error(
             "native artifact is not one thin 64-bit Mach-O image.",
@@ -72,7 +87,7 @@ pub(crate) fn audit_scalar_macho(bytes: &[u8], hidden_helper: &str) -> Result<Ve
             let name = command
                 .string(endian, dylib.dylib.name)
                 .map_err(|_| audit_error("native artifact dylib identity is malformed."))?;
-            if name != REQUIRED_DYLIB_ID {
+            if name != required_dylib_id {
                 return Err(audit_error(
                     "native artifact does not use the fixed dylib identity.",
                 ));
@@ -224,9 +239,9 @@ pub(crate) fn audit_scalar_macho(bytes: &[u8], hidden_helper: &str) -> Result<Ve
                 .is_some_and(|section| section.kind() == SectionKind::Text)
     });
     if helpers.next().is_none() || helpers.next().is_some() {
-        return Err(audit_error(
-            "native artifact does not contain exactly one local scalar text helper.",
-        ));
+        return Err(audit_error(format!(
+            "native artifact does not contain exactly one local {helper_kind} text helper."
+        )));
     }
 
     Ok(exports
@@ -240,7 +255,7 @@ pub(crate) fn audit_scalar_macho(bytes: &[u8], hidden_helper: &str) -> Result<Ve
         .collect())
 }
 
-fn audit_error(summary: &'static str) -> crate::CompilerError {
+fn audit_error(summary: impl Into<String>) -> crate::CompilerError {
     invalid("DFE-NATIVE-006", summary)
 }
 
@@ -255,5 +270,13 @@ mod tests {
                 .expect_err("malformed bytes must be rejected");
             assert_eq!(error.code(), "DFE-NATIVE-006");
         }
+    }
+
+    #[test]
+    fn both_backend_wrappers_reject_non_macho_bytes() {
+        let scalar = audit_scalar_macho(b"bad", "df_kernel_scalar_v1_test").unwrap_err();
+        let neon = audit_neon_macho(b"bad", "df_kernel_neon_v1_test").unwrap_err();
+        assert_eq!(scalar.code(), "DFE-NATIVE-006");
+        assert_eq!(neon.code(), "DFE-NATIVE-006");
     }
 }
