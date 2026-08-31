@@ -1,8 +1,9 @@
 # G0 evidence contract V1
 
-G0 remains **open**. This document specifies evidence machinery and test
-fixtures only; DecodeForge has not checked in a real G0 results bundle or made
-a native-kernel, performance, or completion claim.
+G0 is **complete**. The canonical Apple M4 correctness result is checked in at
+[`results/g0/apple-m4-primary/sha256-311053f5...79d86`](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md).
+It closes the semantics/provenance gate and makes no native-kernel or
+performance claim.
 
 ## Correctness-bundle identity
 

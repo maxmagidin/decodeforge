@@ -1,12 +1,11 @@
 # DecodeForge design and technical specification
 
-**Status:** The first G0 semantic-parity checkpoint is complete: independent
-Python and Rust scalar oracles, closed fixture schemas, and the deterministic
-corpus pass parity gates. G0 remains open until a checked-in provenance and
-evidence bundle records the documented seed/input, source revision, toolchain,
-CPU/features, numeric mode, and artifact hashes. No G1 work is unlocked. The
-normative contract is
-[Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+**Status:** G0 is complete: independent Python and Rust scalar oracles, closed
+fixture schemas, and the deterministic corpus pass parity gates. The checked-in
+[Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
+binds that result to its source, toolchain, host profile, numeric mode, and
+artifact hashes without making a native-kernel or performance claim. G1 is now
+the active gate. The normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple

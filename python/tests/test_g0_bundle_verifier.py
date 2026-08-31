@@ -240,7 +240,7 @@ def _commit_checked_in_bundle(tmp_path: Path, checkout: Path) -> Path:
 
     source_bundle, _ = _make_bundle(tmp_path, G0_PROVENANCE_BASELINE)
     bundle = checkout / "results" / "g0" / "checked-in-fixture"
-    bundle.parent.mkdir(parents=True)
+    bundle.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_bundle, bundle)
     _git(checkout, "add", "results/g0/checked-in-fixture")
     _git(

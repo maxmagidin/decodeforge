@@ -199,16 +199,19 @@ analysis.
 - [Design and technical specification](docs/DESIGN.md)
 - [Benchmark and experimental methodology](docs/BENCHMARKS.md)
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
+- [G0 evidence contract](docs/G0_EVIDENCE_V1.md)
 - [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
 
 ## Status
 
-The first G0 semantic-parity checkpoint is complete: the independent Python and
-Rust scalar oracles, closed fixture schemas, and the 16-case corpus pass
-byte-for-byte parity gates. G0 remains open until a checked-in provenance and
-evidence bundle records the documented seed/input, source revision, toolchain,
-CPU/features, numeric mode, and artifact hashes. No G1 work is unlocked; the
-compiler and performance paths are not claimed. See [the normative Q8
+G0 is complete. The independent Python and Rust scalar oracles, closed fixture
+schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
+[Apple M4 correctness bundle](results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
+binds those checks to source revision `cc838b0`, the exact toolchain and host
+profile, and hashed artifacts; CI verifies both its portable contents and Git
+provenance. It deliberately makes no native-kernel or performance claim. G1 is
+now the active gate: Region/Loop lowering, one shared OI4 pack, and generated
+strict scalar/NEON kernels on the M4. See [the normative Q8
 contract](docs/Q8_FORMAT_V1.md).
 
 Rust independently generates the expected fixture documents in memory, and

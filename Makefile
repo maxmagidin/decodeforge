@@ -1,12 +1,13 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
-	capture-g0-evidence verify-g0-repository
+	capture-g0-evidence verify-g0-repository verify-g0-result
 
 UV := uv
 RUST_VERSION := 1.98.0
 PYTHON_VERSION := 3.12.14
 UV_VERSION := 0.12.5
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
+G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
 
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
@@ -82,3 +83,7 @@ verify-g0-repository:
 	@test -n "$(BUNDLE)" || { echo "verify-g0-repository: BUNDLE=<path> is required" >&2; exit 2; }
 	@test -n "$(CHECKOUT)" || { echo "verify-g0-repository: CHECKOUT=<path> is required" >&2; exit 2; }
 	UV_OFFLINE=true $(UV) run --frozen python scripts/verify_g0_repository.py --bundle "$(BUNDLE)" --checkout "$(CHECKOUT)"
+
+verify-g0-result:
+	UV_OFFLINE=true $(UV) run --frozen python scripts/validate_schemas.py --bundle "$(G0_RESULT)"
+	UV_OFFLINE=true $(UV) run --frozen python scripts/verify_g0_repository.py --bundle "$(G0_RESULT)" --checkout .

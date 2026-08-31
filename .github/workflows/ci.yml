@@ -45,6 +45,8 @@ jobs:
         run: make setup
       - name: Run foundation checks
         run: make check
+      - name: Verify checked-in G0 evidence
+        run: make verify-g0-result
       - name: Smoke pinned PyTorch CPU wheel
         run: make check-pytorch-pin
       - name: Re-run portable checks offline
