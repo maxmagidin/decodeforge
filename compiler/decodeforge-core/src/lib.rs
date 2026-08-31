@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! Versioned contracts and target-independent G0 semantics shared by the compiler.
+//! Versioned contracts and the G0 semantic oracle shared by the compiler.
 //!
-//! The independent `DFQ8_B32_V1` semantic oracle grows here in reviewable
-//! layers while target packing and code generation remain outside the
-//! foundation. The public version contract stays stable across those layers.
+//! This crate hosts the independent `DFQ8_B32_V1` scalar quantization,
+//! evaluation, identity, and fixture gates used to freeze G0 semantics. A
+//! future quantization crate will own G1 target packing and related lowering;
+//! keeping those concerns separate preserves this crate's target-independent
+//! oracle and version contract.
 
 pub mod q8;
 
