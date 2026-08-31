@@ -197,3 +197,26 @@ observations are clean status, unflagged index state, then equality of
 `HEAD^{commit}` with its captured value, so a late branch movement is rejected.
 This separation makes a bundle inspectable from a source archive while keeping
 provenance claims auditable in an explicit checkout.
+
+## Capture
+
+The explicit pre-commit capture command is:
+
+```sh
+uv run --frozen python scripts/capture_g0_evidence.py \
+  --output PATH --checkout PATH
+```
+
+`--output` must resolve outside `--checkout`; its resolved parent is also the
+private sibling-staging location. This keeps a clean-source observation
+meaningful before a later evidence PR copies the completed bundle under
+`results/g0/...`.
+
+Capture requires one stable full clean `HEAD` before its fixed schema, Python
+fixture, and Rust fixture checks, and repeats the clean/full-revision check
+immediately before installation. It probes only the closed Apple-M4 profile and
+approved tool versions, records no full environment or identifying host data,
+copies the fixture manifest byte-for-byte, and emits a fixed no-performance
+report. The sibling staging directory must pass both portable and repository
+verification before an atomic no-overwrite rename into the requested output
+path.
