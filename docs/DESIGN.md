@@ -5,9 +5,11 @@ native-correctness checkpoint now includes verified lowering, shared OI4
 packing, deterministic scalar and strict output-vector NEON source, audited
 Apple-arm64 scalar/NEON dylibs, and checked loading through the frozen ABI.
 Both backends execute all 16 frozen fixtures bit-exactly; dedicated `N=4` and
-`N=5` cases verify vector-only and vector-plus-tail machine code. No timing,
-speedup, real-shape benchmark, or completed-G1 claim exists yet. The normative
-contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+`N=5` cases verify vector-only and vector-plus-tail machine code. A prepared
+safe-call API validates buffer extents once and reuses caller-owned output while
+preserving complete output scrubbing on every failure. No timing, speedup,
+real-shape benchmark, or completed-G1 claim exists yet. The normative contract
+is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple

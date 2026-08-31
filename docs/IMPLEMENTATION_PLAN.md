@@ -80,7 +80,9 @@ the earlier byte-reconstruction and stack-array/canary code without disabling
 stack protection.
 
 G1 remains open: there are no accepted timing samples or performance claims.
-The next subgate is an allocation-free prepared-call API followed by the
+The allocation-free prepared-call subgate is complete: buffer extents are
+validated once, caller-owned output storage is reused, and each invocation
+retains the runtime's complete failure-scrubbing policy. The next subgate is the
 required real-shape scalar-versus-NEON benchmark bundle.
 
 ## G1 — Complete one NEON vertical slice
