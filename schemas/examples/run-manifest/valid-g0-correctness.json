@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "milestone": "g0",
+  "bundle_class": "correctness",
+  "bundle_id": "sha256:7e03a8172fc90e28a4b97c25e4ee7b4bb357ad3b0170dfe31f0186e41b15dd8e",
+  "created_utc": "2026-08-30T00:00:00Z",
+  "project": {
+    "revision": "0123456789abcdef0123456789abcdef01234567",
+    "dirty": false,
+    "format": "DFQ8_B32_V1",
+    "numeric_mode": "strict_f32_v1",
+    "compiler_version": "0.1.0",
+    "generated_abi": 1,
+    "runtime_abi": 1
+  },
+  "target": {"triple": "aarch64-apple-darwin", "features": ["neon"]},
+  "reproduction": {
+    "cwd": ".",
+    "policy": "g0-correctness-v1",
+    "source_revision": "0123456789abcdef0123456789abcdef01234567",
+    "environment": {
+      "CARGO_NET_OFFLINE": "true",
+      "DECODEFORGE_SOURCE_REVISION": "0123456789abcdef0123456789abcdef01234567",
+      "UV_OFFLINE": "true"
+    },
+    "commands": [
+      {
+        "id": "schema-contracts-v1",
+        "argv": ["uv", "run", "--frozen", "python", "scripts/validate_schemas.py", "--all"],
+        "expected_exit_code": 0
+      },
+      {
+        "id": "q8-python-fixtures-v1",
+        "argv": ["uv", "run", "--frozen", "python", "scripts/generate_q8_fixtures.py", "--check"],
+        "expected_exit_code": 0
+      },
+      {
+        "id": "q8-rust-fixtures-v1",
+        "argv": ["make", "rust-fixture-check"],
+        "expected_exit_code": 0
+      }
+    ]
+  },
+  "artifacts": [
+    {"path": "fixture-manifest.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "role": "fixture-manifest"},
+    {"path": "host.json", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "role": "host-manifest"},
+    {"path": "report.md", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "role": "report"}
+  ],
+  "checks": {"schema": "pass", "correctness": "pass", "assembly": "not-applicable", "certified_performance": "not-applicable"},
+  "not_applicable": ["assembly", "certified_performance"]
+}
