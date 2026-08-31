@@ -155,7 +155,7 @@ surface area. The dashboard is presentation polish and comes after G3.
 ```text
 compiler/                 Rust workspace
   decodeforge-core/       G0 Q8 semantic oracle, identities, fixture gates
-  decodeforge-compiler/   G1 contract/IR, lowering, and deterministic OI4 packing
+  decodeforge-compiler/   G1 IR, OI4 packing, and deterministic scalar codegen
   decodeforge-runtime/    module cache, guards, loading, ABI
 python/decodeforge/       torch.compile backend, FX partitioning, test harness
 native/torch_bridge/      thin ATen/PyTorch pointer/shape bridge
@@ -212,8 +212,9 @@ schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
 binds those checks to source revision `cc838b0`, the exact toolchain and host
 profile, and hashed artifacts; CI verifies both its portable contents and Git
 provenance. It deliberately makes no native-kernel or performance claim. The
-first G1 slice now implements verified Region/Loop lowering and one shared OI4
-pack. Generated scalar/NEON kernels, disassembly, benchmarks, and performance
+first G1 slice now implements verified Region/Loop lowering, one shared OI4
+pack, the frozen generated-module ABI, and deterministic strict scalar C.
+Native execution, NEON code generation, benchmark evidence, and performance
 claims do not yet exist. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
 Rust independently generates the expected fixture documents in memory, and
