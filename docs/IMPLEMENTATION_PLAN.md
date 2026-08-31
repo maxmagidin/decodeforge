@@ -56,24 +56,32 @@ This sequencing is the accepted owner decision in
 - The manifest records inputs, source revision, toolchain, CPU, target features,
   numeric mode, and output hashes.
 
-### Current status
+### Stop condition
+
+Do not create SIMD code until rounding and tail behavior are identical across
+the references.
+
+## Current implementation checkpoint
 
 G0 is complete. Independent in-memory Rust generation plus read-only
 verification matches the frozen Python fixture bytes, and the checked-in Apple
 M4 correctness bundle records source revision `cc838b0`, toolchain,
 CPU/features, numeric mode, and artifact hashes. CI runs both portable and Git
-provenance verification over that bundle. The G1 contract/IR, shared OI4 pack,
-generated-module ABI, deterministic strict scalar C, and the private Apple-arm64
-build plus structural machine-code audit are implemented. The checked runtime
-loads that exact image and executes the complete frozen fixture corpus
-bit-exactly, and deterministic fixed-schedule NEON C source is implemented. The
-next active work is NEON native build/load with correctness and disassembly
-evidence; no timing or performance claim exists yet.
+provenance verification over that bundle.
 
-### Stop condition
+Inside G1, the fixed native-correctness checkpoint is complete: deterministic
+scalar and output-vector NEON source compile into separately identified
+Apple-arm64 dylibs, their Mach-O structure and helper disassembly are audited,
+and the checked runtime executes both through the frozen ABI. All 16 frozen
+fixtures are bit-exact, while dedicated `N=4` and `N=5` cases verify
+vector-only and vector-plus-tail execution. Direct packed-Q and scale-vector
+loads produce the intended `sshll.8h -> sshll.4s -> scvtf.4s` path and avoid
+the earlier byte-reconstruction and stack-array/canary code without disabling
+stack protection.
 
-Do not create SIMD code until rounding and tail behavior are identical across
-the references.
+G1 remains open: there are no accepted timing samples or performance claims.
+The next subgate is an allocation-free prepared-call API followed by the
+required real-shape scalar-versus-NEON benchmark bundle.
 
 ## G1 — Complete one NEON vertical slice
 

@@ -203,6 +203,7 @@ analysis.
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
 - [G0 evidence contract](docs/G0_EVIDENCE_V1.md)
 - [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
+- [ADR 0004: Strict output-vector NEON lowering](docs/decisions/0004-strict-output-vector-neon.md)
 
 ## Status
 
@@ -211,15 +212,23 @@ schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
 [Apple M4 correctness bundle](results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds those checks to source revision `cc838b0`, the exact toolchain and host
 profile, and hashed artifacts; CI verifies both its portable contents and Git
-provenance. It deliberately makes no native-kernel or performance claim. The
-first G1 slice now implements verified Region/Loop lowering, one shared OI4
-pack, the frozen generated-module ABI, deterministic strict scalar C, and an
-Apple-arm64 builder that retains and structurally audits the exact private
-Mach-O artifact and scalar helper disassembly. A checked runtime now consumes
-that owner, makes an independently verified read-only load copy, binds the
-frozen ABI, and executes all 16 fixtures bit-exactly through a safe Rust API.
-NEON code generation, benchmark evidence, and performance claims do not yet
-exist. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
+provenance. It deliberately makes no performance claim. The current G1
+correctness checkpoint implements verified Region/Loop lowering, one shared
+OI4 pack, the frozen generated-module ABI, deterministic strict scalar and
+output-vector NEON C, and separately identified Apple-arm64 dylibs whose
+Mach-O structure and hidden helpers are audited before loading. The NEON
+source expresses signed `int8 -> int16 -> int32` widening; the retained machine
+code contains the corresponding `sshll.8h -> sshll.4s -> scvtf.4s` path,
+lane-form activation multiply, separate adds, a raw vector scale load, and
+guarded vector/tail stores. Direct Q-word and 16-byte scale loads removed
+unnecessary byte reconstruction and a temporary stack-array/canary path
+without disabling stack protection. A backend-neutral checked runtime executes
+scalar and NEON modules through the same ABI: all 16 frozen fixtures are
+bit-exact, and dedicated `N=4` and `N=5` cases prove vector-only and
+vector-plus-tail execution. This is correctness and machine-code evidence
+only; no timing or speedup claim exists yet. The next gate is an allocation-free
+prepared call followed by a reproducible scalar-versus-NEON benchmark on a real
+TinyLlama projection. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
 Rust independently generates the expected fixture documents in memory, and
 `q8 verify` only reads and verifies an existing fixture tree. Run the read-only

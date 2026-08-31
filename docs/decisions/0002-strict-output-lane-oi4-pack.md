@@ -7,7 +7,7 @@
 ## Context
 
 The G0 oracle is intentionally target-independent, while a first compiler slice
-needs one reproducible physical layout that both scalar and future NEON kernels
+needs one reproducible physical layout that both scalar and NEON kernels
 can consume. Reduction-vector layouts make the strict-f32 recurrence ambiguous:
 they invite horizontal reductions, reassociation, and multiple `K` partial sums.
 
@@ -31,7 +31,7 @@ pack bytes.
 
 - A deterministic pack identity can be checked independently of the logical
   G0 weight identity.
-- Future scalar and NEON code generation share offsets and cannot silently
+- Scalar and NEON code generation share offsets and cannot silently
   evaluate padded lanes or change reduction order.
 - Other vector axes, unrolling, horizontal reductions, FMA, C emission, and
   target-specific scheduling remain later work and are not implied by this
