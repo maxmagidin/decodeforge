@@ -3,6 +3,7 @@
 use std::mem::{offset_of, size_of};
 
 /// Exact byte count of the `sha256:<hex>` artifact ID and terminating NUL.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) const ARTIFACT_ID_CSTR_BYTES_V1: usize = 72;
 
 /// Frozen results returned by `df_run_v1`.

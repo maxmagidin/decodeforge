@@ -17,6 +17,14 @@ mod abi;
 mod dylib;
 
 mod error;
+
+// The public executable type remains available on unsupported hosts so callers
+// can compile portable code, but its private construction machinery is only
+// reachable from the Apple-arm64 loader.
+#[cfg_attr(
+    not(all(target_os = "macos", target_arch = "aarch64")),
+    allow(dead_code)
+)]
 mod scalar;
 
 #[doc(hidden)]
