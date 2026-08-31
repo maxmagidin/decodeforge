@@ -4,6 +4,11 @@
 //! backend framework: the Loop IR and OI4 pack contract are checked at this
 //! boundary and all source text is derived from those checked values.
 
+use super::GENERATED_ABI_VERSION_V1;
+use super::c_abi_v1::{
+    AbiV1Spec, render_abi_version_entrypoint, render_artifact_id_entrypoint,
+    render_artifact_id_storage, render_run_v1_entrypoint,
+};
 use crate::ir::{KernelVariant, LoopKernelV1, Q8LinearRegion};
 use crate::pack::{PACK_BLOCK_SIZE, PACK_RECORD_BYTES, PackManifestV1, PackedWeightsV1};
 use crate::{Result, hex_lower, invalid};
@@ -11,8 +16,6 @@ use sha2::{Digest, Sha256};
 
 /// Frozen source format used by this emitter and its module identity.
 pub const SCALAR_C_SOURCE_FORMAT_V1: &str = "decodeforge_scalar_c_v1";
-/// Generated ABI version incorporated into module identities.
-pub const GENERATED_ABI_VERSION_V1: u32 = 1;
 /// Maximum permitted generated source size.
 pub const MAX_SCALAR_C_SOURCE_BYTES: usize = 128 * 1024;
 
@@ -169,6 +172,7 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
     let k = shape.k();
     let panels = shape.panels();
     let blocks = shape.blocks();
+    let abi = AbiV1Spec::new(module_id, helper, n, k, panels, blocks, PACK_RECORD_BYTES);
     let mut source = String::new();
     source.push_str("/* DecodeForge generated source format: decodeforge_scalar_c_v1. */\n");
     source.push_str("/* Buffer extents, non-aliasing, and packed-weight identity are safe-caller obligations. */\n");
@@ -188,9 +192,7 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
     source.push_str("#define DF_USED_V1 __attribute__((used))\n");
     source.push_str("#define DF_NOINLINE_V1 __attribute__((noinline))\n");
     source.push_str("#else\n#error \"decodeforge_scalar_c_v1 requires Clang\"\n#endif\n\n");
-    source.push_str("static const char df_artifact_id_cstr_v1[] = \"");
-    source.push_str(module_id);
-    source.push_str("\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\n");
+    render_artifact_id_storage(&mut source, &abi);
     source.push_str("DF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int ");
     source.push_str(helper);
     source.push_str("(const float *x, const uint8_t *packed_weight, float *y) {\n");
@@ -215,50 +217,9 @@ fn render_source(region: &Q8LinearRegion, helper: &str, module_id: &str) -> Resu
     source.push_str(") - block_start : UINT32_C(");
     source.push_str(&PACK_BLOCK_SIZE.to_string());
     source.push_str("));\n                float block_sum = 0.0f;\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                    const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                    const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                    const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                    block_sum = block_sum + product;\n                }\n                block_sum = block_sum * scale;\n                accumulator = accumulator + block_sum;\n            }\n            y[row] = accumulator;\n        }\n    }\n    return 0;\n}\n\n");
-    source.push_str("DF_PUBLIC_V1 uint32_t df_abi_version(void) {\n    return DF_GENERATED_ABI_VERSION_V1;\n}\n\n");
-    source.push_str("DF_PUBLIC_V1 const char *df_artifact_id(void) {\n    return df_artifact_id_cstr_v1;\n}\n\n");
-    source.push_str("DF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {\n");
-    source.push_str("    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n");
-    source.push_str("    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n");
-    source.push_str("    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n");
-    source.push_str("    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n");
-    source.push_str("    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n");
-    source.push_str("    if (call->m != UINT32_C(1) || call->n != UINT32_C(");
-    source.push_str(&n.to_string());
-    source.push_str(") || call->k != UINT32_C(");
-    source.push_str(&k.to_string());
-    source.push_str(") ) return DF_STATUS_SHAPE_V1;\n");
-    source.push_str("    if (call->x_stride != UINT32_C(");
-    source.push_str(&k.to_string());
-    source.push_str(") || call->y_stride != UINT32_C(");
-    source.push_str(&n.to_string());
-    source.push_str(") ) return DF_STATUS_STRIDE_V1;\n");
-    source.push_str("    if (call->packed_weight_bytes != UINT64_C(");
-    source.push_str(&panels.to_string());
-    source.push_str(") * UINT64_C(");
-    source.push_str(&blocks.to_string());
-    source.push_str(") * UINT64_C(");
-    source.push_str(&PACK_RECORD_BYTES.to_string());
-    source.push_str(") ) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n");
-    source.push_str("    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n");
-    source.push_str("    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n");
-    source.push_str("#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n");
-    source.push_str("    fenv_t df_saved_environment;\n");
-    source.push_str("    int32_t df_status = DF_STATUS_OK_V1;\n");
-    source.push_str(
-        "    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n",
-    );
-    source.push_str("    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n");
-    source.push_str("    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
-    source.push_str("    for (uint32_t input = 0; input < UINT32_C(");
-    source.push_str(&k.to_string());
-    source.push_str("); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
-    source.push_str("    (void)");
-    source.push_str(helper);
-    source.push_str("(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C(");
-    source.push_str(&n.to_string());
-    source.push_str("); ++output) {\n        if (!isfinite(y[output])) {\n            df_status = DF_STATUS_NONFINITE_RESULT_V1;\n            goto df_restore_environment;\n        }\n    }\n");
-    source.push_str("df_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}\n");
+    render_abi_version_entrypoint(&mut source);
+    render_artifact_id_entrypoint(&mut source);
+    render_run_v1_entrypoint(&mut source, &abi);
     Ok(source)
 }
 
@@ -311,6 +272,8 @@ mod tests {
                 .contains("df_probe_half_min_bits != UINT32_C(0x00400000)")
         );
         assert!(!first.source.contains("df_probe_true_min * df_probe_one !="));
+        assert!(!first.source.contains("df_probe_min * df_probe_half !="));
+        assert!(!first.source.contains("0x1p-127f"));
         assert!(!first.source.contains("lane < UINT32_C(32)"));
         assert!(!first.source.contains("__m128"));
         assert!(first.source.len() <= MAX_SCALAR_C_SOURCE_BYTES);

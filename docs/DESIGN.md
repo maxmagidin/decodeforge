@@ -8,8 +8,9 @@ artifact hashes without making a native-kernel or performance claim. The G1
 contract/IR, shared OI4 packing, frozen generated-module ABI, deterministic
 strict scalar C, and exact Apple-arm64 artifact construction/audit are
 implemented. Checked scalar loading and bit-exact execution of all 16 frozen
-fixtures now exist; NEON and performance evidence do not. The normative
-contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+fixtures now exist, and the fixed strict output-vector NEON C emitter is
+implemented. Native NEON assembly/execution and performance evidence do not
+yet exist. The normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple

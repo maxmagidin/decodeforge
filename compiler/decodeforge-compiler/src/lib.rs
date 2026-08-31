@@ -4,10 +4,11 @@
 //! Verified G1 lowering, OI4 packing, and generated native code construction.
 //!
 //! The target-independent contract is an `M=1` Q8 linear region, a verified
-//! fixed loop kernel, and the shared `DFQ8_B32_OI4_V1` payload. The first
-//! backend deterministically emits strict scalar C and can build and audit a
-//! private Apple ARM64 dylib. Dynamic loading and execution remain isolated in
-//! the runtime crate.
+//! fixed loop kernel, and the shared `DFQ8_B32_OI4_V1` payload. The backends
+//! deterministically emit strict scalar C and a fixed output-vector ARM64
+//! NEON C schedule. The scalar path can build, audit, and safely bind a private
+//! Apple ARM64 dylib through the isolated runtime crate; native NEON execution
+//! remains the next stage.
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("decodeforge-compiler requires a 64-bit target");
@@ -24,7 +25,8 @@ pub mod native;
 pub mod pack;
 
 pub use codegen::{
-    GENERATED_ABI_VERSION_V1, MAX_SCALAR_C_SOURCE_BYTES, SCALAR_C_SOURCE_FORMAT_V1, ScalarCModule,
+    GENERATED_ABI_VERSION_V1, MAX_NEON_C_SOURCE_BYTES, MAX_SCALAR_C_SOURCE_BYTES,
+    NEON_C_SOURCE_FORMAT_V1, NeonCModule, SCALAR_C_SOURCE_FORMAT_V1, ScalarCModule, emit_neon_c,
     emit_scalar_c,
 };
 
