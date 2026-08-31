@@ -3,16 +3,19 @@ name = "decodeforge-compiler"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "DecodeForge G1 target-independent IR and deterministic Q8 packing."
+description = "DecodeForge G1 IR, deterministic Q8 packing, and audited native code generation."
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
 decodeforge-core = { path = "../decodeforge-core" }
+object = { version = "=0.40.0", default-features = false, features = ["macho", "read_core", "std"] }
+rustix = { version = "=1.1.4", features = ["fs", "process"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sha2 = "=0.10.9"
+tempfile = "=3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"

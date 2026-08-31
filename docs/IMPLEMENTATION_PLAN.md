@@ -63,9 +63,10 @@ verification matches the frozen Python fixture bytes, and the checked-in Apple
 M4 correctness bundle records source revision `cc838b0`, toolchain,
 CPU/features, numeric mode, and artifact hashes. CI runs both portable and Git
 provenance verification over that bundle. The G1 contract/IR, shared OI4 pack,
-generated-module ABI, and deterministic strict scalar C are implemented. The
-next active work is native scalar build/load execution and then NEON code with
-correctness/disassembly evidence; no performance claim exists yet.
+generated-module ABI, deterministic strict scalar C, and the private Apple-arm64
+build plus structural machine-code audit are implemented. The next active work
+is safe scalar loading/execution and then NEON code with correctness/disassembly
+evidence; no native correctness or performance claim exists yet.
 
 ### Stop condition
 

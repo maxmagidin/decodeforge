@@ -46,6 +46,12 @@
     {"code": "DFE-COMP-004", "name": "compiler-identity-mismatch", "component": "compiler", "required_context": []},
     {"code": "DFE-COMP-005", "name": "compiler-payload-integrity", "component": "compiler", "required_context": []},
     {"code": "DFE-COMP-006", "name": "compiler-invariant-violation", "component": "compiler", "required_context": []},
-    {"code": "DFE-COMP-007", "name": "unsupported-kernel-variant", "component": "compiler", "required_context": []}
+    {"code": "DFE-COMP-007", "name": "unsupported-kernel-variant", "component": "compiler", "required_context": []},
+    {"code": "DFE-NATIVE-001", "name": "unsupported-native-host", "component": "native", "required_context": []},
+    {"code": "DFE-NATIVE-002", "name": "invalid-native-build-input", "component": "native", "required_context": []},
+    {"code": "DFE-NATIVE-003", "name": "native-toolchain-discovery", "component": "native", "required_context": []},
+    {"code": "DFE-NATIVE-004", "name": "native-tool-invocation", "component": "native", "required_context": []},
+    {"code": "DFE-NATIVE-005", "name": "invalid-native-artifact", "component": "native", "required_context": []},
+    {"code": "DFE-NATIVE-006", "name": "native-machine-code-audit", "component": "native", "required_context": []}
   ]
 }

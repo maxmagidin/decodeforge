@@ -5,9 +5,10 @@ fixture schemas, and the deterministic corpus pass parity gates. The checked-in
 [Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds that result to its source, toolchain, host profile, numeric mode, and
 artifact hashes without making a native-kernel or performance claim. The G1
-contract/IR, shared OI4 packing, frozen generated-module ABI, and deterministic
-strict scalar C are implemented; native execution, NEON, and performance
-evidence do not yet exist. The normative contract is
+contract/IR, shared OI4 packing, frozen generated-module ABI, deterministic
+strict scalar C, and exact Apple-arm64 artifact construction/audit are
+implemented; native execution, NEON, and performance evidence do not yet exist.
+The normative contract is
 [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
@@ -544,6 +545,25 @@ optimization without fast-math. Target modes:
 
 macOS emits a `.dylib`; Linux emits a `.so`. Generated source is retained in a
 debug artifact and hash-addressed in normal caches.
+
+The implemented Apple scalar checkpoint is narrower than that eventual target
+matrix. It invokes Apple Clang through `/usr/bin/xcrun` with a closed argument
+and environment policy, a pinned SDK/developer directory, strict floating-point
+flags, disabled auto-vectorization, explicit exports, and fatal linker warnings.
+The bounded runner contains the complete tool process group and drains output
+without detached threads.
+
+Compiler output is opened once with no-follow/nonblocking semantics and must be
+one bounded, owner-controlled regular file. Those bytes are copied into a
+second owner-only directory, then parsed as one little-endian ARM64-all
+`MH_DYLIB` with the fixed ID, macOS 15 deployment target, one dyld-required
+UUID, only the direct `libSystem` dependency, exactly three ordinary text
+exports, the expected local text helper, and no initializer/interposition or
+rpath surface. `llvm-objdump` audits that retained copy; the held descriptor,
+path identity, metadata, and bytes are revalidated after disassembly. The
+artifact owner exposes immutable bytes and hashes, not a public mutable path.
+This checkpoint constructs inspectable machine code but does not load or call
+it; native correctness begins only at the safe-runtime execution gate.
 
 ### 11.4 Why C/intrinsics first
 
