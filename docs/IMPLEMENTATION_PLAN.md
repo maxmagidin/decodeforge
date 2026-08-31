@@ -58,12 +58,12 @@ This sequencing is the accepted owner decision in
 
 ### Current status
 
-The first G0 semantic-parity checkpoint is complete: independent in-memory Rust
-generation plus read-only verification matches the frozen Python fixture bytes,
-and the closed manifest/inventory gates pass. G0 remains open until a checked-in
-provenance/evidence bundle records the documented seed/input, source revision,
-toolchain, CPU/features, numeric mode, and artifact hashes. No G1 work is
-unlocked; compiler and performance work remains gated.
+G0 is complete. Independent in-memory Rust generation plus read-only
+verification matches the frozen Python fixture bytes, and the checked-in Apple
+M4 correctness bundle records source revision `cc838b0`, toolchain,
+CPU/features, numeric mode, and artifact hashes. CI runs both portable and Git
+provenance verification over that bundle. The bundle makes no native-kernel or
+performance claim; G1 is now the active gate.
 
 ### Stop condition
 
