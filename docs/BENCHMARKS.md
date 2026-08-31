@@ -7,9 +7,10 @@ result bundle.
 **Current status:** G0 is complete: Python and Rust references and fixtures
 agree, and the checked-in [Apple M4 correctness bundle](../results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 records their source, toolchain, host profile, numeric mode, and artifact
-hashes. The G1 contract/IR, OI4 packing, generated-module ABI, and deterministic
-strict scalar C are implemented, but no native-execution or performance claim
-is made. The next gate is the Apple M4 scalar/ARM64 NEON path; Ryzen/AVX2
+hashes. The G1 contract/IR, OI4 packing, generated-module ABI, deterministic
+strict scalar C, and exact Apple-arm64 artifact construction/audit are
+implemented, but no native-execution or performance claim is made. The next
+gate is the Apple M4 scalar/ARM64 NEON path; Ryzen/AVX2
 measurements remain deferred to an optional G4 portability extension.
 
 ## Claim classes
