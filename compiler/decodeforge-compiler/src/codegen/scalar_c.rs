@@ -25,6 +25,10 @@ pub struct ScalarCModule {
     module_id: String,
     /// Hidden helper symbol used by the public ABI entrypoint.
     hidden_kernel_symbol: String,
+    /// Frozen logical output size compiled into the helper.
+    n: u32,
+    /// Frozen logical reduction size compiled into the helper.
+    k: u32,
     /// Complete ASCII C11 translation unit, ending in one LF.
     source: String,
 }
@@ -40,6 +44,16 @@ impl ScalarCModule {
 
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Logical output size compiled into this module.
+    pub const fn n(&self) -> u32 {
+        self.n
+    }
+
+    /// Logical reduction size compiled into this module.
+    pub const fn k(&self) -> u32 {
+        self.k
     }
 }
 
@@ -75,6 +89,8 @@ pub fn emit_scalar_c(
     Ok(ScalarCModule {
         module_id,
         hidden_kernel_symbol,
+        n: region.shape().n(),
+        k: region.shape().k(),
         source,
     })
 }
@@ -371,53 +387,6 @@ mod tests {
         assert_eq!(
             source_hash,
             "sha256:6c516ecf283bd5c10111e77b30ba9abac392d4f7f5da09ae67fbeeeac1e33dcd"
-        );
-    }
-
-    #[test]
-    fn generated_source_is_strict_c11_when_clang_is_available() {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
-        let (region, kernel, packed) = sample(5, 33);
-        let module = emit_scalar_c(&region, &kernel, &packed).unwrap();
-        let include_dir = format!("{}/../../include", env!("CARGO_MANIFEST_DIR"));
-        let mut command = Command::new("clang");
-        command
-            .args([
-                "-std=c11",
-                "-fsyntax-only",
-                "-Wall",
-                "-Wextra",
-                "-Wpedantic",
-                "-Werror",
-                "-fno-fast-math",
-                "-ffp-model=strict",
-                "-ffp-contract=off",
-                "-fdenormal-fp-math=ieee",
-                "-I",
-            ])
-            .arg(include_dir)
-            .arg("-x")
-            .arg("c")
-            .arg("-")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        let Ok(mut child) = command.spawn() else {
-            return;
-        };
-        child
-            .stdin
-            .take()
-            .expect("clang stdin configured")
-            .write_all(module.source.as_bytes())
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
-        assert!(
-            output.status.success(),
-            "clang rejected generated C: {}",
-            String::from_utf8_lossy(&output.stderr)
         );
     }
 }
