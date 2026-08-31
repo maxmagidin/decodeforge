@@ -38,7 +38,7 @@ lint:
 	$(UV) lock --check
 	$(UV) run --frozen ruff format --check python scripts
 	$(UV) run --frozen ruff check python scripts
-	$(UV) run --frozen mypy
+	$(UV) run --frozen --extra g1-benchmark mypy
 	$(UV) run --frozen python scripts/check_workspace.py
 	$(UV) run --frozen python scripts/check_headers.py
 	$(UV) run --frozen python scripts/validate_schemas.py --all
@@ -47,7 +47,7 @@ test:
 	$(CARGO) build --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked --release
-	$(UV) run --frozen python -m pytest -q
+	$(UV) run --frozen --extra g1-benchmark python -m pytest -q
 	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
 	$(MAKE) rust-fixture-check
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
