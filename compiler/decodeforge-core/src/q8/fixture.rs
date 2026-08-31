@@ -1,4 +1,4 @@
-//! Closed Q8 fixture and manifest parsing.
+//! Closed fixture parsing and deterministic in-memory generation.
 //!
 //! The fixture wire format is intentionally typed and closed.  Serde handles
 //! JSON syntax and escaping, `deny_unknown_fields` handles the schema surface,
@@ -6,14 +6,17 @@
 //! not provide by default: duplicate object keys are rejected.
 
 use super::{
-    BLOCK_SIZE, FORMAT, NUMERIC_MODE, Q8Error, Q8Weights, canonical_linear_f32_bits,
-    fixture_identity, logical_weight_identity, quantize_f32_bits,
+    BLOCK_SIZE, FORMAT, NUMERIC_MODE, Q8Error, Q8Weights, canonical_linear_f32_bits, f32_from_int,
+    f32_from_ratio, fixture_identity, logical_weight_identity, quantize_f32_bits,
 };
 use serde::Deserialize as DeriveDeserialize;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
-use std::collections::BTreeSet;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+const FIXTURE_COUNT: usize = 16;
 const MANIFEST_NAME: &str = "manifest.json";
 const EXPECTED_ERROR_POLICY: &str = "strict_f32_v1";
 const EXPECTED_ERROR_COMPARATOR: &str = "dfq8_forward_v1";
@@ -535,10 +538,245 @@ fn safe_relative_path(path: &str) -> bool {
     })
 }
 
+struct CorpusCase {
+    name: &'static str,
+    n: u32,
+    k: u32,
+    source: Vec<u32>,
+    input: Vec<u32>,
+}
+
+fn counter_words(domain: &[u8], count: usize) -> Vec<u32> {
+    let mut words = Vec::with_capacity(count);
+    let mut counter = 0u64;
+    while words.len() < count {
+        let mut hash = Sha256::new();
+        hash.update(b"DecodeForge/DFQ8_B32_V1/corpus/v1\0");
+        hash.update(domain);
+        hash.update(counter.to_le_bytes());
+        let digest = hash.finalize();
+        for chunk in digest.chunks(4) {
+            if words.len() == count {
+                break;
+            }
+            let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            words.push((word & 0x807f_ffff) | (124 << 23));
+        }
+        counter += 1;
+    }
+    words
+}
+
+fn corpus_cases() -> Vec<CorpusCase> {
+    let mut cases = Vec::with_capacity(FIXTURE_COUNT);
+    cases.push(CorpusCase {
+        name: "zero-signed-zero",
+        n: 1,
+        k: 1,
+        source: vec![0x8000_0000],
+        input: vec![0x8000_0000],
+    });
+    let mut exhaustive = Vec::with_capacity(510);
+    for value in -127i16..=127i16 {
+        exhaustive.push(0x42fe_0000);
+        exhaustive.push(f32_from_int(i32::from(value)));
+    }
+    cases.push(CorpusCase {
+        name: "exhaustive-q8",
+        n: 255,
+        k: 2,
+        source: exhaustive,
+        input: vec![0x3f80_0000, 0x3f80_0000],
+    });
+    cases.push(CorpusCase {
+        name: "ties-and-extrema",
+        n: 1,
+        k: 8,
+        source: vec![
+            0x42fe_0000,
+            0xc2fe_0000,
+            0x4020_0000,
+            0x4060_0000,
+            0xc020_0000,
+            0xc060_0000,
+            0,
+            0x8000_0000,
+        ],
+        input: vec![0x3f80_0000; 8],
+    });
+    cases.push(CorpusCase {
+        name: "finite-extremes",
+        n: 1,
+        k: 6,
+        source: vec![
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x0000_0001,
+            0x8000_0001,
+        ],
+        input: vec![0; 6],
+    });
+    cases.push(CorpusCase {
+        name: "subnormal-clamp",
+        n: 1,
+        k: 2,
+        source: vec![0x0000_00be, 0x8000_00be],
+        input: vec![0x3f80_0000; 2],
+    });
+    for k in [1u32, 31, 32, 33, 63, 64, 65] {
+        let source = (0..k)
+            .map(|index| {
+                if index % 2 == 0 {
+                    0x3f80_0000
+                } else {
+                    0xbf00_0000
+                }
+            })
+            .collect();
+        let input = (0..k)
+            .map(|index| {
+                if index % 3 == 0 {
+                    0xbf80_0000
+                } else {
+                    0x3e80_0000
+                }
+            })
+            .collect();
+        let name = match k {
+            1 => "k-01",
+            31 => "k-31",
+            32 => "k-32",
+            33 => "k-33",
+            63 => "k-63",
+            64 => "k-64",
+            _ => "k-65",
+        };
+        cases.push(CorpusCase {
+            name,
+            n: 1,
+            k,
+            source,
+            input,
+        });
+    }
+    cases.push(CorpusCase {
+        name: "subnormal-scale-zero",
+        n: 1,
+        k: 1,
+        source: vec![0x0000_003f],
+        input: vec![0x3f80_0000],
+    });
+    cases.push(CorpusCase {
+        name: "subnormal-scale-min",
+        n: 1,
+        k: 2,
+        source: vec![0x0000_0040, 0x8000_0020],
+        input: vec![0x3f80_0000, 0xbf80_0000],
+    });
+    let mut mixed_source = Vec::with_capacity(130);
+    for row in 0..2 {
+        for index in 0..65 {
+            mixed_source.push(f32_from_ratio(
+                (index + 1) as u32,
+                17,
+                (row + index) % 2 != 0,
+            ));
+        }
+    }
+    cases.push(CorpusCase {
+        name: "mixed-signs-tail",
+        n: 2,
+        k: 65,
+        source: mixed_source,
+        input: (0..65)
+            .map(|index| {
+                if index % 2 == 0 {
+                    0x3fa0_0000
+                } else {
+                    0xbf40_0000
+                }
+            })
+            .collect(),
+    });
+    cases.push(CorpusCase {
+        name: "random-sha256-counter",
+        n: 3,
+        k: 33,
+        source: counter_words(b"source", 3 * 33),
+        input: counter_words(b"input", 33),
+    });
+    cases
+}
+
+fn fixture_json(case: &CorpusCase) -> Result<Vec<u8>, Q8Error> {
+    let weights = quantize_f32_bits(case.n, case.k, &case.source)?;
+    let output = canonical_linear_f32_bits(&case.input, &weights)?;
+    let mut object = BTreeMap::<String, Value>::new();
+    object.insert("blocks".to_owned(), json!(weights.blocks));
+    object.insert("case_id".to_owned(), json!(case.name));
+    object.insert(
+        "error_bound".to_owned(),
+        json!({"comparator": EXPECTED_ERROR_COMPARATOR, "policy": EXPECTED_ERROR_POLICY}),
+    );
+    object.insert("expected_output_fp32_bits".to_owned(), json!(output));
+    object.insert("expected_q_bytes".to_owned(), json!(weights.q_values()));
+    object.insert("expected_scale_bits".to_owned(), json!(weights.scale_bits));
+    object.insert(
+        "fixture_identity".to_owned(),
+        json!(fixture_identity(
+            case.n,
+            case.k,
+            &case.source,
+            &weights,
+            &case.input,
+            &output
+        )?),
+    );
+    object.insert("format".to_owned(), json!(FORMAT));
+    object.insert("input_fp32_bits".to_owned(), json!(case.input));
+    object.insert("k".to_owned(), json!(case.k));
+    object.insert(
+        "logical_weight_identity".to_owned(),
+        json!(logical_weight_identity(&weights)),
+    );
+    object.insert("n".to_owned(), json!(case.n));
+    object.insert("numeric_mode".to_owned(), json!(NUMERIC_MODE));
+    object.insert("operator".to_owned(), json!("q8_linear"));
+    object.insert("operator_version".to_owned(), json!("q8_linear_v1"));
+    object.insert("schema_version".to_owned(), json!(1));
+    object.insert("source_fp32_bits".to_owned(), json!(case.source));
+    let mut bytes = serde_json::to_vec(&object).map_err(|_| {
+        Q8Error::new(
+            "DFE-QUANT-002",
+            "Fixture JSON allocation or serialization failed.",
+        )
+    })?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// Generate all corpus documents and their canonical paths in sorted order.
+pub fn generated_documents() -> Result<Vec<(String, Vec<u8>)>, Q8Error> {
+    let mut documents = Vec::with_capacity(FIXTURE_COUNT);
+    for case in corpus_cases() {
+        documents.push((format!("fixtures/{}.json", case.name), fixture_json(&case)?));
+    }
+    documents.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(documents)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
+
+    #[test]
+    fn generated_corpus_has_expected_count_and_sorted_paths() {
+        let documents = generated_documents().unwrap();
+        assert_eq!(documents.len(), FIXTURE_COUNT);
+        assert!(documents.windows(2).all(|pair| pair[0].0 < pair[1].0));
+    }
 
     #[test]
     fn parser_rejects_duplicate_and_unknown_fields() {
