@@ -41,6 +41,37 @@ for the ID. `host.json` and the copied fixture manifest each carry exactly one
 terminal newline; the fixture spelling is therefore canonical JSON plus its
 existing contract-required newline.
 
+## Portable snapshot verification
+
+The portable verifier opens the bundle root once as a directory descriptor,
+rejecting a symlink at that final path component while allowing ordinary
+symlinked ancestors. It opens each of the four flat names relative to that
+descriptor without following the final component, accepts only bounded regular
+files (64 KiB for the root and copied fixture, 32 KiB for the host, and 256
+KiB for the report), and compares descriptor metadata before and after each
+read. After the hashes and JSON checks, it re-stats each flat name through that
+same descriptor and requires the original descriptor identity. It also lists
+the closed inventory through the descriptor before and after the artifact
+snapshots, and once more as the last verification operation. This prevents a
+later pathname swap from redirecting an in-progress G0 verification. A missing,
+special, malformed, or oversized root manifest is a bounded verification
+failure, never a reason to invoke an unbounded reader.
+
+The inventory scan retains at most the four permitted names and stops on a
+fifth directory entry, reporting a stable entry-cap failure rather than
+allocating an attacker-controlled list of names.
+
+The copied fixture manifest and host manifest are parsed from those same
+snapshots, canonicalized, and checked against their pinned single-file schemas.
+Their relationship to each other and to the run manifest is a later portable
+cross-file verification layer.
+
+The distributable Python wheel force-includes the complete schema corpus,
+examples, and diagnostic registry under `decodeforge/_schemas`; installed
+verification reads that packaged copy. Source and editable checkouts fall back
+to the checked-in `schemas/` tree so repository tools retain their
+repository-relative diagnostics.
+
 ## Two verification boundaries
 
 The portable verifier only reads bounded file snapshots, parses them, and

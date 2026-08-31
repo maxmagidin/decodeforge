@@ -24,8 +24,19 @@ from decodeforge.q8 import (
     quantize_f32_bits,
 )
 
-ROOT: Final = Path(__file__).resolve().parents[2]
-SCHEMA_DIR: Final = ROOT / "schemas"
+_PACKAGE_DIR: Final = Path(__file__).resolve().parent
+_PACKAGED_SCHEMA_DIR: Final = _PACKAGE_DIR / "_schemas"
+_SOURCE_ROOT: Final = _PACKAGE_DIR.parents[1]
+_SOURCE_SCHEMA_DIR: Final = _SOURCE_ROOT / "schemas"
+
+# Hatch force-includes the checked-in schema corpus at ``decodeforge/_schemas``
+# in wheels.  Source and editable checkouts retain the source-tree location so
+# developer tools continue to report repository-relative paths.
+_USING_PACKAGED_SCHEMAS: Final = _PACKAGED_SCHEMA_DIR.is_dir()
+ROOT: Final = _PACKAGE_DIR if _USING_PACKAGED_SCHEMAS else _SOURCE_ROOT
+SCHEMA_DIR: Final = (
+    _PACKAGED_SCHEMA_DIR if _USING_PACKAGED_SCHEMAS else _SOURCE_SCHEMA_DIR
+)
 SCHEMA_FILES: Final = {
     "compiler-request": SCHEMA_DIR / "compiler-request.schema.json",
     "quant-fixture": SCHEMA_DIR / "quant-fixture.schema.json",
@@ -84,6 +95,19 @@ def _diagnostic(
         "summary": summary,
         "context": context,
     }
+
+
+def _malformed_json_diagnostics(document_name: str) -> list[Diagnostic]:
+    """Return the stable diagnostic used for bounded recursive input failures."""
+
+    return [
+        _diagnostic(
+            "DFE-SCHEMA-001",
+            "schema",
+            "The JSON document could not be parsed.",
+            {"path": [document_name]},
+        )
+    ]
 
 
 def _schema_registry() -> tuple[Registry[Any], dict[str, JsonObject]]:
@@ -410,8 +434,10 @@ def _validate_fixture_manifest(instance: JsonObject) -> list[Diagnostic]:
     return diagnostics
 
 
-def validate_data(instance: JsonObject, schema_name: str) -> list[Diagnostic]:
-    """Validate parsed data against one named local schema."""
+def validate_data(
+    instance: JsonObject, schema_name: str, *, document_name: str | None = None
+) -> list[Diagnostic]:
+    """Validate parsed data against one named local schema without recursion leaks."""
 
     registry, schemas = _schema_registry()
     path = SCHEMA_FILES[schema_name]
@@ -427,6 +453,8 @@ def validate_data(instance: JsonObject, schema_name: str) -> list[Diagnostic]:
                 {"ref": str(error)},
             )
         ]
+    except RecursionError:
+        return _malformed_json_diagnostics(document_name or schema_name)
 
     diagnostics = [
         _diagnostic(
@@ -471,16 +499,9 @@ def validate_path(path: Path, schema_name: str) -> list[Diagnostic]:
                 {"path": [path.name]},
             )
         ]
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
-        return [
-            _diagnostic(
-                "DFE-SCHEMA-001",
-                "schema",
-                "The JSON document could not be parsed.",
-                {"path": [path.name]},
-            )
-        ]
-    diagnostics = validate_data(instance, schema_name)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+        return _malformed_json_diagnostics(path.name)
+    diagnostics = validate_data(instance, schema_name, document_name=path.name)
     return diagnostics
 
 
@@ -701,7 +722,7 @@ def _artifact_diagnostics(bundle: Path, manifest: JsonObject) -> list[Diagnostic
     return diagnostics
 
 
-def verify_bundle(bundle: Path) -> list[Diagnostic]:
+def _verify_foundation_bundle(bundle: Path) -> list[Diagnostic]:
     """Validate a foundation bundle without loading or executing artifacts."""
 
     manifest_path = bundle / "run-manifest.json"
@@ -756,6 +777,17 @@ def verify_bundle(bundle: Path) -> list[Diagnostic]:
     return diagnostics
 
 
+def verify_bundle(bundle: Path) -> list[Diagnostic]:
+    """Validate a bundle without ever executing its recorded commands."""
+
+    from decodeforge.g0_evidence import verify_g0_bundle
+
+    g0_diagnostics = verify_g0_bundle(bundle)
+    if g0_diagnostics is not None:
+        return g0_diagnostics
+    return _verify_foundation_bundle(bundle)
+
+
 def _print_diagnostics(diagnostics: list[Diagnostic]) -> None:
     for diagnostic in diagnostics:
         print(
@@ -771,7 +803,7 @@ def main(argv: list[str] | None = None) -> int:
         "--all", action="store_true", help="validate all schemas/examples"
     )
     mode.add_argument(
-        "--bundle", type=Path, help="validate one foundation fixture bundle"
+        "--bundle", type=Path, help="validate one supported evidence bundle"
     )
     args = parser.parse_args(argv)
 
