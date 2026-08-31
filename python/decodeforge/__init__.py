@@ -3,10 +3,13 @@
 from .q8 import (
     BLOCK_SIZE,
     FORMAT,
+    MAX_COMPARATOR_K,
     NUMERIC_MODE,
+    OutputComparison,
     Q8Error,
     Q8Weights,
     canonical_linear_f32_bits,
+    compare_strict_f32_v1,
     dequantize_f32_bits,
     dequantize_f32_rows_bits,
     f32_add_bits,
@@ -19,16 +22,20 @@ from .q8 import (
     is_finite_f32_bits,
     logical_weight_identity,
     quantize_f32_bits,
+    ulp_distance,
 )
 
 __all__ = [
     "BLOCK_SIZE",
     "FORMAT",
+    "MAX_COMPARATOR_K",
     "NUMERIC_MODE",
+    "OutputComparison",
     "Q8Error",
     "Q8Weights",
     "__version__",
     "canonical_linear_f32_bits",
+    "compare_strict_f32_v1",
     "dequantize_f32_bits",
     "dequantize_f32_rows_bits",
     "f32_add_bits",
@@ -41,6 +48,7 @@ __all__ = [
     "is_finite_f32_bits",
     "logical_weight_identity",
     "quantize_f32_bits",
+    "ulp_distance",
 ]
 
 __version__ = "0.1.0"
