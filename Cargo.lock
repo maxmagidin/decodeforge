@@ -61,6 +61,7 @@ name = "decodeforge-compiler"
 version = "0.1.0"
 dependencies = [
  "decodeforge-core",
+ "decodeforge-runtime",
  "object",
  "rustix",
  "serde",

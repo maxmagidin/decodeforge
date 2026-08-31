@@ -1,4 +1,5 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 //! Verified G1 lowering, OI4 packing, and generated native code construction.
 //!
@@ -28,8 +29,9 @@ pub use codegen::{
 };
 
 pub use native::{
-    APPLE_SCALAR_CLANG_FLAGS, AppleScalarDylib, AppleToolchainProvenance, MAX_SCALAR_DYLIB_BYTES,
-    ScalarDylibAuditReport, build_apple_scalar_dylib,
+    APPLE_SCALAR_CLANG_FLAGS, AppleScalarDylib, AppleScalarExecutableV1, AppleToolchainProvenance,
+    MAX_SCALAR_DYLIB_BYTES, ScalarDylibAuditReport, ScalarRuntimeError, ScalarStatusV1,
+    build_apple_scalar_dylib, load_apple_scalar_v1,
 };
 
 pub use ir::{
