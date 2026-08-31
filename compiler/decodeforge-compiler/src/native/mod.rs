@@ -2,14 +2,14 @@
 //!
 //! This is intentionally not a backend or cache framework. It takes the
 //! already-verified scalar or NEON C module, compiles one fixed arm64 Mach-O
-//! dylib in a private temporary directory, and audits the hidden helper. The
-//! scalar build owner can additionally be consumed into one safe executable.
+//! dylib in a private temporary directory, audits the hidden helper, and can
+//! consume either build owner into one safe executable.
 
 mod audit;
 mod macho;
 
 // The sole production compiler-side unsafe operation is the provenance
-// handoff from the unforgeable AppleScalarDylib owner to the runtime's unsafe
+// handoff from an unforgeable Apple dylib owner to the runtime's unsafe
 // constructor. Architecture-specific tests in this module also inspect FPCR.
 #[allow(unsafe_code)]
 mod load;
@@ -21,7 +21,10 @@ use std::fs::File;
 use tempfile::TempDir;
 
 pub use audit::{NeonDylibAuditReport, ScalarDylibAuditReport};
-pub use load::{AppleScalarExecutableV1, ScalarRuntimeError, ScalarStatusV1, load_apple_scalar_v1};
+pub use load::{
+    AppleNeonExecutableV1, AppleScalarExecutableV1, GeneratedRuntimeError, GeneratedStatusV1,
+    ScalarRuntimeError, ScalarStatusV1, load_apple_neon_v1, load_apple_scalar_v1,
+};
 
 /// Shared upper bound for any generated Apple dylib retained by a build owner.
 pub const MAX_APPLE_GENERATED_DYLIB_BYTES: usize = 8 * 1024 * 1024;
@@ -219,7 +222,7 @@ impl AppleScalarDylib {
 /// The original build directory is removed before this value is returned.
 /// Dropping it removes the separate retained-artifact directory. Its fields
 /// are private to the compiler so only the checked runtime handoff can consume
-/// the audited bytes in a later integration step.
+/// the audited bytes through [`load_apple_neon_v1`].
 pub struct AppleNeonDylib {
     pub(crate) _dylib_file: File,
     pub(crate) _temp_dir: TempDir,
@@ -546,16 +549,21 @@ mod tests {
     }
 
     #[test]
-    fn builds_and_audits_singleton_reduction_apple_neon_dylib() {
-        let build = build_apple_neon_dylib(&shape_neon_module(4, 1))
-            .unwrap_or_else(|error| panic!("native NEON build failed for N=4, K=1: {error}"));
+    fn builds_and_audits_small_reduction_apple_neon_dylibs() {
+        for k in [1, 2, 3, 31, 32] {
+            let build = build_apple_neon_dylib(&shape_neon_module(4, k))
+                .unwrap_or_else(|error| panic!("native NEON build failed for N=4, K={k}: {error}"));
 
-        assert!(build.audit_report().vector_path_observed());
-        assert!(!build.audit_report().scalar_tail_observed());
-        assert!(!build.audit_report().logical_vector_lane_loop_observed());
-        assert_eq!(build.audit_report().signed_q8_to_i32_count(), 1);
-        assert_eq!(build.audit_report().vector_scvtf_count(), 1);
-        assert!(build.audit_report().vector_store_count() > 0);
+            assert!(build.audit_report().vector_path_observed());
+            assert!(!build.audit_report().scalar_tail_observed());
+            assert_eq!(
+                build.audit_report().logical_vector_lane_loop_observed(),
+                k > 1
+            );
+            assert!(build.audit_report().signed_q8_to_i32_count() > 0);
+            assert!(build.audit_report().vector_scvtf_count() > 0);
+            assert!(build.audit_report().vector_store_count() > 0);
+        }
     }
 
     #[test]
