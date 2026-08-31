@@ -1,15 +1,16 @@
-//! Exact binary32 arithmetic and Q8 storage for `DFQ8_B32_V1`.
+//! Independent semantics for `DFQ8_B32_V1`.
 //!
 //! The public API intentionally deals in binary32 bit words.  This keeps
 //! signed zeroes and NaN payloads observable and makes the Rust oracle
 //! independent of a tensor library or a host language's floating point
-//! conversions.  This layer adds immutable validated Q8 storage,
-//! quantization, and dequantization; evaluation is introduced separately.
+//! conversions.  Storage and evaluation follow the normative contract in
+//! `docs/Q8_FORMAT_V1.md`.
 
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{One, ToPrimitive, Zero};
 use serde::Serialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -23,6 +24,8 @@ pub const BLOCK_SIZE: usize = 32;
 pub const Q_MIN: i16 = -127;
 /// Largest representable signed Q8 value.
 pub const Q_MAX: i16 = 127;
+/// Largest K for which the comparator's declared reduction bound is defined.
+pub const MAX_COMPARATOR_K: u32 = 8_134_399;
 
 const SIGN_MASK: u32 = 0x8000_0000;
 const EXP_MASK: u32 = 0x7f80_0000;
@@ -709,6 +712,238 @@ pub fn dequantize_f32_bits(weights: &Q8Weights) -> Result<Vec<u32>, Q8Error> {
     Ok(result)
 }
 
+/// Evaluate one `[1,K]` input in strict ascending block/lane order.
+pub fn canonical_linear_f32_bits(
+    input_bits: &[u32],
+    weights: &Q8Weights,
+) -> Result<Vec<u32>, Q8Error> {
+    if input_bits.len() != weights.k as usize {
+        return Err(
+            quant_error("DFE-QUANT-003", "A bit-word sequence has the wrong length.")
+                .with("field", "input_fp32_bits")
+                .with("expected", weights.k)
+                .with("actual", input_bits.len()),
+        );
+    }
+    for (index, bits) in input_bits.iter().copied().enumerate() {
+        if !is_finite_f32_bits(bits) {
+            return Err(
+                quant_error("DFE-QUANT-005", "A binary32 value is not finite.")
+                    .with("field", "input_fp32_bits")
+                    .with("index", index)
+                    .with("bits", bits),
+            );
+        }
+    }
+    let mut outputs = Vec::new();
+    outputs.try_reserve_exact(weights.n as usize).map_err(|_| {
+        quant_error("DFE-QUANT-002", "Derived storage size overflows.").with("field", "output")
+    })?;
+    for row in 0..weights.n {
+        let mut output = 0u32;
+        for block in 0..weights.blocks {
+            let mut block_sum = 0u32;
+            let first = block as usize * BLOCK_SIZE;
+            let last = (first + BLOCK_SIZE).min(weights.k as usize);
+            let scale = weights.scale_at(row, block).unwrap();
+            for (logical_k, input_word) in input_bits.iter().enumerate().take(last).skip(first) {
+                let lane = logical_k - first;
+                let q_bits = f32_from_int(i32::from(weights.q_at(row, block, lane).unwrap()));
+                let product = f32_mul_bits(*input_word, q_bits).map_err(|_| {
+                    quant_error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite product.",
+                    )
+                    .with("row", row)
+                    .with("block", block)
+                    .with("lane", lane)
+                })?;
+                if !is_finite_f32_bits(product) {
+                    return Err(quant_error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite product.",
+                    )
+                    .with("row", row)
+                    .with("block", block)
+                    .with("lane", lane));
+                }
+                block_sum = f32_add_bits(block_sum, product).map_err(|_| {
+                    quant_error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite block sum.",
+                    )
+                    .with("row", row)
+                    .with("block", block)
+                })?;
+                if !is_finite_f32_bits(block_sum) {
+                    return Err(quant_error(
+                        "DFE-QUANT-010",
+                        "Canonical evaluation produced a non-finite block sum.",
+                    )
+                    .with("row", row)
+                    .with("block", block));
+                }
+            }
+            let scaled = f32_mul_bits(block_sum, scale).map_err(|_| {
+                quant_error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite scaled block.",
+                )
+                .with("row", row)
+                .with("block", block)
+            })?;
+            if !is_finite_f32_bits(scaled) {
+                return Err(quant_error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite scaled block.",
+                )
+                .with("row", row)
+                .with("block", block));
+            }
+            output = f32_add_bits(output, scaled).map_err(|_| {
+                quant_error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite output.",
+                )
+                .with("row", row)
+            })?;
+            if !is_finite_f32_bits(output) {
+                return Err(quant_error(
+                    "DFE-QUANT-010",
+                    "Canonical evaluation produced a non-finite output.",
+                )
+                .with("row", row));
+            }
+        }
+        outputs.push(output);
+    }
+    Ok(outputs)
+}
+
+fn update_u32_le(hasher: &mut Sha256, words: &[u32]) {
+    for word in words {
+        hasher.update(word.to_le_bytes());
+    }
+}
+
+/// SHA-256 over the canonical logical-weight preimage.
+pub fn logical_weight_identity(weights: &Q8Weights) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"DecodeForge/DFQ8_B32_V1/logical-weight/v1\0");
+    hasher.update(weights.n.to_le_bytes());
+    hasher.update(weights.k.to_le_bytes());
+    hasher.update(weights.blocks.to_le_bytes());
+    hasher.update(&weights.q_bytes);
+    update_u32_le(&mut hasher, &weights.scale_bits);
+    format!("sha256:{}", hex_lower(&hasher.finalize()))
+}
+
+/// SHA-256 over a complete quantization/evaluation fixture preimage.
+pub fn fixture_identity(
+    n: u32,
+    k: u32,
+    source_bits: &[u32],
+    weights: &Q8Weights,
+    input_bits: &[u32],
+    output_bits: &[u32],
+) -> Result<String, Q8Error> {
+    let expected = shape(n, k)?;
+    if weights.n != n || weights.k != k || weights.blocks != expected.blocks {
+        return Err(quant_error(
+            "DFE-QUANT-008",
+            "Fixture dimensions disagree with weights.",
+        ));
+    }
+    if source_bits.len() != expected.source_len {
+        return Err(
+            quant_error("DFE-QUANT-003", "A bit-word sequence has the wrong length.")
+                .with("field", "source_fp32_bits")
+                .with("expected", expected.source_len)
+                .with("actual", source_bits.len()),
+        );
+    }
+    if input_bits.len() != k as usize {
+        return Err(
+            quant_error("DFE-QUANT-003", "A bit-word sequence has the wrong length.")
+                .with("field", "input_fp32_bits")
+                .with("expected", k)
+                .with("actual", input_bits.len()),
+        );
+    }
+    if output_bits.len() != n as usize {
+        return Err(
+            quant_error("DFE-QUANT-003", "A bit-word sequence has the wrong length.")
+                .with("field", "expected_output_fp32_bits")
+                .with("expected", n)
+                .with("actual", output_bits.len()),
+        );
+    }
+    for (field, values, code) in [
+        ("source_fp32_bits", source_bits, "DFE-QUANT-004"),
+        ("input_fp32_bits", input_bits, "DFE-QUANT-005"),
+        ("expected_output_fp32_bits", output_bits, "DFE-QUANT-010"),
+    ] {
+        for (index, bits) in values.iter().copied().enumerate() {
+            if !is_finite_f32_bits(bits) {
+                return Err(quant_error(code, "A binary32 value is not finite.")
+                    .with("field", field)
+                    .with("index", index)
+                    .with("bits", bits));
+            }
+        }
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(b"DecodeForge/DFQ8_B32_V1/strict_f32_v1/quant-fixture/v1\0");
+    hasher.update(n.to_le_bytes());
+    hasher.update(k.to_le_bytes());
+    update_u32_le(&mut hasher, source_bits);
+    update_u32_le(&mut hasher, &weights.scale_bits);
+    hasher.update(&weights.q_bytes);
+    update_u32_le(&mut hasher, input_bits);
+    update_u32_le(&mut hasher, output_bits);
+    Ok(format!("sha256:{}", hex_lower(&hasher.finalize())))
+}
+
+fn ordered_ulp(bits: u32) -> i64 {
+    let magnitude = (bits & POSITIVE_MASK) as i64;
+    if bits & SIGN_MASK != 0 {
+        0x8000_0000i64 - magnitude
+    } else {
+        0x8000_0000i64 + magnitude
+    }
+}
+
+/// Return finite binary32 ULP distance, treating either zero encoding equally.
+pub fn ulp_distance(left: u32, right: u32) -> Result<u64, Q8Error> {
+    if !is_finite_f32_bits(left) || !is_finite_f32_bits(right) {
+        return Err(quant_error(
+            "DFE-QUANT-009",
+            "ULP comparison requires finite values.",
+        ));
+    }
+    if left & POSITIVE_MASK == 0 && right & POSITIVE_MASK == 0 {
+        return Ok(0);
+    }
+    Ok(ordered_ulp(left).abs_diff(ordered_ulp(right)))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(HEX[(byte >> 4) as usize] as char);
+        result.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    result
+}
+
+#[cfg(test)]
+fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -844,5 +1079,46 @@ mod tests {
         )
         .unwrap();
         assert_eq!(ties.q_values()[2..6], [2, 4, -2, -4]);
+    }
+
+    #[test]
+    fn sha256_identity_has_known_empty_digest() {
+        let digest = sha256_digest(b"");
+        assert_eq!(
+            hex_lower(&digest),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn strict_accumulation_is_not_a_double_reduction() {
+        let weights = Q8Weights::try_new(
+            1,
+            3,
+            1,
+            vec![1, 1, 1].into_iter().chain([0; 29]).collect(),
+            vec![0x3f80_0000],
+        )
+        .unwrap();
+        let result =
+            canonical_linear_f32_bits(&[0x3f80_0000, 0x3400_0000, 0x3380_0000], &weights).unwrap();
+        assert_eq!(result, [0x3f80_0002]);
+    }
+
+    #[test]
+    fn contraction_sensitive_vector_uses_separate_product_then_add() {
+        // Fusing x0 * -127 + x1 * -1 into one operation yields 0xc2ffed91;
+        // the contract rounds each product before the ascending sum and
+        // therefore requires 0xc2ffed90.
+        let weights = Q8Weights::try_new(
+            1,
+            2,
+            1,
+            vec![129, 255].into_iter().chain([0; 30]).collect(),
+            vec![0x3f80_0000],
+        )
+        .unwrap();
+        let result = canonical_linear_f32_bits(&[0x3f7f_ed5d, 0x3f80_0392], &weights).unwrap();
+        assert_eq!(result, [0xc2ff_ed90]);
     }
 }

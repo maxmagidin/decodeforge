@@ -231,6 +231,10 @@ Contract:
 - source-vs-Q8 quality compares source weights with `dequantize_f32_bits`,
   separately from generated-kernel comparator correctness.
 
+Both the Python and Rust strict-f32 helpers use integer/rational rounding for
+binary32 add, multiply, divide, and integer conversion. Native floating-point
+arithmetic is not part of the semantic oracle; it cannot change fixture bits.
+
 The complete bit-level contract is frozen in
 [`docs/Q8_FORMAT_V1.md`](Q8_FORMAT_V1.md), including raw-word finite checks,
 strict operation order, gradual underflow, identities, and the generated
