@@ -11,15 +11,25 @@ use decodeforge_compiler::{
     build_apple_scalar_dylib, emit_neon_c, emit_scalar_c, load_apple_neon_v1, load_apple_scalar_v1,
 };
 use decodeforge_runtime::{GeneratedExecutableV1, PreparedCallV1};
+use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::hint::black_box;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const PROBE_OUTPUT_LIMIT: usize = 1024 * 1024;
+const PROBE_DEADLINE: Duration = Duration::from_secs(5);
+const PROBE_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROBE_PATH: &str = "/usr/bin:/bin";
+const PROBE_LOCALE: &str = "C";
+const GIT_PATH: &str = "/usr/bin/git";
+const SYSCTL_PATH: &str = "/usr/sbin/sysctl";
+const SW_VERS_PATH: &str = "/usr/bin/sw_vers";
+const UNAME_PATH: &str = "/usr/bin/uname";
 
 #[derive(Debug, Serialize)]
 pub struct SessionResult {
@@ -630,6 +640,10 @@ fn probe_in(
     let mut command = Command::new(program);
     command
         .args(arguments)
+        .env_clear()
+        .env("PATH", PROBE_PATH)
+        .env("LANG", PROBE_LOCALE)
+        .env("LC_ALL", PROBE_LOCALE)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -642,43 +656,76 @@ fn probe_in(
             format!("unable to start {label} probe: {error}"),
         )
     })?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| BenchError::new("DFE-G1-HOST", "probe stdout was unavailable"))?;
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            terminate_probe_child(&mut child);
+            return Err(BenchError::new(
+                "DFE-G1-HOST",
+                "probe stdout was unavailable",
+            ));
+        }
+    };
+    if let Err(error) = set_probe_nonblocking(&stdout) {
+        terminate_probe_child(&mut child);
+        return Err(BenchError::new(
+            "DFE-G1-HOST",
+            format!("unable to configure {label} probe stdout: {error}"),
+        ));
+    }
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 4096];
-    loop {
-        let count = match stdout.read(&mut buffer) {
-            Ok(count) => count,
+    let started = Instant::now();
+    let mut stdout_eof = false;
+    let status = loop {
+        if !stdout_eof {
+            match stdout.read(&mut buffer) {
+                Ok(0) => stdout_eof = true,
+                Ok(count) => {
+                    if bytes.len().saturating_add(count) > PROBE_OUTPUT_LIMIT {
+                        terminate_probe_child(&mut child);
+                        return Err(BenchError::new(
+                            "DFE-G1-HOST",
+                            format!("{label} probe exceeded its output bound"),
+                        ));
+                    }
+                    bytes.extend_from_slice(&buffer[..count]);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => {
+                    terminate_probe_child(&mut child);
+                    return Err(BenchError::new(
+                        "DFE-G1-HOST",
+                        format!("unable to read {label} probe: {error}"),
+                    ));
+                }
+            }
+        }
+        let status = match child.try_wait() {
+            Ok(status) => status,
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_probe_child(&mut child);
                 return Err(BenchError::new(
                     "DFE-G1-HOST",
-                    format!("unable to read {label} probe: {error}"),
+                    format!("unable to wait for {label} probe: {error}"),
                 ));
             }
         };
-        if count == 0 {
-            break;
+        if let Some(status) = status
+            && stdout_eof
+        {
+            break status;
         }
-        if bytes.len().saturating_add(count) > PROBE_OUTPUT_LIMIT {
-            let _ = child.kill();
-            let _ = child.wait();
+        if started.elapsed() >= PROBE_DEADLINE {
+            terminate_probe_child(&mut child);
             return Err(BenchError::new(
                 "DFE-G1-HOST",
-                format!("{label} probe exceeded its output bound"),
+                format!("{label} probe exceeded its 5-second deadline"),
             ));
         }
-        bytes.extend_from_slice(&buffer[..count]);
-    }
-    let status = child.wait().map_err(|error| {
-        BenchError::new(
-            "DFE-G1-HOST",
-            format!("unable to wait for {label} probe: {error}"),
-        )
-    })?;
+        thread::sleep(PROBE_POLL_INTERVAL);
+    };
     if !status.success() {
         return Err(BenchError::new(
             "DFE-G1-HOST",
@@ -688,6 +735,16 @@ fn probe_in(
     String::from_utf8(bytes)
         .map(|value| value.trim().to_owned())
         .map_err(|_| BenchError::new("DFE-G1-HOST", format!("{label} probe was not UTF-8")))
+}
+
+fn set_probe_nonblocking<F: std::os::fd::AsFd>(stream: &F) -> std::io::Result<()> {
+    let flags = fcntl_getfl(stream)?;
+    Ok(fcntl_setfl(stream, flags | OFlags::NONBLOCK)?)
+}
+
+fn terminate_probe_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn probe(program: &str, arguments: &[&str], label: &str) -> Result<String, BenchError> {
@@ -716,7 +773,7 @@ fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
         })?;
     let reported_root = probe_in(
         Some(&root),
-        "git",
+        GIT_PATH,
         &["rev-parse", "--show-toplevel"],
         "Git workspace root",
     )?;
@@ -734,7 +791,12 @@ fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
             "benchmark binary is not anchored to its compiler workspace",
         ));
     }
-    let revision = probe_in(Some(&root), "git", &["rev-parse", "HEAD"], "Git revision")?;
+    let revision = probe_in(
+        Some(&root),
+        GIT_PATH,
+        &["rev-parse", "HEAD"],
+        "Git revision",
+    )?;
     if revision.len() != 40
         || !revision
             .bytes()
@@ -747,7 +809,7 @@ fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
     }
     let status = probe_in(
         Some(&root),
-        "git",
+        GIT_PATH,
         &["status", "--porcelain=v1", "--untracked-files=normal"],
         "Git status",
     )?;
@@ -758,7 +820,7 @@ fn capture_checkout() -> Result<CheckoutInfo, BenchError> {
 }
 
 fn capture_host() -> Result<HostInfo, BenchError> {
-    if probe("sysctl", &["-n", "hw.optional.neon"], "NEON feature")? != "1" {
+    if probe(SYSCTL_PATH, &["-n", "hw.optional.neon"], "NEON feature")? != "1" {
         return Err(BenchError::new(
             "DFE-G1-HOST",
             "required Apple NEON feature is unavailable",
@@ -766,20 +828,28 @@ fn capture_host() -> Result<HostInfo, BenchError> {
     }
     Ok(HostInfo {
         os: std::env::consts::OS,
-        os_version: probe("sw_vers", &["-productVersion"], "macOS version")?,
-        os_build: probe("sw_vers", &["-buildVersion"], "macOS build")?,
-        kernel_release: probe("uname", &["-r"], "kernel release")?,
+        os_version: probe(SW_VERS_PATH, &["-productVersion"], "macOS version")?,
+        os_build: probe(SW_VERS_PATH, &["-buildVersion"], "macOS build")?,
+        kernel_release: probe(UNAME_PATH, &["-r"], "kernel release")?,
         arch: std::env::consts::ARCH,
         pointer_width: usize::BITS,
         native_supported: true,
-        cpu_model: probe("sysctl", &["-n", "machdep.cpu.brand_string"], "CPU model")?,
-        hardware_model: probe("sysctl", &["-n", "hw.model"], "hardware model")?,
+        cpu_model: probe(
+            SYSCTL_PATH,
+            &["-n", "machdep.cpu.brand_string"],
+            "CPU model",
+        )?,
+        hardware_model: probe(SYSCTL_PATH, &["-n", "hw.model"], "hardware model")?,
         physical_cores: parse_probe_u32(
-            "sysctl",
+            SYSCTL_PATH,
             &["-n", "hw.physicalcpu"],
             "physical core count",
         )?,
-        logical_cores: parse_probe_u32("sysctl", &["-n", "hw.logicalcpu"], "logical core count")?,
+        logical_cores: parse_probe_u32(
+            SYSCTL_PATH,
+            &["-n", "hw.logicalcpu"],
+            "logical core count",
+        )?,
         features: vec!["neon"],
         process_id: std::process::id(),
         thread_policy: "single calling thread; generated kernels create no workers",
