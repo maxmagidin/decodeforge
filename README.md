@@ -202,6 +202,7 @@ analysis.
 
 ## Status
 
-Design baseline only. No compiler or performance claim exists yet. The next
-accepted milestone is G0; résumé language must continue to say “designed” rather
-than “built” until a checked-in result bundle proves the corresponding claim.
+Python half of G0 is implemented and reviewable; Rust parity is pending, so G0
+is not complete. The compiler and performance paths are not claimed until a
+checked-in result bundle proves them. See [the normative Q8
+contract](docs/Q8_FORMAT_V1.md).

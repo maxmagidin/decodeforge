@@ -4,6 +4,12 @@
 variable, preserves the declared numeric contract, and produces a reproducible
 result bundle.
 
+**Current status:** the Python half of G0 is implemented and reviewable; Rust
+parity is pending. No native-kernel or performance claim is made until its
+checked-in evidence bundle exists. The required benchmark path is the Apple M4
+ARM64 NEON slice; Ryzen/AVX2 measurements are deferred to an optional G4
+portability extension.
+
 ## Claim classes
 
 DecodeForge keeps four kinds of claims separate:
@@ -48,15 +54,15 @@ All use `M=1` first:
 - `[2048,5632]`;
 - `[32000,2048]` after the smaller projections are stable.
 
+The Ryzen 5 3600 shape suite is optional G4 evidence if AVX2 portability is
+selected; it is not a G0–G3 requirement.
+
 ### Held-out shapes
 
 A small synthetic suite varies `N` around tile boundaries and `K` around the
 32-weight block boundary. Held-out shapes are fixed before tuning results are
 examined. They test whether legality and heuristic ranking generalize; they are
 not additional search data.
-The Ryzen 5 3600 shape suite is optional G4 evidence if AVX2 portability is
-selected; it is not a G0–G3 requirement.
-
 
 ### Correctness corpus
 
@@ -82,14 +88,14 @@ Quantization error and schedule error are different experiments:
   compared the same way only if selected as G4.
 - Fusion is compared with the materialized Q8 graph.
 
+The source-vs-Q8 report is a quantization-quality result, not the generated-
+kernel comparator and not evidence that a native kernel has passed.
+
 Reports include maximum absolute and relative error, mean squared error, and
 cosine similarity. Model-level reports add top-k/logit agreement, fixed-prompt
 greedy-token agreement, and a pinned perplexity slice when claims cover the
 whole quantized path. The tolerance and its rationale are versioned before
 candidate timing.
-
-The source-vs-Q8 report is a quantization-quality result, not the generated-
-kernel comparator and not evidence that a native kernel has passed.
 
 ## Timing protocol
 
