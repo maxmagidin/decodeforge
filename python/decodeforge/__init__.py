@@ -6,6 +6,7 @@ from .q8 import (
     NUMERIC_MODE,
     Q8Error,
     Q8Weights,
+    canonical_linear_f32_bits,
     dequantize_f32_bits,
     dequantize_f32_rows_bits,
     f32_add_bits,
@@ -13,8 +14,10 @@ from .q8 import (
     f32_div_bits,
     f32_from_int,
     f32_mul_bits,
+    fixture_identity,
     float_to_f32_bits,
     is_finite_f32_bits,
+    logical_weight_identity,
     quantize_f32_bits,
 )
 
@@ -25,6 +28,7 @@ __all__ = [
     "Q8Error",
     "Q8Weights",
     "__version__",
+    "canonical_linear_f32_bits",
     "dequantize_f32_bits",
     "dequantize_f32_rows_bits",
     "f32_add_bits",
@@ -32,8 +36,10 @@ __all__ = [
     "f32_div_bits",
     "f32_from_int",
     "f32_mul_bits",
+    "fixture_identity",
     "float_to_f32_bits",
     "is_finite_f32_bits",
+    "logical_weight_identity",
     "quantize_f32_bits",
 ]
 

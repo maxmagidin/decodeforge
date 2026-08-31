@@ -11,11 +11,14 @@ from decodeforge.q8 import (
     Q8Error,
     Q8Weights,
     _ratio_to_q,
+    canonical_linear_f32_bits,
     dequantize_f32_bits,
     f32_add_bits,
     f32_div_bits,
     f32_mul_bits,
+    fixture_identity,
     float_to_f32_bits,
+    logical_weight_identity,
     quantize_f32_bits,
 )
 
@@ -48,18 +51,40 @@ def test_zero_and_signed_zero_are_canonicalized_for_quantization() -> None:
     assert positive == negative
     assert positive.scale_bits == (0,)
     assert positive.q_bytes == bytes(32)
+    assert canonical_linear_f32_bits([0x80000000, 0x00000000], positive) == (0,)
 
 
-def test_nonfinite_sources_have_stable_codes() -> None:
+def test_canonical_order_rounds_after_each_operation() -> None:
+    # Three products whose exact sum is just over one f32 ULP demonstrate that
+    # a binary64 reduction is not an acceptable substitute.
+    weights = Q8Weights(1, 3, 1, bytes([1, 1, 1] + [0] * 29), (0x3F800000,))
+    input_bits = (0x3F800000, 0x34000000, 0x33800000)  # 1 + 2**-23 + 2**-24
+    assert canonical_linear_f32_bits(input_bits, weights) == (0x3F800002,)
+
+
+def test_nonfinite_inputs_have_stable_codes() -> None:
     with pytest.raises(Q8Error, match="DFE-QUANT-004") as source_error:
         quantize_f32_bits(1, 1, [0x7FC12345])
     assert source_error.value.diagnostic["code"] == "DFE-QUANT-004"
+    weights = quantize_f32_bits(1, 1, [0x3F800000])
+    with pytest.raises(Q8Error, match="DFE-QUANT-005"):
+        canonical_linear_f32_bits([0x7F800000], weights)
 
 
 def test_division_is_not_a_binary64_double_round() -> None:
     # This midpoint is exact in the rational implementation.  The expected
     # result is the even lower significand.
     assert f32_div_bits(0x3F800001, 0x3F800000) == 0x3F800001
+
+
+def test_hash_preimages_are_stable_and_dimension_sensitive() -> None:
+    weights = quantize_f32_bits(1, 1, [0x3F800000])
+    output = canonical_linear_f32_bits([0x3F800000], weights)
+    logical = logical_weight_identity(weights)
+    fixture = fixture_identity(1, 1, [0x3F800000], weights, [0x3F800000], output)
+    assert logical.startswith("sha256:") and len(logical) == 71
+    assert fixture.startswith("sha256:") and len(fixture) == 71
+    assert fixture != logical
 
 
 def test_quantization_accepts_positive_u32_k_before_length_check() -> None:

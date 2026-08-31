@@ -7,6 +7,9 @@ import random
 from fractions import Fraction
 
 from decodeforge.q8 import (
+    Q8Error,
+    Q8Weights,
+    canonical_linear_f32_bits,
     f32_add_bits,
     f32_div_bits,
     f32_mul_bits,
@@ -185,3 +188,13 @@ def test_bounded_randomized_ieee_classes() -> None:
         assert f32_mul_bits(left, right) == _oracle_mul(left, right)
         if right & ~SIGN_MASK:
             assert f32_div_bits(left, right) == _oracle_div(left, right)
+
+
+def test_nonfinite_evaluation_returns_stable_diagnostic() -> None:
+    weights = Q8Weights(1, 1, 1, bytes([127] + [0] * 31), (MAXFINITE_BITS,))
+    try:
+        canonical_linear_f32_bits([MAXFINITE_BITS], weights)
+    except Q8Error as error:
+        assert error.diagnostic["code"] == "DFE-QUANT-010"
+    else:
+        raise AssertionError("overflowing canonical evaluation was accepted")
