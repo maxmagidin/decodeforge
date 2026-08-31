@@ -45,6 +45,7 @@ SCHEMA_FILES: Final = {
     "diagnostic": SCHEMA_DIR / "diagnostic.schema.json",
     "host-manifest": SCHEMA_DIR / "host-manifest.schema.json",
     "run-manifest": SCHEMA_DIR / "run-manifest.schema.json",
+    "g1-benchmark-session": SCHEMA_DIR / "g1-benchmark-session.schema.json",
 }
 CATALOG_FILES: Final = (SCHEMA_DIR / "common.schema.json", *SCHEMA_FILES.values())
 FOUNDATION_REQUIRED_ARTIFACTS: Final = ("host.json", "report.md", "request.json")
@@ -559,6 +560,10 @@ def validate_data(
         return _validate_fixture_manifest(instance)
     if schema_name == "schedule":
         return _validate_schedule(instance)
+    if schema_name == "g1-benchmark-session":
+        from decodeforge.g1_evidence import _validate_session_semantics
+
+        return _validate_session_semantics(instance)
     return diagnostics
 
 

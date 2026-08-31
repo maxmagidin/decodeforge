@@ -1,0 +1,1020 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g1-prepared-call-paired-v1",
+  "format": "decodeforge_g1_benchmark_v1",
+  "session_id": "example-session",
+  "spec_identity": "sha256:6650d0e413b403e7f81111cca75a77f931801c44f2a35cd8f275256be54848dd",
+  "case_bundle_identity": "sha256:797c19ddb60a5d3ec819f46650fbbe030d61b273790fe281784aa6047392beee",
+  "source": {
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+    "model_filename": "model.safetensors",
+    "model_size_bytes": 2200119864,
+    "model_sha256": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933",
+    "tensor_name": "model.layers.0.self_attn.q_proj.weight",
+    "dtype": "BF16",
+    "shape": [
+      2048,
+      2048
+    ],
+    "tensor_sha256": "5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac",
+    "input_semantic_identity": "sha256:5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac"
+  },
+  "numeric_mode": "strict_f32_v1",
+  "pack_format": "DFQ8_B32_OI4_V1",
+  "checkout": {
+    "revision": "1111111111111111111111111111111111111111",
+    "dirty": false
+  },
+  "host": {
+    "os": "macos",
+    "os_version": "15.5",
+    "os_build": "24F74",
+    "kernel_release": "24.5.0",
+    "arch": "aarch64",
+    "pointer_width": 64,
+    "native_supported": true,
+    "cpu_model": "Apple M4",
+    "hardware_model": "Mac16,13",
+    "physical_cores": 10,
+    "logical_cores": 10,
+    "features": [
+      "neon"
+    ],
+    "process_id": 1001,
+    "thread_policy": "single calling thread; generated kernels create no workers",
+    "affinity_policy": "macOS default scheduler; no hard affinity requested"
+  },
+  "timing": {
+    "boundary": "PreparedCall::invoke plus fixed Rust repetition loop and timer: sentinel fill + df_run_v1 + status decode + finite scan; no allocation",
+    "warmup_min_calls": 16,
+    "warmup_min_ns": 500000000,
+    "calibration_target_ns": 25000000,
+    "calibration_max_repetitions": 1048576,
+    "paired_rounds": 40,
+    "scalar_first_pairs": 20,
+    "neon_first_pairs": 20,
+    "trimming": "none; every raw sample is retained"
+  },
+  "activation": [
+    {
+      "pair_index": 0,
+      "first_backend": "neon",
+      "digest": "3ef3e5973f9bc1fb06cb7c12191db8a9556a90817cb458cc548e221abf663684"
+    },
+    {
+      "pair_index": 1,
+      "first_backend": "scalar",
+      "digest": "5d6e4133e94fc535b0ff23591d95d01a699e65115ca514e25b6f04283d00733b"
+    },
+    {
+      "pair_index": 2,
+      "first_backend": "neon",
+      "digest": "923c6d2e4d50ff8ee9a8ec27dcf172c178dcc900adb2fe32fb22014f5c002943"
+    },
+    {
+      "pair_index": 3,
+      "first_backend": "neon",
+      "digest": "c2a9fe1976ac268c7508f5bbc3e158804ecd7a058de73ccf83079e6aeed80707"
+    },
+    {
+      "pair_index": 4,
+      "first_backend": "neon",
+      "digest": "80d4e281145ab935fc333df89c09d74b1077ba239a190c5b5c17ec37a50ec963"
+    },
+    {
+      "pair_index": 5,
+      "first_backend": "scalar",
+      "digest": "2fdf4d0c5ceb9a3fc14e527a7854aebae2d1997936967dbbec7376e8863c399d"
+    },
+    {
+      "pair_index": 6,
+      "first_backend": "scalar",
+      "digest": "bc620276a8f27ccb978552dd091e923909bdfbd73017cae5cc0a43f550f39ca7"
+    },
+    {
+      "pair_index": 7,
+      "first_backend": "scalar",
+      "digest": "957ea309dd6b70f239d8be76fd895e48ddc3aec7752d61d9893e5f41d2bc8569"
+    },
+    {
+      "pair_index": 8,
+      "first_backend": "scalar",
+      "digest": "a9146825d38d87988852c119bd30e8b325f1fe06e23a2f73d34c5a2ea11fcfd4"
+    },
+    {
+      "pair_index": 9,
+      "first_backend": "scalar",
+      "digest": "784bbc80371d5fdf9c2af0f0cbfcb586572110f2d4d959cfbadd29237166e06b"
+    },
+    {
+      "pair_index": 10,
+      "first_backend": "neon",
+      "digest": "27925fef38fd9aa144e06d405139f0ea6c1efc3a79f2f5e933d259da5cd43e87"
+    },
+    {
+      "pair_index": 11,
+      "first_backend": "neon",
+      "digest": "3a19471895047f27d6d89452383c85542a371e9a6bf20cdab1cd188684ada23c"
+    },
+    {
+      "pair_index": 12,
+      "first_backend": "neon",
+      "digest": "59049020a3e8240b8498b821b7635c35d82fd71550597d830c16694f779e8843"
+    },
+    {
+      "pair_index": 13,
+      "first_backend": "scalar",
+      "digest": "2cb4ac7d4c9a6e939da50d9c4bc626b124552162a528a7070a512857dcda9dcd"
+    },
+    {
+      "pair_index": 14,
+      "first_backend": "scalar",
+      "digest": "dd9d51d1563dc2f2a56a380d25a27023229d49f68bf8bb040547749e905fb496"
+    },
+    {
+      "pair_index": 15,
+      "first_backend": "scalar",
+      "digest": "efeb9a135b2d3358e48511c75edd251a42a48125d065067a28782d4a2cdc71d6"
+    },
+    {
+      "pair_index": 16,
+      "first_backend": "scalar",
+      "digest": "8f7033e82b6c6911b1d79940de96a05c526f3df51df90299557f4463d7601647"
+    },
+    {
+      "pair_index": 17,
+      "first_backend": "neon",
+      "digest": "558a72285088c73c32580c5cc91c8fc272c88fa0ef9f8659d2ed620a19b3a468"
+    },
+    {
+      "pair_index": 18,
+      "first_backend": "neon",
+      "digest": "874c9b290bf7542f9c232eb2a191afa5f869155188d09ab092bb6df532b99aff"
+    },
+    {
+      "pair_index": 19,
+      "first_backend": "neon",
+      "digest": "6484fe90016bbd4e587ad5368ef64e296efd47afda610a4dc717052c06b4f91f"
+    },
+    {
+      "pair_index": 20,
+      "first_backend": "scalar",
+      "digest": "a52313b7b9bd346143b776864b2c1b36a1f0bea7dd0a6b4a127b1793fab1b4bd"
+    },
+    {
+      "pair_index": 21,
+      "first_backend": "scalar",
+      "digest": "b9579592618510a85a536b5bb6bce7d8c6329d01db32564f9e8449c8dee70be8"
+    },
+    {
+      "pair_index": 22,
+      "first_backend": "scalar",
+      "digest": "f3a2022ffaa50a6e54ec11e6036cb055ec5450520fc592917408de238c908a99"
+    },
+    {
+      "pair_index": 23,
+      "first_backend": "neon",
+      "digest": "eb016c8e2d220660d63216c0484cbe329e9f40f565fe5479167d20465d6ad727"
+    },
+    {
+      "pair_index": 24,
+      "first_backend": "scalar",
+      "digest": "40af9bf92b89be87f9393bdd46a9265ed3e60c05f30da03f31e46f58406aa41f"
+    },
+    {
+      "pair_index": 25,
+      "first_backend": "neon",
+      "digest": "d2b2372ef88f7ab01b24948201b8499a4419fd999c3cc38aec59c97e80cc9fb4"
+    },
+    {
+      "pair_index": 26,
+      "first_backend": "neon",
+      "digest": "c58d95827adcd06a3986a3d8d522e8768bd7fc733cebd1ba440a06fa1b607c73"
+    },
+    {
+      "pair_index": 27,
+      "first_backend": "neon",
+      "digest": "d3d73b2cb3576e19af32024c4175287ebcffee3e02d613f9380bc4a6dbccffc7"
+    },
+    {
+      "pair_index": 28,
+      "first_backend": "neon",
+      "digest": "f7a3ab0095706ec62acc5fc97549f99dfd149ef63ca9c383e08cbd2e0e059d4d"
+    },
+    {
+      "pair_index": 29,
+      "first_backend": "neon",
+      "digest": "d78edbbdac510965a6c4820c667a188b8995a9aea136f3b94fddbadf6b5a9978"
+    },
+    {
+      "pair_index": 30,
+      "first_backend": "scalar",
+      "digest": "4fbd526c56bb2db222bd238ede82ad4e335efb7d05573d465022174cabfab4be"
+    },
+    {
+      "pair_index": 31,
+      "first_backend": "scalar",
+      "digest": "068ad6bede1e1490b1bf8a6107ec707dd43584d924cd964755885c269b6414f0"
+    },
+    {
+      "pair_index": 32,
+      "first_backend": "neon",
+      "digest": "71d054059e281e25507276dbbb6b88aff30c7a23a6767cd026cabb785b3c9cb1"
+    },
+    {
+      "pair_index": 33,
+      "first_backend": "neon",
+      "digest": "44a0a7fe3e6d7d60e3c16db13737ddf9517a4ee44023680f17433f3070155902"
+    },
+    {
+      "pair_index": 34,
+      "first_backend": "scalar",
+      "digest": "5287302e1a8457acb4841cec7a38b098f064001c44800ea68aa0f89ab3eb0c64"
+    },
+    {
+      "pair_index": 35,
+      "first_backend": "neon",
+      "digest": "4ce9426f9049523c6014047b371eed560c5f6695fe0734b50c4000cb490a9657"
+    },
+    {
+      "pair_index": 36,
+      "first_backend": "scalar",
+      "digest": "cc1f2cffd1207b73b51275547fb2ef60257aac309f6f7dd295277bd403a0efe0"
+    },
+    {
+      "pair_index": 37,
+      "first_backend": "scalar",
+      "digest": "29cd48853c093eac86bf53c643e4456c058fe0840bb9d287d8c1d68cd27b3652"
+    },
+    {
+      "pair_index": 38,
+      "first_backend": "scalar",
+      "digest": "8c7d97709a665d1a37ea5dd5fc2bd296ad51250821313a18e914781cf3dbde26"
+    },
+    {
+      "pair_index": 39,
+      "first_backend": "neon",
+      "digest": "22853333cd855611ce00245cade0fcc6a79f66c191ab84a24f4f97c89ef3b0d5"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "tinyllama-q-proj-2048x2048",
+      "kind": "real",
+      "n": 2048,
+      "k": 2048,
+      "input_identity": "sha256:03263339062e7a0839f45a28b256b1e1585e5a35e4281853283049017859c590",
+      "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a",
+      "logical_weight_identity": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2",
+      "packed_weight_identity": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc",
+      "region_ir": "{\"schema_version\":1,\"operator\":\"q8_linear\",\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\",\"numeric_mode\":\"strict_f32_v1\"}",
+      "scalar_loop_ir": "{\"schema_version\":1,\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"variant\":\"scalar\",\"vector_axis\":\"output\",\"vector_lanes\":1,\"n_tile\":4,\"k_block\":32,\"k_unroll\":1,\"accumulators\":1,\"reduction_order\":\"ascending-block-lane\",\"arithmetic\":\"separate-mul-add\",\"k_padding\":\"logical-only\",\"pack\":{\"schema_version\":1,\"format\":\"DFQ8_B32_OI4_V1\",\"layout\":\"output-interleaved\",\"tile\":4,\"block_size\":32,\"record_bytes\":144,\"alignment\":16},\"n_tail\":\"scalar-cleanup\",\"numeric_mode\":\"strict_f32_v1\",\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\"}",
+      "neon_loop_ir": "{\"schema_version\":1,\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"variant\":\"neon\",\"vector_axis\":\"output\",\"vector_lanes\":4,\"n_tile\":4,\"k_block\":32,\"k_unroll\":1,\"accumulators\":1,\"reduction_order\":\"ascending-block-lane\",\"arithmetic\":\"separate-mul-add\",\"k_padding\":\"logical-only\",\"pack\":{\"schema_version\":1,\"format\":\"DFQ8_B32_OI4_V1\",\"layout\":\"output-interleaved\",\"tile\":4,\"block_size\":32,\"record_bytes\":144,\"alignment\":16},\"n_tail\":\"scalar-cleanup\",\"numeric_mode\":\"strict_f32_v1\",\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\"}",
+      "pack_manifest": {
+        "schema_version": 1,
+        "spec": {
+          "schema_version": 1,
+          "format": "DFQ8_B32_OI4_V1",
+          "layout": "output-interleaved",
+          "tile": 4,
+          "block_size": 32,
+          "record_bytes": 144,
+          "alignment": 16
+        },
+        "shape": {
+          "m": 1,
+          "n": 2048,
+          "k": 2048
+        },
+        "logical_weight_identity": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2",
+        "packed_identity": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc",
+        "payload_bytes": 4718592
+      },
+      "scalar": {
+        "artifact": {
+          "module_id": "sha256:c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631",
+          "source_hash": "sha256:99aca3f9ed5177ce4abc7d1990bfb28374fb14cfa411081a2bc6cf767e28b58c",
+          "abi_header_hash": "sha256:7e455301d59979be04e79b83a47e3b1bd7a143e681db01227b86557d989966cc",
+          "dylib_hash": "sha256:23a773188131dce3d663f3a14660f42860b0122e50d29fcc6d5026835510dbf0",
+          "flags": [
+            "-std=c11",
+            "--no-default-config",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+            "-fno-fast-math",
+            "-ffp-model=strict",
+            "-ffp-contract=off",
+            "-fdenormal-fp-math=ieee",
+            "-fno-vectorize",
+            "-fno-slp-vectorize",
+            "-fno-unroll-loops",
+            "-fvisibility=hidden",
+            "-fPIC",
+            "-dynamiclib",
+            "-arch",
+            "arm64",
+            "-mmacosx-version-min=15.0",
+            "-Wl,-install_name,@rpath/decodeforge_scalar_v1.dylib",
+            "-Wl,-fatal_warnings",
+            "-Wl,-exported_symbol,_df_abi_version",
+            "-Wl,-exported_symbol,_df_artifact_id",
+            "-Wl,-exported_symbol,_df_run_v1"
+          ],
+          "compiler": "clang",
+          "compiler_version": "Apple clang version 17.0.0 (clang-1700.0.13.5) Target: arm64-apple-darwin24.5.0 Thread model: posix InstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+          "target": "arm64-apple-darwin24.5.0",
+          "sdk_version": "15.5",
+          "objdump_version": "Apple LLVM version 17.0.0 Optimized build. Registered Targets: aarch64 - AArch64 (little endian) aarch64_32 - AArch64 (little endian ILP32) aarch64_be - AArch64 (big endian) arm - ARM arm64 - ARM64 (little endian) arm64_32 - ARM64 (little endian ILP32) armeb - ARM (big endian) thumb - Thumb thumbeb - Thumb (big endian) x86 - 32-bit X86: Pentium-Pro and above x86-64 - 64-bit X86: EM64T and AMD64",
+          "dynamic_exports": [
+            "df_abi_version",
+            "df_artifact_id",
+            "df_run_v1"
+          ],
+          "source": "/* DecodeForge generated source format: decodeforge_scalar_c_v1. */\n/* Buffer extents, non-aliasing, and packed-weight identity are safe-caller obligations. */\n#include \"decodeforge/abi_v1.h\"\n#include <fenv.h>\n#include <float.h>\n#include <math.h>\n#include <stddef.h>\n#include <stdint.h>\n#include <string.h>\n\n#pragma STDC FENV_ACCESS ON\n#pragma STDC FP_CONTRACT OFF\n\n_Static_assert(sizeof(float) == 4, \"binary32 required\");\n_Static_assert(FLT_RADIX == 2, \"binary32 radix required\");\n_Static_assert(FLT_MANT_DIG == 24, \"binary32 mantissa required\");\n_Static_assert(FLT_MAX_EXP == 128, \"binary32 exponent required\");\n_Static_assert(FLT_MIN_EXP == -125, \"binary32 exponent required\");\n_Static_assert(FLT_EVAL_METHOD == 0, \"no excess precision required\");\n\n#if defined(__clang__)\n#define DF_PUBLIC_V1 __attribute__((visibility(\"default\")))\n#define DF_HIDDEN_V1 __attribute__((visibility(\"hidden\")))\n#define DF_USED_V1 __attribute__((used))\n#define DF_NOINLINE_V1 __attribute__((noinline))\n#else\n#error \"decodeforge_scalar_c_v1 requires Clang\"\n#endif\n\nstatic const char df_artifact_id_cstr_v1[] = \"sha256:c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\nDF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631(const float *x, const uint8_t *packed_weight, float *y) {\n    for (uint32_t panel = 0; panel < UINT32_C(512); ++panel) {\n        for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {\n            const uint32_t row = panel * UINT32_C(4) + output_lane;\n            if (row >= UINT32_C(2048) ) break;\n            float accumulator = 0.0f;\n            for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                const size_t scale_offset = (size_t)output_lane * 4u;\n                const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                float scale;\n                memcpy(&scale, &scale_bits, sizeof(scale));\n                const uint32_t block_start = block * UINT32_C(32);\n                const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                float block_sum = 0.0f;\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                    const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                    const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                    const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                    block_sum = block_sum + product;\n                }\n                block_sum = block_sum * scale;\n                accumulator = accumulator + block_sum;\n            }\n            y[row] = accumulator;\n        }\n    }\n    return 0;\n}\n\nDF_PUBLIC_V1 uint32_t df_abi_version(void) {\n    return DF_GENERATED_ABI_VERSION_V1;\n}\n\nDF_PUBLIC_V1 const char *df_artifact_id(void) {\n    return df_artifact_id_cstr_v1;\n}\n\nDF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {\n    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n    if (call->m != UINT32_C(1) || call->n != UINT32_C(2048) || call->k != UINT32_C(2048) ) return DF_STATUS_SHAPE_V1;\n    if (call->x_stride != UINT32_C(2048) || call->y_stride != UINT32_C(2048) ) return DF_STATUS_STRIDE_V1;\n    if (call->packed_weight_bytes != UINT64_C(512) * UINT64_C(64) * UINT64_C(144) ) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n    fenv_t df_saved_environment;\n    int32_t df_status = DF_STATUS_OK_V1;\n    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n    for (uint32_t input = 0; input < UINT32_C(2048); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n    (void)df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C(2048); ++output) {\n        if (!isfinite(y[output])) {\n            df_status = DF_STATUS_NONFINITE_RESULT_V1;\n            goto df_restore_environment;\n        }\n    }\ndf_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}\n",
+          "disassembly": "out/decodeforge_scalar_v1.dylib:\n(__TEXT,__text) section\n_df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631:\n     420:\tstp\tx24, x23, [sp, #-0x30]!\n     424:\tstp\tx22, x21, [sp, #0x10]\n     428:\tstp\tx20, x19, [sp, #0x20]\n     42c:\tmov\tx8, #0x0\n     430:\tadd\tx9, x1, #0x10\n     434:\tmov\tw10, #0x90\n     438:\tmov\tw11, #0x2400\n     43c:\tmov\tx12, #0x0\n     440:\tlsl\tx13, x8, #6\n     444:\tmov\tx14, x9\n     448:\tadd\tx15, x2, x8, lsl #4\n     44c:\tmov\tx16, #0x0\n     450:\tlsl\tx17, x12, #2\n     454:\tmov\tw3, #0x1\n     458:\tbfi\tx3, x12, #2, #61\n     45c:\tmov\tw4, #0x2\n     460:\tbfi\tx4, x12, #2, #61\n     464:\tmov\tw5, #0x3\n     468:\tbfi\tx5, x12, #2, #61\n     46c:\tmovi\td0, #0000000000000000\n     470:\tmov\tx6, x14\n     474:\tmov\tx7, x0\n     478:\tmov\tx19, #0x0\n     47c:\tadd\tx20, x16, x13\n     480:\tmadd\tx20, x20, x10, x1\n     484:\tldrb\tw21, [x20, x17]\n     488:\tldrb\tw22, [x20, x3]\n     48c:\tldrb\tw23, [x20, x4]\n     490:\torr\tw21, w21, w22, lsl #8\n     494:\torr\tw21, w21, w23, lsl #16\n     498:\tldrb\tw20, [x20, x5]\n     49c:\torr\tw20, w21, w20, lsl #24\n     4a0:\tmovi\td1, #0000000000000000\n     4a4:\tldrb\tw21, [x6, x19]\n     4a8:\tsxtb\tw22, w21\n     4ac:\torr\tw23, w21, #0xffffff00\n     4b0:\tcmp\tw22, #0x0\n     4b4:\tcsel\tw21, w23, w21, lt\n     4b8:\tscvtf\ts2, w21\n     4bc:\tldr\ts3, [x7, x19]\n     4c0:\tfmul\ts2, s2, s3\n     4c4:\tfadd\ts1, s1, s2\n     4c8:\tadd\tx19, x19, #0x4\n     4cc:\tcmp\tx19, #0x80\n     4d0:\tb.ne\t0x4a4\n     4d4:\tfmov\ts2, w20\n     4d8:\tfmul\ts1, s1, s2\n     4dc:\tfadd\ts0, s0, s1\n     4e0:\tadd\tx16, x16, #0x1\n     4e4:\tadd\tx7, x7, #0x80\n     4e8:\tadd\tx6, x6, #0x90\n     4ec:\tcmp\tx16, #0x40\n     4f0:\tb.ne\t0x478\n     4f4:\tstr\ts0, [x15, x12, lsl #2]\n     4f8:\tadd\tx12, x12, #0x1\n     4fc:\tadd\tx14, x14, #0x1\n     500:\tcmp\tx12, #0x4\n     504:\tb.ne\t0x44c\n     508:\tadd\tx8, x8, #0x1\n     50c:\tadd\tx9, x9, x11\n     510:\tcmp\tx8, #0x200\n     514:\tb.ne\t0x43c\n     518:\tmov\tw0, #0x0\n     51c:\tldp\tx20, x19, [sp, #0x20]\n     520:\tldp\tx22, x21, [sp, #0x10]\n     524:\tldp\tx24, x23, [sp], #0x30\n     528:\tret\n",
+          "audit": {
+            "backend": "scalar",
+            "helper_symbol": "df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631",
+            "scalar_scvtf_count": 1,
+            "scalar_fmul_count": 2,
+            "scalar_fadd_count": 2,
+            "return_count": 1,
+            "conditional_branch_count": 4,
+            "comparison_count": 5,
+            "logical_lane_loop_observed": true
+          }
+        },
+        "correctness": {
+          "pre_timing_bit_exact": true,
+          "post_timing_bit_exact": true,
+          "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a"
+        },
+        "warmup": {
+          "calls": 16,
+          "elapsed_ns": 500000000
+        },
+        "calibration": {
+          "target_ns": 25000000,
+          "max_repetitions": 1048576,
+          "selected_repetitions": 1,
+          "attempts": [
+            {
+              "elapsed_ns": 25000000,
+              "repetitions": 1
+            }
+          ]
+        }
+      },
+      "neon": {
+        "artifact": {
+          "module_id": "sha256:564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44",
+          "source_hash": "sha256:d803253668b9568a9a4c0100ada42d05a9045a5ef30d56ba6099b9253c3a26de",
+          "abi_header_hash": "sha256:7e455301d59979be04e79b83a47e3b1bd7a143e681db01227b86557d989966cc",
+          "dylib_hash": "sha256:2c98f0acdcde66f333005c8498010f2726c8e5d391e520debba8d66e74913f5f",
+          "flags": [
+            "-std=c11",
+            "--no-default-config",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+            "-fno-fast-math",
+            "-ffp-model=strict",
+            "-ffp-contract=off",
+            "-fdenormal-fp-math=ieee",
+            "-fno-vectorize",
+            "-fno-slp-vectorize",
+            "-fno-unroll-loops",
+            "-fvisibility=hidden",
+            "-fPIC",
+            "-dynamiclib",
+            "-arch",
+            "arm64",
+            "-mmacosx-version-min=15.0",
+            "-Wl,-install_name,@rpath/decodeforge_neon_v1.dylib",
+            "-Wl,-fatal_warnings",
+            "-Wl,-exported_symbol,_df_abi_version",
+            "-Wl,-exported_symbol,_df_artifact_id",
+            "-Wl,-exported_symbol,_df_run_v1"
+          ],
+          "compiler": "clang",
+          "compiler_version": "Apple clang version 17.0.0 (clang-1700.0.13.5) Target: arm64-apple-darwin24.5.0 Thread model: posix InstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+          "target": "arm64-apple-darwin24.5.0",
+          "sdk_version": "15.5",
+          "objdump_version": "Apple LLVM version 17.0.0 Optimized build. Registered Targets: aarch64 - AArch64 (little endian) aarch64_32 - AArch64 (little endian ILP32) aarch64_be - AArch64 (big endian) arm - ARM arm64 - ARM64 (little endian) arm64_32 - ARM64 (little endian ILP32) armeb - ARM (big endian) thumb - Thumb thumbeb - Thumb (big endian) x86 - 32-bit X86: Pentium-Pro and above x86-64 - 64-bit X86: EM64T and AMD64",
+          "dynamic_exports": [
+            "df_abi_version",
+            "df_artifact_id",
+            "df_run_v1"
+          ],
+          "source": "/* DecodeForge generated source format: decodeforge_neon_c_v1. */\n/* Fixed schedule: four output rows, ascending block/lane, separate mul/add. */\n/* OI4 payload and all buffer extents are safe-caller obligations. */\n#include \"decodeforge/abi_v1.h\"\n#include <arm_neon.h>\n#include <fenv.h>\n#include <float.h>\n#include <math.h>\n#include <stddef.h>\n#include <stdint.h>\n#include <string.h>\n\n#if !defined(__aarch64__) || !defined(__ARM_NEON)\n#error \"decodeforge_neon_c_v1 requires AArch64 NEON\"\n#endif\n#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__\n#error \"decodeforge_neon_c_v1 requires little-endian AArch64\"\n#endif\n#if !defined(__clang__)\n#error \"decodeforge_neon_c_v1 requires Clang\"\n#endif\n\n#pragma STDC FENV_ACCESS ON\n#pragma STDC FP_CONTRACT OFF\n\n_Static_assert(sizeof(float) == 4, \"binary32 required\");\n_Static_assert(FLT_RADIX == 2, \"binary32 radix required\");\n_Static_assert(FLT_MANT_DIG == 24, \"binary32 mantissa required\");\n_Static_assert(FLT_MAX_EXP == 128, \"binary32 exponent required\");\n_Static_assert(FLT_MIN_EXP == -125, \"binary32 exponent required\");\n_Static_assert(FLT_EVAL_METHOD == 0, \"no excess precision required\");\n\n#define DF_PUBLIC_V1 __attribute__((visibility(\"default\")))\n#define DF_HIDDEN_V1 __attribute__((visibility(\"hidden\")))\n#define DF_USED_V1 __attribute__((used))\n#define DF_NOINLINE_V1 __attribute__((noinline))\n\nstatic const char df_artifact_id_cstr_v1[] = \"sha256:564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\nDF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44(const float *x, const uint8_t *packed_weight, float *y) {\n    for (uint32_t panel = 0; panel < UINT32_C(512); ++panel) {\n        const uint32_t row_base = panel * UINT32_C(4);\n        if (row_base + UINT32_C(4) <= UINT32_C(2048)) {\n            float32x4_t accumulator = vdupq_n_f32(0.0f);\n            for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                float32x4_t block_sum = vdupq_n_f32(0.0f);\n                const uint32_t block_start = block * UINT32_C(32);\n                const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                    const size_t q_offset = 16u + (size_t)lane * 4u;\n                    uint32_t q_word;\n                    memcpy(&q_word, record + q_offset, sizeof(q_word));\n                    const int8x8_t q8 = vreinterpret_s8_u64(vcreate_u64((uint64_t)q_word));\n                    const int16x8_t q16 = vmovl_s8(q8);\n                    const int32x4_t q32 = vmovl_s16(vget_low_s16(q16));\n                    const float32x4_t qf = vcvtq_f32_s32(q32);\n                    const float32x4_t xv = vdupq_n_f32(x[(size_t)block_start + (size_t)lane]);\n                    block_sum = vaddq_f32(block_sum, vmulq_f32(qf, xv));\n                }\n                const uint8x16_t scale_bytes = vld1q_u8(record);\n                const float32x4_t scales = vreinterpretq_f32_u8(scale_bytes);\n                block_sum = vmulq_f32(block_sum, scales);\n                accumulator = vaddq_f32(accumulator, block_sum);\n            }\n            vst1q_f32(y + row_base, accumulator);\n        } else {\n            for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {\n                const uint32_t row = row_base + output_lane;\n                if (row >= UINT32_C(2048)) break;\n                float accumulator = 0.0f;\n                for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                    const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                    const size_t scale_offset = (size_t)output_lane * 4u;\n                    const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                    float scale;\n                    memcpy(&scale, &scale_bits, sizeof(scale));\n                    const uint32_t block_start = block * UINT32_C(32);\n                    const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                    float block_sum = 0.0f;\n                    for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                        const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                        const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                        const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                        block_sum = block_sum + product;\n                    }\n                    block_sum = block_sum * scale;\n                    accumulator = accumulator + block_sum;\n                }\n                y[row] = accumulator;\n            }\n        }\n    }\n    return 0;\n}\n\nDF_PUBLIC_V1 uint32_t df_abi_version(void) {\n    return DF_GENERATED_ABI_VERSION_V1;\n}\n\nDF_PUBLIC_V1 const char *df_artifact_id(void) {\n    return df_artifact_id_cstr_v1;\n}\n\nDF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {\n    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n    if (call->m != UINT32_C(1) || call->n != UINT32_C(2048) || call->k != UINT32_C(2048) ) return DF_STATUS_SHAPE_V1;\n    if (call->x_stride != UINT32_C(2048) || call->y_stride != UINT32_C(2048) ) return DF_STATUS_STRIDE_V1;\n    if (call->packed_weight_bytes != UINT64_C(512) * UINT64_C(64) * UINT64_C(144) ) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n    fenv_t df_saved_environment;\n    int32_t df_status = DF_STATUS_OK_V1;\n    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n    for (uint32_t input = 0; input < UINT32_C(2048); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n    (void)df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C(2048); ++output) {\n        if (!isfinite(y[output])) {\n            df_status = DF_STATUS_NONFINITE_RESULT_V1;\n            goto df_restore_environment;\n        }\n    }\ndf_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}\n",
+          "disassembly": "out/decodeforge_neon_v1.dylib:\n(__TEXT,__text) section\n_df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44:\n     420:\tmov\tx8, #0x0\n     424:\tadd\tx9, x1, #0x10\n     428:\tmov\tw10, #0x2400\n     42c:\tmov\tx11, #0x0\n     430:\tlsl\tx12, x8, #6\n     434:\tmovi.2d\tv0, #0000000000000000\n     438:\tmov\tx13, x9\n     43c:\tmov\tx14, x0\n     440:\tmov\tx15, #0x0\n     444:\tadd\tx16, x11, x12\n     448:\tadd\tx16, x16, x16, lsl #3\n     44c:\tlsl\tx16, x16, #4\n     450:\tmovi.2d\tv1, #0000000000000000\n     454:\tldr\tw17, [x13, x15]\n     458:\tfmov\td2, x17\n     45c:\tsshll.8h\tv2, v2, #0x0\n     460:\tsshll.4s\tv2, v2, #0x0\n     464:\tscvtf.4s\tv2, v2\n     468:\tldr\ts3, [x14, x15]\n     46c:\tfmul.4s\tv2, v2, v3[0]\n     470:\tfadd.4s\tv1, v1, v2\n     474:\tadd\tx15, x15, #0x4\n     478:\tcmp\tx15, #0x80\n     47c:\tb.ne\t0x454\n     480:\tldr\tq2, [x1, x16]\n     484:\tfmul.4s\tv1, v1, v2\n     488:\tfadd.4s\tv0, v0, v1\n     48c:\tadd\tx11, x11, #0x1\n     490:\tadd\tx14, x14, #0x80\n     494:\tadd\tx13, x13, #0x90\n     498:\tcmp\tx11, #0x40\n     49c:\tb.ne\t0x440\n     4a0:\tstr\tq0, [x2, x8, lsl #4]\n     4a4:\tadd\tx8, x8, #0x1\n     4a8:\tadd\tx9, x9, x10\n     4ac:\tcmp\tx8, #0x200\n     4b0:\tb.ne\t0x42c\n     4b4:\tmov\tw0, #0x0\n     4b8:\tret\n",
+          "audit": {
+            "backend": "neon",
+            "helper_symbol": "df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44",
+            "vector_path_observed": true,
+            "scalar_tail_observed": false,
+            "signed_widen_8_to_16_count": 1,
+            "signed_widen_16_to_32_count": 1,
+            "signed_q8_to_i32_count": 1,
+            "vector_scvtf_count": 1,
+            "vector_fmul_count": 2,
+            "vector_fadd_count": 2,
+            "vector_broadcast_count": 1,
+            "vector_store_count": 1,
+            "return_count": 1,
+            "conditional_branch_count": 3,
+            "logical_vector_lane_loop_observed": true
+          }
+        },
+        "correctness": {
+          "pre_timing_bit_exact": true,
+          "post_timing_bit_exact": true,
+          "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a"
+        },
+        "warmup": {
+          "calls": 16,
+          "elapsed_ns": 500000000
+        },
+        "calibration": {
+          "target_ns": 25000000,
+          "max_repetitions": 1048576,
+          "selected_repetitions": 1,
+          "attempts": [
+            {
+              "elapsed_ns": 25000000,
+              "repetitions": 1
+            }
+          ]
+        }
+      },
+      "samples": [
+        {
+          "pair_index": 0,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 100000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 0,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 1,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 1,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50050,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 2,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 100200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 2,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 3,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 100300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 3,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50150,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 4,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 100400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 4,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 5,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 5,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50250,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 6,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 6,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 7,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 7,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50350,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 8,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 8,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 9,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 100900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 9,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50450,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 10,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 10,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 11,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 11,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50550,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 12,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 12,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 13,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 101300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 13,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50650,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 14,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 101400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 14,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 15,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 101500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 15,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50750,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 16,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 101600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 16,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 50800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 17,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 17,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50850,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 18,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 18,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 19,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 101900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 19,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 50950,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 20,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 102000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 20,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 21,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 102100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 21,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51050,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 22,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 102200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 22,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 23,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 23,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51150,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 24,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 102400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 24,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 25,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 25,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51250,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 26,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 26,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 27,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 27,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51350,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 28,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 28,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 29,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 102900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 29,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51450,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 30,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103000,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 30,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 31,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103100,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 31,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51550,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 32,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 103200,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 32,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 33,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 103300,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 33,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51650,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 34,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103400,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 34,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 35,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 103500,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 35,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51750,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 36,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103600,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 36,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 37,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103700,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 37,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51850,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 38,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 103800,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 38,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 51900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 39,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 103900,
+          "repetitions": 1
+        },
+        {
+          "pair_index": 39,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 51950,
+          "repetitions": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,793 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:g1-benchmark-session-v1",
+  "title": "DecodeForge G1 prepared-call paired benchmark session V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol_id",
+    "format",
+    "session_id",
+    "spec_identity",
+    "case_bundle_identity",
+    "source",
+    "numeric_mode",
+    "pack_format",
+    "checkout",
+    "host",
+    "timing",
+    "activation",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+    },
+    "protocol_id": {
+      "type": "string",
+      "const": "g1-prepared-call-paired-v1"
+    },
+    "format": {
+      "type": "string",
+      "const": "decodeforge_g1_benchmark_v1"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "spec_identity": {
+      "type": "string",
+      "const": "sha256:6650d0e413b403e7f81111cca75a77f931801c44f2a35cd8f275256be54848dd"
+    },
+    "case_bundle_identity": {
+      "type": "string",
+      "const": "sha256:797c19ddb60a5d3ec819f46650fbbe030d61b273790fe281784aa6047392beee"
+    },
+    "source": {
+      "$ref": "#/$defs/source_provenance"
+    },
+    "numeric_mode": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/numeric_mode"
+    },
+    "pack_format": {
+      "type": "string",
+      "const": "DFQ8_B32_OI4_V1"
+    },
+    "checkout": {
+      "$ref": "#/$defs/checkout"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "os_version",
+        "os_build",
+        "kernel_release",
+        "arch",
+        "pointer_width",
+        "native_supported",
+        "cpu_model",
+        "hardware_model",
+        "physical_cores",
+        "logical_cores",
+        "features",
+        "process_id",
+        "thread_policy",
+        "affinity_policy"
+      ],
+      "properties": {
+        "os": {
+          "type": "string",
+          "const": "macos"
+        },
+        "arch": {
+          "type": "string",
+          "const": "aarch64"
+        },
+        "pointer_width": {
+          "type": "integer",
+          "const": 64,
+          "maximum": 18446744073709551615
+        },
+        "native_supported": {
+          "type": "boolean",
+          "const": true
+        },
+        "os_version": {
+          "type": "string",
+          "const": "15.5"
+        },
+        "os_build": {
+          "type": "string",
+          "const": "24F74"
+        },
+        "kernel_release": {
+          "type": "string",
+          "const": "24.5.0"
+        },
+        "cpu_model": {
+          "type": "string",
+          "const": "Apple M4"
+        },
+        "hardware_model": {
+          "type": "string",
+          "const": "Mac16,13"
+        },
+        "physical_cores": {
+          "type": "integer",
+          "const": 10,
+          "maximum": 4294967295
+        },
+        "logical_cores": {
+          "type": "integer",
+          "const": 10,
+          "maximum": 4294967295
+        },
+        "features": {
+          "type": "array",
+          "const": ["neon"]
+        },
+        "process_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "thread_policy": {
+          "type": "string",
+          "const": "single calling thread; generated kernels create no workers"
+        },
+        "affinity_policy": {
+          "type": "string",
+          "const": "macOS default scheduler; no hard affinity requested"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundary",
+        "warmup_min_calls",
+        "warmup_min_ns",
+        "calibration_target_ns",
+        "calibration_max_repetitions",
+        "paired_rounds",
+        "scalar_first_pairs",
+        "neon_first_pairs",
+        "trimming"
+      ],
+      "properties": {
+        "boundary": {
+          "type": "string",
+          "const": "PreparedCall::invoke plus fixed Rust repetition loop and timer: sentinel fill + df_run_v1 + status decode + finite scan; no allocation"
+        },
+        "warmup_min_calls": {"type": "integer", "const": 16, "maximum": 18446744073709551615},
+        "warmup_min_ns": {"type": "integer", "const": 500000000, "maximum": 18446744073709551615},
+        "calibration_target_ns": {"type": "integer", "const": 25000000, "maximum": 18446744073709551615},
+        "calibration_max_repetitions": {
+          "type": "integer",
+          "const": 1048576,
+          "maximum": 18446744073709551615
+        },
+        "paired_rounds": {"type": "integer", "const": 40, "maximum": 18446744073709551615},
+        "scalar_first_pairs": {"type": "integer", "const": 20, "maximum": 18446744073709551615},
+        "neon_first_pairs": {"type": "integer", "const": 20, "maximum": 18446744073709551615},
+        "trimming": {
+          "type": "string",
+          "const": "none; every raw sample is retained"
+        }
+      }
+    },
+    "activation": {
+      "type": "array",
+      "minItems": 40,
+      "maxItems": 40,
+      "items": {
+        "$ref": "#/$defs/activation_record"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "$ref": "#/$defs/case_session_result"
+      }
+    }
+  },
+  "$defs": {
+    "checkout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "dirty"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "not": {"const": "0000000000000000000000000000000000000000"}
+        },
+        "dirty": {"type": "boolean"}
+      }
+    },
+    "activation_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pair_index", "first_backend", "digest"],
+      "properties": {
+        "pair_index": {"type": "integer", "minimum": 0, "maximum": 39},
+        "first_backend": {
+          "type": "string",
+          "enum": ["scalar", "neon"]
+        },
+        "digest": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/sha256"
+        }
+      }
+    },
+    "case_session_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "kind",
+        "n",
+        "k",
+        "input_identity",
+        "expected_identity",
+        "logical_weight_identity",
+        "packed_weight_identity",
+        "region_ir",
+        "scalar_loop_ir",
+        "neon_loop_ir",
+        "pack_manifest",
+        "scalar",
+        "neon",
+        "samples"
+      ],
+      "properties": {
+        "case_id": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["real", "synthetic"]
+        },
+        "n": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+        },
+        "k": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+        },
+        "input_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "expected_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "logical_weight_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "packed_weight_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "region_ir": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "scalar_loop_ir": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "neon_loop_ir": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "pack_manifest": {
+          "$ref": "#/$defs/pack_manifest"
+        },
+        "scalar": {"$ref": "#/$defs/backend_session_result"},
+        "neon": {"$ref": "#/$defs/backend_session_result"},
+        "samples": {
+          "type": "array",
+          "minItems": 80,
+          "maxItems": 80,
+          "items": {"$ref": "#/$defs/raw_sample"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "case_id": {"const": "tinyllama-q-proj-2048x2048"}
+            },
+            "required": ["case_id"]
+          },
+          "then": {
+            "properties": {
+              "kind": {"const": "real"},
+              "n": {"const": 2048},
+              "k": {"const": 2048},
+              "input_identity": {
+                "const": "sha256:03263339062e7a0839f45a28b256b1e1585e5a35e4281853283049017859c590"
+              },
+              "expected_identity": {
+                "const": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a"
+              },
+              "logical_weight_identity": {
+                "const": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2"
+              },
+              "packed_weight_identity": {
+                "const": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "backend_session_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "correctness", "warmup", "calibration"],
+      "properties": {
+        "artifact": {"$ref": "#/$defs/artifact_evidence"},
+        "correctness": {"$ref": "#/$defs/correctness_evidence"},
+        "warmup": {"$ref": "#/$defs/warmup_record"},
+        "calibration": {"$ref": "#/$defs/calibration_record"}
+      }
+    },
+    "correctness_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pre_timing_bit_exact",
+        "post_timing_bit_exact",
+        "expected_identity"
+      ],
+      "properties": {
+        "pre_timing_bit_exact": {"type": "boolean", "const": true},
+        "post_timing_bit_exact": {"type": "boolean", "const": true},
+        "expected_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        }
+      }
+    },
+    "source_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "revision",
+        "model_filename",
+        "model_size_bytes",
+        "model_sha256",
+        "tensor_name",
+        "dtype",
+        "shape",
+        "tensor_sha256",
+        "input_semantic_identity"
+      ],
+      "properties": {
+        "model": {
+          "type": "string",
+          "const": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        },
+        "revision": {
+          "type": "string",
+          "const": "fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+        },
+        "model_filename": {"type": "string", "const": "model.safetensors"},
+        "model_size_bytes": {"type": "integer", "const": 2200119864, "maximum": 18446744073709551615},
+        "model_sha256": {
+          "type": "string",
+          "const": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
+        },
+        "tensor_name": {
+          "type": "string",
+          "const": "model.layers.0.self_attn.q_proj.weight"
+        },
+        "dtype": {"type": "string", "const": "BF16"},
+        "shape": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "integer", "const": 2048, "maximum": 18446744073709551615},
+            {"type": "integer", "const": 2048, "maximum": 18446744073709551615}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "tensor_sha256": {
+          "type": "string",
+          "const": "5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac"
+        },
+        "input_semantic_identity": {
+          "type": "string",
+          "const": "sha256:5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac"
+        }
+      }
+    },
+    "pack_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "spec",
+        "shape",
+        "logical_weight_identity",
+        "packed_identity",
+        "payload_bytes"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+        },
+        "spec": {"$ref": "#/$defs/pack_spec"},
+        "shape": {"$ref": "#/$defs/shape"},
+        "logical_weight_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "packed_identity": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/content_identity"
+        },
+        "payload_bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615}
+      }
+    },
+    "pack_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "format",
+        "layout",
+        "tile",
+        "block_size",
+        "record_bytes",
+        "alignment"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+        },
+        "format": {"type": "string", "const": "DFQ8_B32_OI4_V1"},
+        "layout": {"type": "string", "const": "output-interleaved"},
+        "tile": {"type": "integer", "const": 4, "maximum": 18446744073709551615},
+        "block_size": {"type": "integer", "const": 32, "maximum": 18446744073709551615},
+        "record_bytes": {"type": "integer", "const": 144, "maximum": 18446744073709551615},
+        "alignment": {"type": "integer", "const": 16, "maximum": 18446744073709551615}
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["m", "n", "k"],
+      "properties": {
+        "m": {"type": "integer", "const": 1, "maximum": 18446744073709551615},
+        "n": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+        },
+        "k": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/positive_u32"
+        }
+      }
+    },
+    "warmup_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "elapsed_ns"],
+      "properties": {
+        "calls": {"type": "integer", "minimum": 16, "maximum": 18446744073709551615},
+        "elapsed_ns": {"type": "integer", "minimum": 500000000, "maximum": 18446744073709551615}
+      }
+    },
+    "calibration_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_ns",
+        "max_repetitions",
+        "selected_repetitions",
+        "attempts"
+      ],
+      "properties": {
+        "target_ns": {"type": "integer", "const": 25000000, "maximum": 18446744073709551615},
+        "max_repetitions": {"type": "integer", "const": 1048576, "maximum": 18446744073709551615},
+        "selected_repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/batch_record"}
+        }
+      }
+    },
+    "batch_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["elapsed_ns", "repetitions"],
+      "properties": {
+        "elapsed_ns": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "raw_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pair_index",
+        "backend",
+        "position",
+        "elapsed_ns",
+        "repetitions"
+      ],
+      "properties": {
+        "pair_index": {"type": "integer", "minimum": 0, "maximum": 39},
+        "backend": {"type": "string", "enum": ["scalar", "neon"]},
+        "position": {"type": "string", "enum": ["first", "second"]},
+        "elapsed_ns": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "artifact_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module_id",
+        "source_hash",
+        "abi_header_hash",
+        "dylib_hash",
+        "flags",
+        "compiler",
+        "compiler_version",
+        "target",
+        "sdk_version",
+        "objdump_version",
+        "dynamic_exports",
+        "source",
+        "disassembly",
+        "audit"
+      ],
+      "properties": {
+        "module_id": {
+          "$ref": "#/$defs/artifact_sha256_identity"
+        },
+        "source_hash": {
+          "$ref": "#/$defs/artifact_sha256_identity"
+        },
+        "abi_header_hash": {
+          "type": "string",
+          "const": "sha256:7e455301d59979be04e79b83a47e3b1bd7a143e681db01227b86557d989966cc"
+        },
+        "dylib_hash": {
+          "$ref": "#/$defs/artifact_sha256_identity"
+        },
+        "flags": {
+          "type": "array",
+          "items": {"$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"},
+          "uniqueItems": true
+        },
+        "compiler": {
+          "type": "string",
+          "const": "clang"
+        },
+        "compiler_version": {
+          "type": "string",
+          "const": "Apple clang version 17.0.0 (clang-1700.0.13.5) Target: arm64-apple-darwin24.5.0 Thread model: posix InstalledDir: /Library/Developer/CommandLineTools/usr/bin"
+        },
+        "target": {
+          "type": "string",
+          "const": "arm64-apple-darwin24.5.0"
+        },
+        "sdk_version": {
+          "type": "string",
+          "const": "15.5"
+        },
+        "objdump_version": {
+          "type": "string",
+          "const": "Apple LLVM version 17.0.0 Optimized build. Registered Targets: aarch64 - AArch64 (little endian) aarch64_32 - AArch64 (little endian ILP32) aarch64_be - AArch64 (big endian) arm - ARM arm64 - ARM64 (little endian) arm64_32 - ARM64 (little endian ILP32) armeb - ARM (big endian) thumb - Thumb thumbeb - Thumb (big endian) x86 - 32-bit X86: Pentium-Pro and above x86-64 - 64-bit X86: EM64T and AMD64"
+        },
+        "dynamic_exports": {
+          "type": "array",
+          "const": ["df_abi_version", "df_artifact_id", "df_run_v1"]
+        },
+        "source": {"type": "string", "minLength": 1},
+        "disassembly": {"type": "string", "minLength": 1},
+        "audit": {"$ref": "#/$defs/audit_evidence"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "audit": {
+                "properties": {"backend": {"const": "scalar"}}
+              }
+            },
+            "required": ["audit"]
+          },
+          "then": {
+            "properties": {
+              "flags": {
+                "const": [
+                  "-std=c11",
+                  "--no-default-config",
+                  "-O2",
+                  "-Wall",
+                  "-Wextra",
+                  "-Wpedantic",
+                  "-Werror",
+                  "-fno-fast-math",
+                  "-ffp-model=strict",
+                  "-ffp-contract=off",
+                  "-fdenormal-fp-math=ieee",
+                  "-fno-vectorize",
+                  "-fno-slp-vectorize",
+                  "-fno-unroll-loops",
+                  "-fvisibility=hidden",
+                  "-fPIC",
+                  "-dynamiclib",
+                  "-arch",
+                  "arm64",
+                  "-mmacosx-version-min=15.0",
+                  "-Wl,-install_name,@rpath/decodeforge_scalar_v1.dylib",
+                  "-Wl,-fatal_warnings",
+                  "-Wl,-exported_symbol,_df_abi_version",
+                  "-Wl,-exported_symbol,_df_artifact_id",
+                  "-Wl,-exported_symbol,_df_run_v1"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "audit": {
+                "properties": {"backend": {"const": "neon"}}
+              }
+            },
+            "required": ["audit"]
+          },
+          "then": {
+            "properties": {
+              "flags": {
+                "const": [
+                  "-std=c11",
+                  "--no-default-config",
+                  "-O2",
+                  "-Wall",
+                  "-Wextra",
+                  "-Wpedantic",
+                  "-Werror",
+                  "-fno-fast-math",
+                  "-ffp-model=strict",
+                  "-ffp-contract=off",
+                  "-fdenormal-fp-math=ieee",
+                  "-fno-vectorize",
+                  "-fno-slp-vectorize",
+                  "-fno-unroll-loops",
+                  "-fvisibility=hidden",
+                  "-fPIC",
+                  "-dynamiclib",
+                  "-arch",
+                  "arm64",
+                  "-mmacosx-version-min=15.0",
+                  "-Wl,-install_name,@rpath/decodeforge_neon_v1.dylib",
+                  "-Wl,-fatal_warnings",
+                  "-Wl,-exported_symbol,_df_abi_version",
+                  "-Wl,-exported_symbol,_df_artifact_id",
+                  "-Wl,-exported_symbol,_df_run_v1"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "artifact_sha256_identity": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "not": {
+        "const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "nonzero_bundle_identity": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "not": {
+        "const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "audit_evidence": {
+      "oneOf": [
+        {"$ref": "#/$defs/scalar_audit"},
+        {"$ref": "#/$defs/neon_audit"}
+      ]
+    },
+    "audit_common": {
+      "type": "object",
+      "required": ["backend"],
+      "properties": {
+        "backend": {"type": "string"}
+      }
+    },
+    "scalar_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "helper_symbol",
+        "scalar_scvtf_count",
+        "scalar_fmul_count",
+        "scalar_fadd_count",
+        "return_count",
+        "conditional_branch_count",
+        "comparison_count",
+        "logical_lane_loop_observed"
+      ],
+      "properties": {
+        "backend": {"type": "string", "const": "scalar"},
+        "helper_symbol": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "scalar_scvtf_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "scalar_fmul_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "scalar_fadd_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "return_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "conditional_branch_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "comparison_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "logical_lane_loop_observed": {"type": "boolean"}
+      }
+    },
+    "neon_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "helper_symbol",
+        "vector_path_observed",
+        "scalar_tail_observed",
+        "signed_widen_8_to_16_count",
+        "signed_widen_16_to_32_count",
+        "signed_q8_to_i32_count",
+        "vector_scvtf_count",
+        "vector_fmul_count",
+        "vector_fadd_count",
+        "vector_broadcast_count",
+        "vector_store_count",
+        "return_count",
+        "conditional_branch_count",
+        "logical_vector_lane_loop_observed"
+      ],
+      "properties": {
+        "backend": {"type": "string", "const": "neon"},
+        "helper_symbol": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "vector_path_observed": {"type": "boolean"},
+        "scalar_tail_observed": {"type": "boolean"},
+        "signed_widen_8_to_16_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "signed_widen_16_to_32_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "signed_q8_to_i32_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "vector_scvtf_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "vector_fmul_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "vector_fadd_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "vector_broadcast_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "vector_store_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "return_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "conditional_branch_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "logical_vector_lane_loop_observed": {"type": "boolean"}
+      }
+    }
+  }
+}

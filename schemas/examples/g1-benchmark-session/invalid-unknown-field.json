@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g1-prepared-call-paired-v1",
+  "session_id": "invalid",
+  "unexpected": true
+}
