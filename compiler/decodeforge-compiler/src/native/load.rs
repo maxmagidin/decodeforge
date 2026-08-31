@@ -508,6 +508,52 @@ mod tests {
     }
 
     #[test]
+    fn prepared_neon_call_reuses_one_output_and_scrubs_native_failures() {
+        if rerun_without_dyld_overrides_if_needed(
+            "prepared_neon_call_reuses_one_output_and_scrubs_native_failures",
+        ) {
+            return;
+        }
+        const QUIET_NAN_BITS: u32 = 0x7fc0_0000;
+
+        let (_, region, kernel, packed, input, expected) = synthetic_vector_case(5);
+        let executable = build_and_load_neon(&region, &kernel, &packed);
+        let mut output = vec![123.0; expected.len()];
+        let output_address = output.as_ptr() as usize;
+
+        {
+            let mut prepared = executable.prepare_call(&input, &mut output).unwrap();
+            for _ in 0..4 {
+                let actual = prepared.invoke().unwrap();
+                assert_eq!(actual.as_ptr() as usize, output_address);
+                assert_eq!(
+                    actual
+                        .iter()
+                        .map(|value| value.to_bits())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+        assert_eq!(output.as_ptr() as usize, output_address);
+
+        let mut nonfinite_input = input;
+        nonfinite_input[0] = f32::NAN;
+        output.fill(321.0);
+        let error = {
+            let mut prepared = executable
+                .prepare_call(&nonfinite_input, &mut output)
+                .unwrap();
+            prepared.invoke().unwrap_err()
+        };
+        assert_eq!(
+            error,
+            RuntimeError::KernelStatus(ScalarStatusV1::NonFiniteInput)
+        );
+        assert!(output.iter().all(|value| value.to_bits() == QUIET_NAN_BITS));
+    }
+
+    #[test]
     fn shape_mismatch_is_rejected_and_releases_the_builder_snapshot() {
         if rerun_without_dyld_overrides_if_needed(
             "shape_mismatch_is_rejected_and_releases_the_builder_snapshot",
