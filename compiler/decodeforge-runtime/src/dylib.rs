@@ -3,7 +3,7 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod platform {
     use crate::abi::{ARTIFACT_ID_CSTR_BYTES_V1, DfCallV1};
-    use crate::scalar::{AlignedPack, ScalarExecutableV1, ValidatedLoadSpec};
+    use crate::scalar::{AlignedPack, GeneratedExecutableV1, ValidatedLoadSpec};
     use crate::{RUNTIME_ABI_VERSION, Result, RuntimeError};
     use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
     use std::ffi::{OsStr, c_char};
@@ -30,12 +30,12 @@ mod platform {
         _directory: TempDir,
     }
 
-    pub(crate) struct LoadedScalarDylib {
+    pub(crate) struct LoadedGeneratedDylib {
         run_v1: RunFn,
         backing: LibraryBacking,
     }
 
-    impl LoadedScalarDylib {
+    impl LoadedGeneratedDylib {
         unsafe fn open(
             mut private: PrivateDylibCopy,
             expected_module_id: &str,
@@ -179,7 +179,7 @@ mod platform {
     impl PrivateDylibCopy {
         fn new(bytes: &[u8]) -> Result<Self> {
             let directory = Builder::new()
-                .prefix("decodeforge-scalar-load-")
+                .prefix("decodeforge-generated-load-")
                 .tempdir()
                 .map_err(|_| RuntimeError::PrivateCopyFailed)?;
             fs::set_permissions(directory.path(), Permissions::from_mode(0o700))
@@ -310,7 +310,7 @@ mod platform {
     }
 
     /// Load bytes proven by the caller to be an exact locally generated and
-    /// audited Apple scalar module.
+    /// audited Apple generated module implementing ABI v1.
     ///
     /// # Safety
     ///
@@ -323,14 +323,14 @@ mod platform {
     /// for the same shape. The process must not use C or unsafe code to conceal
     /// a launch-time `DYLD_*` override after dyld cached it; hostile same-UID
     /// in-place mutation of executable storage is also outside this boundary.
-    pub unsafe fn load_trusted_apple_scalar_v1(
+    pub unsafe fn load_trusted_apple_generated_v1(
         dylib_bytes: &[u8],
         expected_module_id: &str,
         n: u32,
         k: u32,
         verified_pack_bytes: &[u8],
         expected_packed_identity: &str,
-    ) -> Result<ScalarExecutableV1> {
+    ) -> Result<GeneratedExecutableV1> {
         let spec = ValidatedLoadSpec::new(
             dylib_bytes,
             expected_module_id,
@@ -343,9 +343,14 @@ mod platform {
         let private = PrivateDylibCopy::new(dylib_bytes)?;
         // SAFETY: This function's caller establishes the generated-image
         // provenance precondition; `private` is its exact verified copy.
-        let module = unsafe { LoadedScalarDylib::open(private, &spec.module_id, dylib_bytes)? };
-        Ok(ScalarExecutableV1::from_trusted_parts(module, pack, spec))
+        let module = unsafe { LoadedGeneratedDylib::open(private, &spec.module_id, dylib_bytes)? };
+        Ok(GeneratedExecutableV1::from_trusted_parts(
+            module, pack, spec,
+        ))
     }
+
+    /// Source-compatible scalar spelling of [`load_trusted_apple_generated_v1`].
+    pub use load_trusted_apple_generated_v1 as load_trusted_apple_scalar_v1;
 
     #[cfg(test)]
     mod tests {
@@ -458,12 +463,12 @@ mod platform {
 #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 mod platform {
     use crate::abi::DfCallV1;
-    use crate::scalar::{AlignedPack, ScalarExecutableV1};
+    use crate::scalar::{AlignedPack, GeneratedExecutableV1};
     use crate::{Result, RuntimeError};
 
-    pub(crate) struct LoadedScalarDylib;
+    pub(crate) struct LoadedGeneratedDylib;
 
-    impl LoadedScalarDylib {
+    impl LoadedGeneratedDylib {
         pub(crate) fn invoke(
             &self,
             _call: &DfCallV1,
@@ -471,7 +476,7 @@ mod platform {
             _pack: &AlignedPack,
             _y: &mut [f32],
         ) -> i32 {
-            unreachable!("unsupported hosts cannot construct a loaded scalar dylib")
+            unreachable!("unsupported hosts cannot construct a loaded generated dylib")
         }
     }
 
@@ -481,17 +486,20 @@ mod platform {
     ///
     /// The same trusted-image requirements as the macOS arm64 implementation
     /// apply, but this target always rejects before observing any arguments.
-    pub unsafe fn load_trusted_apple_scalar_v1(
+    pub unsafe fn load_trusted_apple_generated_v1(
         _dylib_bytes: &[u8],
         _expected_module_id: &str,
         _n: u32,
         _k: u32,
         _verified_pack_bytes: &[u8],
         _expected_packed_identity: &str,
-    ) -> Result<ScalarExecutableV1> {
+    ) -> Result<GeneratedExecutableV1> {
         Err(RuntimeError::UnsupportedHost)
     }
+
+    /// Source-compatible scalar spelling of [`load_trusted_apple_generated_v1`].
+    pub use load_trusted_apple_generated_v1 as load_trusted_apple_scalar_v1;
 }
 
-pub(crate) use platform::LoadedScalarDylib;
-pub use platform::load_trusted_apple_scalar_v1;
+pub(crate) use platform::LoadedGeneratedDylib;
+pub use platform::{load_trusted_apple_generated_v1, load_trusted_apple_scalar_v1};

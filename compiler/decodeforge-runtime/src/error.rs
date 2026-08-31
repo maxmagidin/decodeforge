@@ -1,9 +1,9 @@
-//! Closed runtime failures for the first scalar generated module.
+//! Closed runtime failures for generated modules.
 
-use crate::ScalarStatusV1;
+use crate::GeneratedStatusV1;
 use std::fmt;
 
-/// Checked failure from loading or invoking a scalar generated module.
+/// Checked failure from loading or invoking a generated module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeError {
     UnsupportedHost,
@@ -16,7 +16,7 @@ pub enum RuntimeError {
     AbiVersionMismatch { expected: u32, actual: u32 },
     ModuleIdMismatch,
     InputLength { expected: usize, actual: usize },
-    KernelStatus(ScalarStatusV1),
+    KernelStatus(GeneratedStatusV1),
     UnknownKernelStatus(i32),
     InvalidSuccessOutput { index: usize },
 }
@@ -46,37 +46,37 @@ impl fmt::Display for RuntimeError {
         write!(formatter, "{}: ", self.code())?;
         match self {
             Self::UnsupportedHost => {
-                formatter.write_str("scalar dylib loading requires a macOS arm64 host")
+                formatter.write_str("generated-module loading requires a macOS arm64 host")
             }
             Self::InvalidLoadContract { field } => {
                 write!(
                     formatter,
-                    "trusted scalar load contract is invalid for {field}"
+                    "trusted generated-module load contract is invalid for {field}"
                 )
             }
             Self::AllocationFailed { object } => {
                 write!(formatter, "unable to allocate private {object} storage")
             }
             Self::PrivateCopyFailed => {
-                formatter.write_str("unable to construct the private scalar dylib copy")
+                formatter.write_str("unable to construct the private generated-module copy")
             }
             Self::DynamicLoaderEnvironment => formatter
                 .write_str("refusing to load generated code while a DYLD_* override is visible"),
             Self::DynamicLoadFailed => {
-                formatter.write_str("dyld rejected the private scalar dylib")
+                formatter.write_str("dyld rejected the private generated module")
             }
             Self::MissingSymbol { symbol } => {
                 write!(
                     formatter,
-                    "scalar dylib is missing required symbol {symbol}"
+                    "generated module is missing required symbol {symbol}"
                 )
             }
             Self::AbiVersionMismatch { expected, actual } => write!(
                 formatter,
-                "scalar dylib ABI version {actual} does not equal expected {expected}"
+                "generated-module ABI version {actual} does not equal expected {expected}"
             ),
             Self::ModuleIdMismatch => {
-                formatter.write_str("scalar dylib module identity does not match the expected code")
+                formatter.write_str("generated-module identity does not match the expected code")
             }
             Self::InputLength { expected, actual } => {
                 write!(
@@ -87,16 +87,19 @@ impl fmt::Display for RuntimeError {
             Self::KernelStatus(status) => {
                 write!(
                     formatter,
-                    "scalar kernel returned status {} ({status:?})",
+                    "generated kernel returned status {} ({status:?})",
                     status.as_i32()
                 )
             }
             Self::UnknownKernelStatus(status) => {
-                write!(formatter, "scalar kernel returned unknown status {status}")
+                write!(
+                    formatter,
+                    "generated kernel returned unknown status {status}"
+                )
             }
             Self::InvalidSuccessOutput { index } => write!(
                 formatter,
-                "scalar kernel reported success with a nonfinite output at index {index}"
+                "generated kernel reported success with a nonfinite output at index {index}"
             ),
         }
     }
@@ -120,8 +123,33 @@ mod tests {
             "DFE-NATIVE-008"
         );
         assert_eq!(
-            RuntimeError::KernelStatus(ScalarStatusV1::NonFiniteResult).code(),
+            RuntimeError::KernelStatus(GeneratedStatusV1::NonFiniteResult).code(),
             "DFE-NATIVE-009"
         );
+    }
+
+    #[test]
+    fn diagnostics_are_backend_neutral() {
+        for error in [
+            RuntimeError::UnsupportedHost,
+            RuntimeError::InvalidLoadContract { field: "shape" },
+            RuntimeError::PrivateCopyFailed,
+            RuntimeError::DynamicLoadFailed,
+            RuntimeError::MissingSymbol {
+                symbol: "df_run_v1",
+            },
+            RuntimeError::AbiVersionMismatch {
+                expected: 1,
+                actual: 2,
+            },
+            RuntimeError::ModuleIdMismatch,
+            RuntimeError::KernelStatus(GeneratedStatusV1::NonFiniteResult),
+            RuntimeError::UnknownKernelStatus(99),
+            RuntimeError::InvalidSuccessOutput { index: 0 },
+        ] {
+            let display = error.to_string();
+            assert!(!display.contains("scalar"), "{display}");
+            assert!(display.contains("generated"), "{display}");
+        }
     }
 }
