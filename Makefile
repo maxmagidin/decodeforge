@@ -105,7 +105,8 @@ analyze-g1:
 		--output-dir "$(OUTPUT_DIR)"
 
 verify-g1-result:
-	@output="$$(mktemp -d "$${TMPDIR:-/tmp}/decodeforge-g1-result.XXXXXX")"; \
+	@set -eu; \
+	output="$$(mktemp -d "$${TMPDIR:-/tmp}/decodeforge-g1-result.XXXXXX")"; \
 	trap 'test -z "$$output" || rm -r -- "$$output"' EXIT; \
 	$(UV) run --frozen --extra g1-benchmark python scripts/analyze_g1_benchmark.py \
 		--sessions "$(G1_RESULT)/session-01.json" "$(G1_RESULT)/session-02.json" \
