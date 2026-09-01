@@ -188,3 +188,28 @@ module["_canonicalize_safetensors_header"](output)
         )
 
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_make_runs_g1_session_without_cargo_launch_environment(
+    tmp_path: Path,
+) -> None:
+    target_dir = tmp_path / "target dir"
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            "run-g1-session",
+            f"CARGO_TARGET_DIR={target_dir}",
+            "CASES=/tmp/cases.json",
+            "OUTPUT=/tmp/session.json",
+            "SESSION_ID=g1-test-session",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "cargo build --quiet --release --locked" in result.stdout
+    assert "cargo run" not in result.stdout
+    assert f'"{target_dir}/release/decodeforge-g1-bench" run-session' in result.stdout
