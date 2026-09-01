@@ -1,4 +1,4 @@
-.PHONY: setup format lint test check check-pytorch-pin test-native \
+.PHONY: setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result
@@ -11,6 +11,7 @@ CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):
 G1_BENCH := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-g1-bench
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
 G1_RESULT := results/g1/apple-m4-primary
+BRIDGE_RELEASE_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release
 
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
@@ -46,7 +47,7 @@ lint:
 	$(UV) run --frozen python scripts/check_headers.py
 	$(UV) run --frozen python scripts/validate_schemas.py --all
 
-test:
+test: test-bridge-cdylib
 	$(CARGO) build --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked --release
@@ -64,8 +65,20 @@ test-native:
 	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
 		echo "test-native: requires an Apple-arm64 macOS host" >&2; exit 2; }
 	$(UV) run --frozen python scripts/check_headers.py
-	$(CARGO) test --locked --all-features -p decodeforge-runtime -p decodeforge-compiler
-	$(CARGO) test --locked --all-features --release -p decodeforge-runtime -p decodeforge-compiler
+	$(CARGO) test --locked --all-features -p decodeforge-runtime -p decodeforge-compiler -p decodeforge-bridge
+	$(CARGO) test --locked --all-features --release -p decodeforge-runtime -p decodeforge-compiler -p decodeforge-bridge
+
+test-bridge-cdylib:
+	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
+	@set -eu; \
+	case "$$(uname -s)" in \
+		Darwin) library="$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.dylib"; uv_args="--extra pytorch-cpu" ;; \
+		Linux) library="$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.so"; uv_args="" ;; \
+		*) echo "test-bridge-cdylib: unsupported host $$(uname -s)" >&2; exit 2 ;; \
+	esac; \
+	test -f "$$library"; \
+	$(CARGO) run --quiet --release --locked -p decodeforge-bridge --example export_ffi_fixture | \
+	$(UV) run --frozen $$uv_args python scripts/check_bridge_cdylib.py --library "$$library"
 
 test-g1-tools:
 	$(CARGO) test --locked -p decodeforge-compiler --bin decodeforge-g1-bench
