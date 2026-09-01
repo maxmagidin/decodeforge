@@ -8,6 +8,7 @@ RUST_VERSION := 1.98.0
 PYTHON_VERSION := 3.12.14
 UV_VERSION := 0.12.5
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
+G1_BENCH := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-g1-bench
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
 
 setup:
@@ -89,8 +90,9 @@ run-g1-session:
 	@test -n "$(CASES)" || { echo "run-g1-session: CASES=<case manifest> is required" >&2; exit 2; }
 	@test -n "$(OUTPUT)" || { echo "run-g1-session: OUTPUT=<session JSON> is required" >&2; exit 2; }
 	@test -n "$(SESSION_ID)" || { echo "run-g1-session: SESSION_ID=<unique ID> is required" >&2; exit 2; }
-	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
-		--bin decodeforge-g1-bench -- run-session --cases "$(CASES)" \
+	$(CARGO) build --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-g1-bench
+	"$(G1_BENCH)" run-session --cases "$(CASES)" \
 		--output "$(OUTPUT)" --session-id "$(SESSION_ID)"
 
 analyze-g1:
