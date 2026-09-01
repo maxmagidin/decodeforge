@@ -79,14 +79,14 @@ loads produce the intended `sshll.8h -> sshll.4s -> scvtf.4s` path and avoid
 the earlier byte-reconstruction and stack-array/canary code without disabling
 stack protection.
 
-G1 remains open: there is no checked-in three-session performance claim. The
-allocation-free prepared-call subgate is complete, and the closed real-shape
-harness now pins TinyLlama source and case identities, reconstructs the oracle
-from the reloaded pack, retains compiler/native/host/source evidence, and emits
-40 balanced scalar/NEON pairs per fresh process. The portable analyzer requires
-three clean-checkout processes, rejects declared drift, and computes the pinned
-paired-BCa intervals. The next subgate is capture and independent verification
-of that real-shape bundle.
+G1 is complete. The allocation-free prepared-call harness pins TinyLlama source
+and case identities, reconstructs the oracle from the reloaded pack, retains
+compiler/native/host/source evidence, and emits 40 balanced scalar/NEON pairs
+per fresh process. The checked-in Apple M4 result contains three clean-checkout
+processes, all accepted by the declared drift policy. Their paired speedups are
+`3.95671x`, `3.96176x`, and `3.95648x`, and every 95% paired-BCa lower bound is
+above `3.95x`. The predeclared speedup gate therefore passes. The claim applies
+to the complete prepared-call kernel boundary, not end-to-end model execution.
 
 ## G1 — Complete one NEON vertical slice
 

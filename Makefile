@@ -1,7 +1,7 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
-	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1
+	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -10,6 +10,7 @@ UV_VERSION := 0.12.5
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
 G1_BENCH := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-g1-bench
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
+G1_RESULT := results/g1/apple-m4-primary
 
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
@@ -54,7 +55,7 @@ test:
 	$(MAKE) rust-fixture-check
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
 
-check: lint test
+check: lint test verify-g1-result
 
 check-pytorch-pin:
 	$(UV) run --frozen --extra pytorch-cpu python -c 'import platform, torch; assert torch.__version__.split("+")[0] == "2.13.0"; print(f"pytorch-pin: ok (torch={torch.__version__}, host={platform.system()}:{platform.machine()})")'
@@ -102,6 +103,17 @@ analyze-g1:
 	$(UV) run --frozen --extra g1-benchmark python scripts/analyze_g1_benchmark.py \
 		--sessions "$(SESSION_1)" "$(SESSION_2)" "$(SESSION_3)" \
 		--output-dir "$(OUTPUT_DIR)"
+
+verify-g1-result:
+	@set -eu; \
+	output="$$(mktemp -d "$${TMPDIR:-/tmp}/decodeforge-g1-result.XXXXXX")"; \
+	trap 'test -z "$$output" || rm -r -- "$$output"' EXIT; \
+	$(UV) run --frozen --extra g1-benchmark python scripts/analyze_g1_benchmark.py \
+		--sessions "$(G1_RESULT)/session-01.json" "$(G1_RESULT)/session-02.json" \
+			"$(G1_RESULT)/session-03.json" --output-dir "$$output"; \
+	diff -u "$(G1_RESULT)/report.json" "$$output/report.json"; \
+	diff -u "$(G1_RESULT)/report.md" "$$output/report.md"; \
+	echo "verify-g1-result: ok"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all

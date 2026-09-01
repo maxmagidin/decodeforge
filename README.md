@@ -212,8 +212,8 @@ schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
 [Apple M4 correctness bundle](results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
 binds those checks to source revision `cc838b0`, the exact toolchain and host
 profile, and hashed artifacts; CI verifies both its portable contents and Git
-provenance. It deliberately makes no performance claim. The current G1
-correctness checkpoint implements verified Region/Loop lowering, one shared
+provenance. G1 is also complete. Its compiler path implements verified
+Region/Loop lowering, one shared
 OI4 pack, the frozen generated-module ABI, deterministic strict scalar and
 output-vector NEON C, and separately identified Apple-arm64 dylibs whose
 Mach-O structure and hidden helpers are audited before loading. The NEON
@@ -226,13 +226,14 @@ without disabling stack protection. A backend-neutral checked runtime executes
 scalar and NEON modules through the same ABI: all 16 frozen fixtures are
 bit-exact, and dedicated `N=4` and `N=5` cases prove vector-only and
 vector-plus-tail execution. This is correctness and machine-code evidence
-only; no timing or speedup claim exists yet. A backend-neutral prepared-call API
+for the generated path. A backend-neutral prepared-call API
 now validates buffer extents once, reuses caller-owned output storage, and
 includes deterministic output scrubbing and validation around every native
-invocation. The next gate is a reproducible scalar-versus-NEON benchmark on a
-real TinyLlama projection. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
+invocation. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
-The G1 benchmark harness now prepares one byte-stable, provenance-pinned
+The checked-in
+[Apple M4 G1 result](results/g1/apple-m4-primary/README.md) prepares one
+byte-stable, provenance-pinned
 TinyLlama tensor; independently reconstructs the canonical Q8 pack and oracle;
 and runs generated scalar and NEON artifacts through the same allocation-free
 prepared-call boundary. Each raw session retains the Region/Loop IR, pack
@@ -240,8 +241,14 @@ manifest, generated source, disassembly audit, exact toolchain, host and Git
 state, correctness gates, calibration, and all 80 balanced observations. The
 portable analyzer accepts exactly three clean-checkout processes, rejects
 thermal drift above the declared 10% policy, and computes deterministic paired
-BCa intervals. No result is promoted until that three-session gate passes and
-the evidence is checked in.
+BCa intervals. The three session speedups are `3.95671x`, `3.96176x`, and
+`3.95648x`; their respective 95% paired-BCa intervals are
+`[3.95103, 3.96705]`, `[3.95085, 3.96960]`, and `[3.95351, 3.95997]`.
+All three lower bounds exceed `1.0`, so the predeclared G1 speedup gate passes.
+This is a generated scalar-versus-NEON kernel result at the complete prepared
+call boundary, not an end-to-end model speedup.
+
+Reproduce the checked-in analysis with `make verify-g1-result`.
 
 Run the closed G1 path with explicit artifacts and session IDs:
 

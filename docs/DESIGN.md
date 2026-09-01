@@ -1,19 +1,22 @@
 # DecodeForge design and technical specification
 
-**Status:** G0 is complete with checked-in provenance evidence. The fixed G1
-native-correctness checkpoint now includes verified lowering, shared OI4
+**Status:** G0 and G1 are complete with checked-in evidence. The fixed G1
+vertical slice includes verified lowering, shared OI4
 packing, deterministic scalar and strict output-vector NEON source, audited
 Apple-arm64 scalar/NEON dylibs, and checked loading through the frozen ABI.
 Both backends execute all 16 frozen fixtures bit-exactly; dedicated `N=4` and
 `N=5` cases verify vector-only and vector-plus-tail machine code. A prepared
 safe-call API validates buffer extents once and reuses caller-owned output while
 preserving complete output scrubbing on every failure. A closed real-shape G1
-harness now prepares the pinned TinyLlama tensor, reconstructs and binds the
+harness prepares the pinned TinyLlama tensor, reconstructs and binds the
 Q8/oracle assets, records 40 balanced prepared-call pairs per process, and
 retains IR, source, disassembly, pack, host, toolchain, and checkout evidence.
 Its analyzer requires three clean independent processes plus drift and paired
-BCa gates. No checked-in speedup or completed-G1 claim exists yet. The normative
-contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+BCa gates. The checked-in sessions measured `3.95671x`, `3.96176x`, and
+`3.95648x` paired speedups; all three 95% paired-BCa lower bounds exceed
+`3.95x`, passing the predeclared G1 gate. This is a generated-kernel result at
+the complete prepared-call boundary, not an end-to-end model speedup. The
+normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
