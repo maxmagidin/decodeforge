@@ -4,15 +4,17 @@
 variable, preserves the declared numeric contract, and produces a reproducible
 result bundle.
 
-**Current status:** G0 provenance is complete, and the fixed G1 scalar/NEON
-native-correctness checkpoint passes all 16 frozen fixtures bit-exactly on the
-M4. Dedicated `N=4` and `N=5` tests establish vector-only and
+**Current status:** G0 and G1 are complete with checked-in evidence. The fixed
+G1 scalar/NEON path passes all 16 frozen fixtures bit-exactly on the M4.
+Dedicated `N=4` and `N=5` tests establish vector-only and
 vector-plus-tail execution, and retained disassembly verifies signed widening,
 conversion, lane-form activation multiply, separate scale/accumulator
-arithmetic, raw vector scale loading, and guarded stores. This is benchmark
-eligibility evidence. The real-shape runner and portable three-session analyzer
-are implemented, but no checked-in speedup or completed-G1 claim exists yet.
-Ryzen/AVX2 remains deferred to optional G4 work.
+arithmetic, raw vector scale loading, and guarded stores. On the real
+TinyLlama `M=1, N=K=2048` projection, the three checked-in sessions measured
+paired scalar/NEON speedups of `3.95671x`, `3.96176x`, and `3.95648x`; all 95%
+paired-BCa lower bounds exceed `3.95x`. The declared speedup gate passes. This
+claim covers the complete prepared-call kernel boundary only. Ryzen/AVX2
+remains deferred to optional G4 work.
 
 ## Claim classes
 
