@@ -79,11 +79,14 @@ loads produce the intended `sshll.8h -> sshll.4s -> scvtf.4s` path and avoid
 the earlier byte-reconstruction and stack-array/canary code without disabling
 stack protection.
 
-G1 remains open: there are no accepted timing samples or performance claims.
-The allocation-free prepared-call subgate is complete: buffer extents are
-validated once, caller-owned output storage is reused, and each invocation
-retains the runtime's complete failure-scrubbing policy. The next subgate is the
-required real-shape scalar-versus-NEON benchmark bundle.
+G1 remains open: there is no checked-in three-session performance claim. The
+allocation-free prepared-call subgate is complete, and the closed real-shape
+harness now pins TinyLlama source and case identities, reconstructs the oracle
+from the reloaded pack, retains compiler/native/host/source evidence, and emits
+40 balanced scalar/NEON pairs per fresh process. The portable analyzer requires
+three clean-checkout processes, rejects declared drift, and computes the pinned
+paired-BCa intervals. The next subgate is capture and independent verification
+of that real-shape bundle.
 
 ## G1 — Complete one NEON vertical slice
 

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import importlib.util
 import json
 import os
+import signal
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -521,23 +525,139 @@ def test_bounded_runner_kills_timeout_and_orphaned_stdout_descendant(
         output_limit=64,
         retain_stdout=False,
     )
-    marker = tmp_path / "orphan-survived"
-    child = f"import time; time.sleep(0.35); open({str(marker)!r}, 'w').write('x')"
+    ready, lock_path, group_path, direct_parent = _orphan_stdout_commands(tmp_path)
+    group_id: int | None = None
+    death_proven = False
+    try:
+        orphaned = capture._run_bounded(
+            direct_parent,
+            tmp_path,
+            environment,
+            timeout=2.0,
+            output_limit=64,
+            retain_stdout=False,
+        )
+
+        assert timed_out.failure == "timeout"
+        assert orphaned.failure == "timeout"
+        assert ready.read_text(encoding="ascii") == "ready"
+        group_id = _read_group_id(group_path)
+        assert group_id is not None
+        _wait_for_exclusive_lock(lock_path, timeout=5.0)
+        death_proven = True
+    finally:
+        if not death_proven:
+            if group_id is None:
+                group_id = _read_group_id(group_path)
+            _cleanup_process_group(group_id)
+
+
+def _orphan_stdout_commands(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path, tuple[str, ...]]:
+    """Build a ready-gated descendant that retains stdout and an OS lock."""
+
+    ready = tmp_path / "orphan-ready"
+    lock_path = tmp_path / "orphan.lock"
+    group_path = tmp_path / "orphan-group"
+    child = (
+        "import fcntl, os, pathlib, sys, time\n"
+        f"ready = pathlib.Path({str(ready)!r})\n"
+        f"lock_path = pathlib.Path({str(lock_path)!r})\n"
+        "lock_file = lock_path.open('a+b')\n"
+        "try:\n"
+        "    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)\n"
+        "    ready.write_text('ready', encoding='ascii')\n"
+        "    sys.stdout.write('ready\\n')\n"
+        "    sys.stdout.flush()\n"
+        "    while True:\n"
+        "        time.sleep(1.0)\n"
+        "finally:\n"
+        "    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)\n"
+        "    lock_file.close()\n"
+    )
     direct_parent = (
         sys.executable,
         "-c",
-        f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}])",
+        "import os, pathlib, subprocess, sys, time\n"
+        f"ready = pathlib.Path({str(ready)!r})\n"
+        f"group = pathlib.Path({str(group_path)!r})\n"
+        "group.write_text(str(os.getpgrp()), encoding='ascii')\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "deadline = time.monotonic() + 10.0\n"
+        "while not ready.exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "if not ready.exists():\n"
+        "    child.kill()\n"
+        "    child.wait()\n"
+        "    raise SystemExit(3)\n",
     )
-    orphaned = capture._run_bounded(
-        direct_parent,
-        tmp_path,
-        environment,
-        timeout=0.05,
-        output_limit=64,
-        retain_stdout=False,
-    )
+    return ready, lock_path, group_path, direct_parent
 
-    assert timed_out.failure == "timeout"
-    assert orphaned.failure == "timeout"
-    time.sleep(0.5)
-    assert not marker.exists()
+
+def _read_group_id(path: Path) -> int | None:
+    try:
+        group_id = int(path.read_text(encoding="ascii"), 10)
+    except (OSError, ValueError):
+        return None
+    return group_id if group_id > 0 else None
+
+
+def _cleanup_process_group(group_id: int | None) -> None:
+    if group_id is None:
+        return
+    with suppress(ProcessLookupError):
+        os.killpg(group_id, signal.SIGKILL)
+
+
+def _try_exclusive_lock(path: Path) -> bool:
+    with path.open("a+b") as descriptor:
+        try:
+            fcntl.flock(descriptor.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno in {errno.EACCES, errno.EAGAIN}:
+                return False
+            raise
+        fcntl.flock(descriptor.fileno(), fcntl.LOCK_UN)
+        return True
+
+
+def _wait_for_exclusive_lock(path: Path, *, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _try_exclusive_lock(path):
+            return
+        time.sleep(0.01)
+    raise AssertionError("orphan descendant still owns its lock")
+
+
+def test_bounded_runner_death_proof_rejects_sigstopped_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lock proof cannot falsely pass when termination only SIGSTOPs."""
+
+    environment = {"PATH": os.defpath, "LANG": "C", "LC_ALL": "C"}
+    ready, lock_path, _, direct_parent = _orphan_stdout_commands(tmp_path)
+    stopped_group_id: int | None = None
+
+    def stop_process_group(process: Any) -> None:
+        nonlocal stopped_group_id
+        stopped_group_id = process.pid
+        os.killpg(process.pid, signal.SIGSTOP)
+
+    monkeypatch.setattr(capture, "_terminate_process_group", stop_process_group)
+    try:
+        result = capture._run_bounded(
+            direct_parent,
+            tmp_path,
+            environment,
+            timeout=2.0,
+            output_limit=64,
+            retain_stdout=False,
+        )
+        assert result.failure == "timeout"
+        assert ready.read_text(encoding="ascii") == "ready"
+        with pytest.raises(AssertionError, match="lock"):
+            _wait_for_exclusive_lock(lock_path, timeout=0.5)
+    finally:
+        _cleanup_process_group(stopped_group_id)

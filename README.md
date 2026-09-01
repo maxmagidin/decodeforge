@@ -232,6 +232,28 @@ includes deterministic output scrubbing and validation around every native
 invocation. The next gate is a reproducible scalar-versus-NEON benchmark on a
 real TinyLlama projection. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
 
+The G1 benchmark harness now prepares one byte-stable, provenance-pinned
+TinyLlama tensor; independently reconstructs the canonical Q8 pack and oracle;
+and runs generated scalar and NEON artifacts through the same allocation-free
+prepared-call boundary. Each raw session retains the Region/Loop IR, pack
+manifest, generated source, disassembly audit, exact toolchain, host and Git
+state, correctness gates, calibration, and all 80 balanced observations. The
+portable analyzer accepts exactly three clean-checkout processes, rejects
+thermal drift above the declared 10% policy, and computes deterministic paired
+BCa intervals. No result is promoted until that three-session gate passes and
+the evidence is checked in.
+
+Run the closed G1 path with explicit artifacts and session IDs:
+
+```sh
+make prepare-g1-input WEIGHTS=/path/to/model.safetensors OUTPUT=/tmp/g1-weight.safetensors
+make prepare-g1-cases PREPARED_WEIGHTS=/tmp/g1-weight.safetensors OUTPUT=/tmp/g1-cases
+make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-01.json SESSION_ID=session-01
+make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-02.json SESSION_ID=session-02
+make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-03.json SESSION_ID=session-03
+make analyze-g1 SESSION_1=/tmp/session-01.json SESSION_2=/tmp/session-02.json SESSION_3=/tmp/session-03.json OUTPUT_DIR=/tmp/g1-report
+```
+
 Rust independently generates the expected fixture documents in memory, and
 `q8 verify` only reads and verifies an existing fixture tree. Run the read-only
 Rust gate with `make rust-fixture-check`, or directly:

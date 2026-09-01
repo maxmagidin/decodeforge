@@ -14,6 +14,14 @@ dependencies = ["jsonschema==4.26.0"]
 # PyTorch is deliberately isolated from the default package. Framework
 # integration can opt into this tested CPU-only baseline explicitly.
 pytorch-cpu = ["numpy==2.4.4", "torch==2.13.0"]
+# G1 preparation and analysis are opt-in because they use PyTorch to load
+# BF16 storage and SciPy for the pinned paired-BCa interval.
+g1-benchmark = [
+    "numpy==2.4.4",
+    "safetensors==0.6.2",
+    "scipy==1.17.1",
+    "torch==2.13.0",
+]
 
 [dependency-groups]
 dev = [

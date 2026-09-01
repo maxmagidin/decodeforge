@@ -10,8 +10,9 @@ M4. Dedicated `N=4` and `N=5` tests establish vector-only and
 vector-plus-tail execution, and retained disassembly verifies signed widening,
 conversion, lane-form activation multiply, separate scale/accumulator
 arithmetic, raw vector scale loading, and guarded stores. This is benchmark
-eligibility evidence only: no native timing sample, speedup, or completed-G1
-claim exists yet. Ryzen/AVX2 remains deferred to optional G4 work.
+eligibility evidence. The real-shape runner and portable three-session analyzer
+are implemented, but no checked-in speedup or completed-G1 claim exists yet.
+Ryzen/AVX2 remains deferred to optional G4 work.
 
 ## Claim classes
 
@@ -125,6 +126,28 @@ Each run:
 9. repeats important results in at least three independent sessions;
 10. reports median, dispersion, p95 when supported by sample count, and the
     effect size versus baseline.
+
+The first real-shape G1 protocol fixes 40 paired rounds per fresh process with
+exactly 20 scalar-first and 20 NEON-first orders, retains all 80 integer timing
+observations, and repeats in exactly three processes. Each backend warms for at
+least 16 calls and 500 ms; calibration doubles repetitions until a batch reaches
+25 ms. A session is rejected when the geometric center of paired backend
+latencies changes by more than 10% between the first and final ten pairs. The
+reported per-session effect is the exponentiated median log paired scalar/NEON
+latency ratio with a deterministic 10,000-resample 95% paired BCa interval. A
+real-shape speedup claim is permitted only when every session's lower bound is
+greater than one. The 120-pair aggregate is a pooled descriptive point estimate
+only (it has no confidence interval and never overrides that gate). Every
+session also reports batch-normalized backend latency in `ns/invocation`
+(`elapsed_ns / repetitions`) using the arithmetic median, median absolute
+deviation (`median(abs(x - median(x)))`), and nearest-rank p95
+(`sorted[ceil(0.95*n)-1]`, one-indexed).
+
+The hashed timing specification names the complete prepared-call boundary and
+rejects undefined or degenerate BCa intervals. For the real case it also pins
+the generated scalar/NEON source and retained disassembly identities; the
+analyzer recomputes module identities from the retained Region/Loop IR and
+requires runner-native Apple clang, SDK, and `llvm-objdump` provenance.
 
 M4 single-thread results come first. Physical-core sweeps and Apple
 performance/efficiency-core behavior are separate experiments with explicit

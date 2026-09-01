@@ -7,9 +7,13 @@ Apple-arm64 scalar/NEON dylibs, and checked loading through the frozen ABI.
 Both backends execute all 16 frozen fixtures bit-exactly; dedicated `N=4` and
 `N=5` cases verify vector-only and vector-plus-tail machine code. A prepared
 safe-call API validates buffer extents once and reuses caller-owned output while
-preserving complete output scrubbing on every failure. No timing, speedup,
-real-shape benchmark, or completed-G1 claim exists yet. The normative contract
-is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
+preserving complete output scrubbing on every failure. A closed real-shape G1
+harness now prepares the pinned TinyLlama tensor, reconstructs and binds the
+Q8/oracle assets, records 40 balanced prepared-call pairs per process, and
+retains IR, source, disassembly, pack, host, toolchain, and checkout evidence.
+Its analyzer requires three clean independent processes plus drift and paired
+BCa gates. No checked-in speedup or completed-G1 claim exists yet. The normative
+contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md).
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple

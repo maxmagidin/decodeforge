@@ -1,6 +1,6 @@
 # DecodeForge V1 schemas
 
-This directory contains seven semantic JSON Schema Draft 2020-12 contracts:
+This directory contains eight semantic JSON Schema Draft 2020-12 contracts:
 
 - `compiler-request.schema.json`;
 - `quant-fixture.schema.json`;
@@ -8,7 +8,8 @@ This directory contains seven semantic JSON Schema Draft 2020-12 contracts:
 - `schedule.schema.json`;
 - `diagnostic.schema.json`;
 - `host-manifest.schema.json`;
-- `run-manifest.schema.json`.
+- `run-manifest.schema.json`;
+- `g1-benchmark-session.schema.json`.
 
 `common.schema.json` contains shared definitions and
 `diagnostic-codes.json` is the append-only stable-code registry. Every `$ref`
@@ -33,7 +34,13 @@ rejects any combined shape whose `P*B*144` payload size exceeds the frozen
 fields to use JSON integer tokens, matching Rust's canonical serde boundary.
 
 The `portable` scalar target is the architecture-neutral baseline for the
-project's supported 64-bit little-endian hosts; it is not a 32-bit target.
+project’s supported 64-bit little-endian hosts; it is not a 32-bit target.
+
+The G1 session schema closes the prepared-call runner output. Its paired-round,
+order-balance, warmup, calibration, correctness, and per-observation invariants
+that cross JSON fields are checked by the offline validator; the analysis
+command additionally applies the three-session drift and confidence-interval
+gates.
 
 Run the complete offline contract check with:
 
