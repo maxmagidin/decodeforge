@@ -63,6 +63,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "decodeforge-bridge"
+version = "0.1.0"
+dependencies = [
+ "decodeforge-compiler",
+ "decodeforge-core",
+ "decodeforge-runtime",
+ "getrandom",
+ "serde_json",
+]
+
+[[package]]
 name = "decodeforge-compiler"
 version = "0.1.0"
 dependencies = [

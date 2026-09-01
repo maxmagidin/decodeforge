@@ -1,0 +1,22 @@
+[package]
+name = "decodeforge-bridge"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "C ABI bridge for verified DecodeForge generated modules."
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+decodeforge-compiler = { path = "../decodeforge-compiler" }
+decodeforge-runtime = { path = "../decodeforge-runtime" }
+serde_json = "=1.0.151"
+getrandom = "=0.4.3"
+
+[dev-dependencies]
+decodeforge-core = { path = "../decodeforge-core" }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

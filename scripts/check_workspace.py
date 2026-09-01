@@ -16,12 +16,14 @@ EXPECTED_MEMBERS = (
     "compiler/decodeforge-compiler",
     "compiler/decodeforge-runtime",
     "compiler/decodeforge-cli",
+    "compiler/decodeforge-bridge",
 )
 EXPECTED_PACKAGES = {
     "decodeforge-core": ROOT / "compiler" / "decodeforge-core" / "Cargo.toml",
     "decodeforge-compiler": ROOT / "compiler" / "decodeforge-compiler" / "Cargo.toml",
     "decodeforge-runtime": ROOT / "compiler" / "decodeforge-runtime" / "Cargo.toml",
     "decodeforge": ROOT / "compiler" / "decodeforge-cli" / "Cargo.toml",
+    "decodeforge-bridge": ROOT / "compiler" / "decodeforge-bridge" / "Cargo.toml",
 }
 
 # Construct the user-directory markers so this checker does not report its own
@@ -139,7 +141,7 @@ def check() -> list[str]:
     expected_manifest_paths = sorted(EXPECTED_PACKAGES.values())
     if manifests != expected_manifest_paths:
         errors.append(
-            "compiler workspace must contain exactly the four expected manifests: "
+            "compiler workspace must contain exactly the five expected manifests: "
             f"{[path.relative_to(ROOT).as_posix() for path in manifests]!r}"
         )
 
@@ -182,7 +184,7 @@ def main() -> int:
         for error in errors:
             print(f"workspace-check: {error}", file=sys.stderr)
         return 1
-    print("workspace-check: ok (four crates, resolver 3, edition 2024)")
+    print("workspace-check: ok (five crates, resolver 3, edition 2024)")
     return 0
 
 

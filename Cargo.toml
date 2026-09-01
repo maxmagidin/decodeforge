@@ -5,4 +5,5 @@ members = [
     "compiler/decodeforge-compiler",
     "compiler/decodeforge-runtime",
     "compiler/decodeforge-cli",
+    "compiler/decodeforge-bridge",
 ]

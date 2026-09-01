@@ -18,12 +18,7 @@ SMOKE_SOURCES = (
     (ROOT / "tests" / "native" / "abi_v1_c11.c", "clang", "c11"),
     (ROOT / "tests" / "native" / "abi_v1_cpp17.cpp", "clang++", "c++17"),
 )
-UNIMPLEMENTED_RUNTIME_NAMES = (
-    "df_runtime_create_v1",
-    "df_runtime_preload_v1",
-    "df_runtime_run_v1",
-    "df_runtime_destroy_v1",
-)
+UNIMPLEMENTED_RUNTIME_NAMES = ("df_runtime_preload_v1",)
 
 
 def _path_markers() -> tuple[str, ...]:
@@ -77,14 +72,23 @@ def check() -> list[str]:
     for symbol in ("df_abi_version", "df_artifact_id", "df_run_v1"):
         if symbol not in abi_text:
             errors.append(f"abi_v1.h is missing declaration {symbol}")
-    if (
-        "DF_RUNTIME_ABI_VERSION_V1" not in runtime_text
-        or "df_runtime_v1" not in runtime_text
+    if "DF_RUNTIME_ABI_VERSION_V1" not in runtime_text or not re.search(
+        r"typedef\s+uint64_t\s+df_runtime_handle_v1\s*;", runtime_text
     ):
-        errors.append("runtime_v1.h must reserve its version and opaque handle")
+        errors.append("runtime_v1.h must reserve its version and handle type")
     for name in UNIMPLEMENTED_RUNTIME_NAMES:
         if name in runtime_text:
             errors.append(f"runtime_v1.h freezes an unimplemented operation: {name}")
+    for symbol in (
+        "df_runtime_bridge_abi_version_v1",
+        "df_runtime_create_neon_v1",
+        "df_runtime_run_v1",
+        "df_runtime_get_descriptor_v1",
+        "df_runtime_destroy_v1",
+        "df_runtime_last_error_v1",
+    ):
+        if symbol not in runtime_text:
+            errors.append(f"runtime_v1.h is missing declaration {symbol}")
     for path in (ABI_HEADER, RUNTIME_HEADER):
         text = path.read_text(encoding="utf-8")
         if any(marker in text for marker in _path_markers()):
