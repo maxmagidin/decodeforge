@@ -1,0 +1,1068 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g1-prepared-call-paired-v1",
+  "format": "decodeforge_g1_benchmark_v1",
+  "session_id": "g1-session-01",
+  "spec_identity": "sha256:6650d0e413b403e7f81111cca75a77f931801c44f2a35cd8f275256be54848dd",
+  "case_bundle_identity": "sha256:797c19ddb60a5d3ec819f46650fbbe030d61b273790fe281784aa6047392beee",
+  "source": {
+    "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+    "model_filename": "model.safetensors",
+    "model_size_bytes": 2200119864,
+    "model_sha256": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933",
+    "tensor_name": "model.layers.0.self_attn.q_proj.weight",
+    "dtype": "BF16",
+    "shape": [
+      2048,
+      2048
+    ],
+    "tensor_sha256": "5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac",
+    "input_semantic_identity": "sha256:5abf98c51f903941a1592f3df83e2e56ca7149252f5d6665c7662927c83008ac"
+  },
+  "numeric_mode": "strict_f32_v1",
+  "pack_format": "DFQ8_B32_OI4_V1",
+  "checkout": {
+    "revision": "046a73d6c1577808769d50cac7df6897a2c98ad7",
+    "dirty": false
+  },
+  "host": {
+    "os": "macos",
+    "os_version": "15.5",
+    "os_build": "24F74",
+    "kernel_release": "24.5.0",
+    "arch": "aarch64",
+    "pointer_width": 64,
+    "native_supported": true,
+    "cpu_model": "Apple M4",
+    "hardware_model": "Mac16,13",
+    "physical_cores": 10,
+    "logical_cores": 10,
+    "features": [
+      "neon"
+    ],
+    "process_id": 5921,
+    "thread_policy": "single calling thread; generated kernels create no workers",
+    "affinity_policy": "macOS default scheduler; no hard affinity requested"
+  },
+  "timing": {
+    "boundary": "PreparedCall::invoke plus fixed Rust repetition loop and timer: sentinel fill + df_run_v1 + status decode + finite scan; no allocation",
+    "warmup_min_calls": 16,
+    "warmup_min_ns": 500000000,
+    "calibration_target_ns": 25000000,
+    "calibration_max_repetitions": 1048576,
+    "paired_rounds": 40,
+    "scalar_first_pairs": 20,
+    "neon_first_pairs": 20,
+    "trimming": "none; every raw sample is retained"
+  },
+  "activation": [
+    {
+      "pair_index": 0,
+      "first_backend": "scalar",
+      "digest": "2bbc7668949c1436c08f2c51290fbd5896feaa0199b03434efa2d844d37384d8"
+    },
+    {
+      "pair_index": 1,
+      "first_backend": "scalar",
+      "digest": "e52b2575a555ec24d897df1e9db79a297173e863070c2f377d0b91dd01542feb"
+    },
+    {
+      "pair_index": 2,
+      "first_backend": "neon",
+      "digest": "3d55416cb1596bd71bffb489e6befb95bb915dc46905dc1d9aaf91a167cfd9d5"
+    },
+    {
+      "pair_index": 3,
+      "first_backend": "scalar",
+      "digest": "a9028b4d8e5461fdecbfbd98f5d1d5d161dcf4d2441936c8bf40ab2d028eb905"
+    },
+    {
+      "pair_index": 4,
+      "first_backend": "scalar",
+      "digest": "1ae8997c2cfcf9b0ae632a06d4fb1be93d03098607c7dcbd6814eb76239cc650"
+    },
+    {
+      "pair_index": 5,
+      "first_backend": "scalar",
+      "digest": "0aad369b88871d180badab19db47cb73bfcd807fe820f798057ff53088e2c8df"
+    },
+    {
+      "pair_index": 6,
+      "first_backend": "scalar",
+      "digest": "fe6d21697cf3a6af6e9508b1896e3e556aa7e4e2cad22b17b256c3e45f041cbc"
+    },
+    {
+      "pair_index": 7,
+      "first_backend": "scalar",
+      "digest": "1657fd3d63c95831e1a778f59d93753ee3601199e47bf1bb6b38789418f07aae"
+    },
+    {
+      "pair_index": 8,
+      "first_backend": "scalar",
+      "digest": "e193c617463dfcf6a560c633c43935769761299c15bc0c867406673dadec5d64"
+    },
+    {
+      "pair_index": 9,
+      "first_backend": "neon",
+      "digest": "9e3c5069ca7afa659a24cc044ed8a0628adcdfaa6558f7d4a620292a175f1bf7"
+    },
+    {
+      "pair_index": 10,
+      "first_backend": "scalar",
+      "digest": "db8af5232844bccce90f9ca23241f8d8db012422ec2e233747f449150a870048"
+    },
+    {
+      "pair_index": 11,
+      "first_backend": "neon",
+      "digest": "b134b16d095e72f0a2aa88abdc29925f704a88b6f2b90ab5a2772ca8b494e20d"
+    },
+    {
+      "pair_index": 12,
+      "first_backend": "scalar",
+      "digest": "d509ba62ee5f25045fb2de63aa119a6d1aab6e907b488f4c05d6f7ac77a68e30"
+    },
+    {
+      "pair_index": 13,
+      "first_backend": "scalar",
+      "digest": "154073caa63349e4924ddc8b46e9cef5524024e73e1784910eba416ee2b66cb3"
+    },
+    {
+      "pair_index": 14,
+      "first_backend": "scalar",
+      "digest": "846e0b3e5e5943ad699e3db22d0c12690c090cc06203b12aad93b6991007fefc"
+    },
+    {
+      "pair_index": 15,
+      "first_backend": "neon",
+      "digest": "568fba0623e3e2ed06a2fbd311ecc1acd28bccc780bf73e851c11961b0483cd4"
+    },
+    {
+      "pair_index": 16,
+      "first_backend": "neon",
+      "digest": "7ed3aedf7d71f814b742bfb9442b71de9c2ff2b89baf91e197dc12ff6f6b24db"
+    },
+    {
+      "pair_index": 17,
+      "first_backend": "neon",
+      "digest": "4657ef7efebccb07fdb006025d058b717c83add8cb43b02f91f96a8e778552c0"
+    },
+    {
+      "pair_index": 18,
+      "first_backend": "neon",
+      "digest": "0fa905a49fc8a1d168ffcc03da4c9e60e93a899a1ce15235e028760b547b2376"
+    },
+    {
+      "pair_index": 19,
+      "first_backend": "scalar",
+      "digest": "4ab9004f0324cd6db71b7c7080e48ec3812d4b771eded696e3ff8841fdc961ab"
+    },
+    {
+      "pair_index": 20,
+      "first_backend": "neon",
+      "digest": "28594996340001159601b430bc727eb17d5b3f8752afa3d0ee782c02fa22a303"
+    },
+    {
+      "pair_index": 21,
+      "first_backend": "scalar",
+      "digest": "1cd9f19e43ba1bc046aa2c9d64669900a36f5810724562ff586db4a23aaf0880"
+    },
+    {
+      "pair_index": 22,
+      "first_backend": "neon",
+      "digest": "b895c4f5797214bba9c270d683c370425b1e01e314db5b8005b330b9ad85de7b"
+    },
+    {
+      "pair_index": 23,
+      "first_backend": "neon",
+      "digest": "a9d21c21644c488802e038cb6c31a34f5e7ea8c15f7bafd44181cb0dc90bc379"
+    },
+    {
+      "pair_index": 24,
+      "first_backend": "neon",
+      "digest": "39b2085e67c5ae59394ebc6fff0a4b0f88f2907bdd4c0b27dfaf6ff7c225a19e"
+    },
+    {
+      "pair_index": 25,
+      "first_backend": "scalar",
+      "digest": "c61c31e30838ef897efdc3d7777af58b438856dc22cb74c7ed1fecfcb0c7bb50"
+    },
+    {
+      "pair_index": 26,
+      "first_backend": "neon",
+      "digest": "f26eef626a37e9a6f95497b1ef17f8f1f3195346e9352f2feb7c1c5661bfe76d"
+    },
+    {
+      "pair_index": 27,
+      "first_backend": "neon",
+      "digest": "0457a4ef41b05d86f7b2d2ad6532dbacd23e5cad4930fbf354ba1ff5157842dc"
+    },
+    {
+      "pair_index": 28,
+      "first_backend": "neon",
+      "digest": "8bf477f5169078b68fb365f27316c005fdfb48f3e22534098b943af5f1c0ca5f"
+    },
+    {
+      "pair_index": 29,
+      "first_backend": "neon",
+      "digest": "26562c5c40203e136e2d551aaceea27e9d58781d9e61da96ab2e40a52bb6f201"
+    },
+    {
+      "pair_index": 30,
+      "first_backend": "scalar",
+      "digest": "901d50550453071ff3a6bbedef76b4c4dd82fe8793152f30eb888f2b154d6397"
+    },
+    {
+      "pair_index": 31,
+      "first_backend": "neon",
+      "digest": "ce4f1d840ace076cd3668fa895259f665fca2c5c2281437151b2e65641b3e598"
+    },
+    {
+      "pair_index": 32,
+      "first_backend": "scalar",
+      "digest": "f57c1297a2edf851d04760c46f980a2d3ce205b210ccf9e7da72374f5a727bae"
+    },
+    {
+      "pair_index": 33,
+      "first_backend": "neon",
+      "digest": "b1ca78c74b9b89ff0fda19a1377ef954093316e89a68c0e6f58a926729948656"
+    },
+    {
+      "pair_index": 34,
+      "first_backend": "neon",
+      "digest": "5a732cfb9874502e130ee5ea7f5cc1e328aea70e4cbcad41f92db390e4f5f38d"
+    },
+    {
+      "pair_index": 35,
+      "first_backend": "scalar",
+      "digest": "1eb3145c3138c075a80de4767265b3dfa0bbb2b70d321b464fdb1223b30965b6"
+    },
+    {
+      "pair_index": 36,
+      "first_backend": "scalar",
+      "digest": "8ed49f169942ff71adf946704ec0a5426a1c5554d56cb5d061b522e736601286"
+    },
+    {
+      "pair_index": 37,
+      "first_backend": "neon",
+      "digest": "115987e4df283dd3009b59768a0205094c0621965f6fe01d9f1bcfa1fdb9064e"
+    },
+    {
+      "pair_index": 38,
+      "first_backend": "neon",
+      "digest": "d6640c25915634d70b54c5dcdd5fff7abfb95156222bf2461a01d63e039245d9"
+    },
+    {
+      "pair_index": 39,
+      "first_backend": "scalar",
+      "digest": "b48de753c3098c49284f13e371b25b08e60409c66d028a10ea11b2f387b73c87"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "tinyllama-q-proj-2048x2048",
+      "kind": "real",
+      "n": 2048,
+      "k": 2048,
+      "input_identity": "sha256:03263339062e7a0839f45a28b256b1e1585e5a35e4281853283049017859c590",
+      "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a",
+      "logical_weight_identity": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2",
+      "packed_weight_identity": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc",
+      "region_ir": "{\"schema_version\":1,\"operator\":\"q8_linear\",\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\",\"numeric_mode\":\"strict_f32_v1\"}",
+      "scalar_loop_ir": "{\"schema_version\":1,\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"variant\":\"scalar\",\"vector_axis\":\"output\",\"vector_lanes\":1,\"n_tile\":4,\"k_block\":32,\"k_unroll\":1,\"accumulators\":1,\"reduction_order\":\"ascending-block-lane\",\"arithmetic\":\"separate-mul-add\",\"k_padding\":\"logical-only\",\"pack\":{\"schema_version\":1,\"format\":\"DFQ8_B32_OI4_V1\",\"layout\":\"output-interleaved\",\"tile\":4,\"block_size\":32,\"record_bytes\":144,\"alignment\":16},\"n_tail\":\"scalar-cleanup\",\"numeric_mode\":\"strict_f32_v1\",\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\"}",
+      "neon_loop_ir": "{\"schema_version\":1,\"shape\":{\"m\":1,\"n\":2048,\"k\":2048},\"variant\":\"neon\",\"vector_axis\":\"output\",\"vector_lanes\":4,\"n_tile\":4,\"k_block\":32,\"k_unroll\":1,\"accumulators\":1,\"reduction_order\":\"ascending-block-lane\",\"arithmetic\":\"separate-mul-add\",\"k_padding\":\"logical-only\",\"pack\":{\"schema_version\":1,\"format\":\"DFQ8_B32_OI4_V1\",\"layout\":\"output-interleaved\",\"tile\":4,\"block_size\":32,\"record_bytes\":144,\"alignment\":16},\"n_tail\":\"scalar-cleanup\",\"numeric_mode\":\"strict_f32_v1\",\"logical_weight_identity\":\"sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2\"}",
+      "pack_manifest": {
+        "logical_weight_identity": "sha256:07c6e1c13a280960451fae4698d09dd48a0d0af2b24f29eebc062d86da3253e2",
+        "packed_identity": "sha256:75641573aa3deae8fe3754919ab2af644546ee79121a3ee6d06f1cecaa872efc",
+        "payload_bytes": 4718592,
+        "schema_version": 1,
+        "shape": {
+          "k": 2048,
+          "m": 1,
+          "n": 2048
+        },
+        "spec": {
+          "alignment": 16,
+          "block_size": 32,
+          "format": "DFQ8_B32_OI4_V1",
+          "layout": "output-interleaved",
+          "record_bytes": 144,
+          "schema_version": 1,
+          "tile": 4
+        }
+      },
+      "scalar": {
+        "artifact": {
+          "module_id": "sha256:c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631",
+          "source_hash": "sha256:99aca3f9ed5177ce4abc7d1990bfb28374fb14cfa411081a2bc6cf767e28b58c",
+          "abi_header_hash": "sha256:7e455301d59979be04e79b83a47e3b1bd7a143e681db01227b86557d989966cc",
+          "dylib_hash": "sha256:23a773188131dce3d663f3a14660f42860b0122e50d29fcc6d5026835510dbf0",
+          "flags": [
+            "-std=c11",
+            "--no-default-config",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+            "-fno-fast-math",
+            "-ffp-model=strict",
+            "-ffp-contract=off",
+            "-fdenormal-fp-math=ieee",
+            "-fno-vectorize",
+            "-fno-slp-vectorize",
+            "-fno-unroll-loops",
+            "-fvisibility=hidden",
+            "-fPIC",
+            "-dynamiclib",
+            "-arch",
+            "arm64",
+            "-mmacosx-version-min=15.0",
+            "-Wl,-install_name,@rpath/decodeforge_scalar_v1.dylib",
+            "-Wl,-fatal_warnings",
+            "-Wl,-exported_symbol,_df_abi_version",
+            "-Wl,-exported_symbol,_df_artifact_id",
+            "-Wl,-exported_symbol,_df_run_v1"
+          ],
+          "compiler": "clang",
+          "compiler_version": "Apple clang version 17.0.0 (clang-1700.0.13.5) Target: arm64-apple-darwin24.5.0 Thread model: posix InstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+          "target": "arm64-apple-darwin24.5.0",
+          "sdk_version": "15.5",
+          "objdump_version": "Apple LLVM version 17.0.0 Optimized build. Registered Targets: aarch64 - AArch64 (little endian) aarch64_32 - AArch64 (little endian ILP32) aarch64_be - AArch64 (big endian) arm - ARM arm64 - ARM64 (little endian) arm64_32 - ARM64 (little endian ILP32) armeb - ARM (big endian) thumb - Thumb thumbeb - Thumb (big endian) x86 - 32-bit X86: Pentium-Pro and above x86-64 - 64-bit X86: EM64T and AMD64",
+          "dynamic_exports": [
+            "df_abi_version",
+            "df_artifact_id",
+            "df_run_v1"
+          ],
+          "source": "/* DecodeForge generated source format: decodeforge_scalar_c_v1. */\n/* Buffer extents, non-aliasing, and packed-weight identity are safe-caller obligations. */\n#include \"decodeforge/abi_v1.h\"\n#include <fenv.h>\n#include <float.h>\n#include <math.h>\n#include <stddef.h>\n#include <stdint.h>\n#include <string.h>\n\n#pragma STDC FENV_ACCESS ON\n#pragma STDC FP_CONTRACT OFF\n\n_Static_assert(sizeof(float) == 4, \"binary32 required\");\n_Static_assert(FLT_RADIX == 2, \"binary32 radix required\");\n_Static_assert(FLT_MANT_DIG == 24, \"binary32 mantissa required\");\n_Static_assert(FLT_MAX_EXP == 128, \"binary32 exponent required\");\n_Static_assert(FLT_MIN_EXP == -125, \"binary32 exponent required\");\n_Static_assert(FLT_EVAL_METHOD == 0, \"no excess precision required\");\n\n#if defined(__clang__)\n#define DF_PUBLIC_V1 __attribute__((visibility(\"default\")))\n#define DF_HIDDEN_V1 __attribute__((visibility(\"hidden\")))\n#define DF_USED_V1 __attribute__((used))\n#define DF_NOINLINE_V1 __attribute__((noinline))\n#else\n#error \"decodeforge_scalar_c_v1 requires Clang\"\n#endif\n\nstatic const char df_artifact_id_cstr_v1[] = \"sha256:c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\nDF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631(const float *x, const uint8_t *packed_weight, float *y) {\n    for (uint32_t panel = 0; panel < UINT32_C(512); ++panel) {\n        for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {\n            const uint32_t row = panel * UINT32_C(4) + output_lane;\n            if (row >= UINT32_C(2048) ) break;\n            float accumulator = 0.0f;\n            for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                const size_t scale_offset = (size_t)output_lane * 4u;\n                const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                float scale;\n                memcpy(&scale, &scale_bits, sizeof(scale));\n                const uint32_t block_start = block * UINT32_C(32);\n                const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                float block_sum = 0.0f;\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                    const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                    const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                    const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                    block_sum = block_sum + product;\n                }\n                block_sum = block_sum * scale;\n                accumulator = accumulator + block_sum;\n            }\n            y[row] = accumulator;\n        }\n    }\n    return 0;\n}\n\nDF_PUBLIC_V1 uint32_t df_abi_version(void) {\n    return DF_GENERATED_ABI_VERSION_V1;\n}\n\nDF_PUBLIC_V1 const char *df_artifact_id(void) {\n    return df_artifact_id_cstr_v1;\n}\n\nDF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {\n    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n    if (call->m != UINT32_C(1) || call->n != UINT32_C(2048) || call->k != UINT32_C(2048) ) return DF_STATUS_SHAPE_V1;\n    if (call->x_stride != UINT32_C(2048) || call->y_stride != UINT32_C(2048) ) return DF_STATUS_STRIDE_V1;\n    if (call->packed_weight_bytes != UINT64_C(512) * UINT64_C(64) * UINT64_C(144) ) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n    fenv_t df_saved_environment;\n    int32_t df_status = DF_STATUS_OK_V1;\n    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n    for (uint32_t input = 0; input < UINT32_C(2048); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n    (void)df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C(2048); ++output) {\n        if (!isfinite(y[output])) {\n            df_status = DF_STATUS_NONFINITE_RESULT_V1;\n            goto df_restore_environment;\n        }\n    }\ndf_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}\n",
+          "disassembly": "out/decodeforge_scalar_v1.dylib:\n(__TEXT,__text) section\n_df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631:\n     420:\tstp\tx24, x23, [sp, #-0x30]!\n     424:\tstp\tx22, x21, [sp, #0x10]\n     428:\tstp\tx20, x19, [sp, #0x20]\n     42c:\tmov\tx8, #0x0\n     430:\tadd\tx9, x1, #0x10\n     434:\tmov\tw10, #0x90\n     438:\tmov\tw11, #0x2400\n     43c:\tmov\tx12, #0x0\n     440:\tlsl\tx13, x8, #6\n     444:\tmov\tx14, x9\n     448:\tadd\tx15, x2, x8, lsl #4\n     44c:\tmov\tx16, #0x0\n     450:\tlsl\tx17, x12, #2\n     454:\tmov\tw3, #0x1\n     458:\tbfi\tx3, x12, #2, #61\n     45c:\tmov\tw4, #0x2\n     460:\tbfi\tx4, x12, #2, #61\n     464:\tmov\tw5, #0x3\n     468:\tbfi\tx5, x12, #2, #61\n     46c:\tmovi\td0, #0000000000000000\n     470:\tmov\tx6, x14\n     474:\tmov\tx7, x0\n     478:\tmov\tx19, #0x0\n     47c:\tadd\tx20, x16, x13\n     480:\tmadd\tx20, x20, x10, x1\n     484:\tldrb\tw21, [x20, x17]\n     488:\tldrb\tw22, [x20, x3]\n     48c:\tldrb\tw23, [x20, x4]\n     490:\torr\tw21, w21, w22, lsl #8\n     494:\torr\tw21, w21, w23, lsl #16\n     498:\tldrb\tw20, [x20, x5]\n     49c:\torr\tw20, w21, w20, lsl #24\n     4a0:\tmovi\td1, #0000000000000000\n     4a4:\tldrb\tw21, [x6, x19]\n     4a8:\tsxtb\tw22, w21\n     4ac:\torr\tw23, w21, #0xffffff00\n     4b0:\tcmp\tw22, #0x0\n     4b4:\tcsel\tw21, w23, w21, lt\n     4b8:\tscvtf\ts2, w21\n     4bc:\tldr\ts3, [x7, x19]\n     4c0:\tfmul\ts2, s2, s3\n     4c4:\tfadd\ts1, s1, s2\n     4c8:\tadd\tx19, x19, #0x4\n     4cc:\tcmp\tx19, #0x80\n     4d0:\tb.ne\t0x4a4\n     4d4:\tfmov\ts2, w20\n     4d8:\tfmul\ts1, s1, s2\n     4dc:\tfadd\ts0, s0, s1\n     4e0:\tadd\tx16, x16, #0x1\n     4e4:\tadd\tx7, x7, #0x80\n     4e8:\tadd\tx6, x6, #0x90\n     4ec:\tcmp\tx16, #0x40\n     4f0:\tb.ne\t0x478\n     4f4:\tstr\ts0, [x15, x12, lsl #2]\n     4f8:\tadd\tx12, x12, #0x1\n     4fc:\tadd\tx14, x14, #0x1\n     500:\tcmp\tx12, #0x4\n     504:\tb.ne\t0x44c\n     508:\tadd\tx8, x8, #0x1\n     50c:\tadd\tx9, x9, x11\n     510:\tcmp\tx8, #0x200\n     514:\tb.ne\t0x43c\n     518:\tmov\tw0, #0x0\n     51c:\tldp\tx20, x19, [sp, #0x20]\n     520:\tldp\tx22, x21, [sp, #0x10]\n     524:\tldp\tx24, x23, [sp], #0x30\n     528:\tret\n",
+          "audit": {
+            "backend": "scalar",
+            "helper_symbol": "df_kernel_scalar_v1_c471822c03bb87c1b0ddbff5b2b33a8a2429a8a063d96cd0ab9d091f983e2631",
+            "scalar_scvtf_count": 1,
+            "scalar_fmul_count": 2,
+            "scalar_fadd_count": 2,
+            "return_count": 1,
+            "conditional_branch_count": 4,
+            "comparison_count": 5,
+            "logical_lane_loop_observed": true
+          }
+        },
+        "correctness": {
+          "pre_timing_bit_exact": true,
+          "post_timing_bit_exact": true,
+          "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a"
+        },
+        "warmup": {
+          "calls": 367,
+          "elapsed_ns": 501047417
+        },
+        "calibration": {
+          "target_ns": 25000000,
+          "max_repetitions": 1048576,
+          "selected_repetitions": 32,
+          "attempts": [
+            {
+              "elapsed_ns": 1349666,
+              "repetitions": 1
+            },
+            {
+              "elapsed_ns": 2649625,
+              "repetitions": 2
+            },
+            {
+              "elapsed_ns": 5330000,
+              "repetitions": 4
+            },
+            {
+              "elapsed_ns": 10682959,
+              "repetitions": 8
+            },
+            {
+              "elapsed_ns": 21398875,
+              "repetitions": 16
+            },
+            {
+              "elapsed_ns": 42701083,
+              "repetitions": 32
+            }
+          ]
+        }
+      },
+      "neon": {
+        "artifact": {
+          "module_id": "sha256:564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44",
+          "source_hash": "sha256:d803253668b9568a9a4c0100ada42d05a9045a5ef30d56ba6099b9253c3a26de",
+          "abi_header_hash": "sha256:7e455301d59979be04e79b83a47e3b1bd7a143e681db01227b86557d989966cc",
+          "dylib_hash": "sha256:2c98f0acdcde66f333005c8498010f2726c8e5d391e520debba8d66e74913f5f",
+          "flags": [
+            "-std=c11",
+            "--no-default-config",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+            "-fno-fast-math",
+            "-ffp-model=strict",
+            "-ffp-contract=off",
+            "-fdenormal-fp-math=ieee",
+            "-fno-vectorize",
+            "-fno-slp-vectorize",
+            "-fno-unroll-loops",
+            "-fvisibility=hidden",
+            "-fPIC",
+            "-dynamiclib",
+            "-arch",
+            "arm64",
+            "-mmacosx-version-min=15.0",
+            "-Wl,-install_name,@rpath/decodeforge_neon_v1.dylib",
+            "-Wl,-fatal_warnings",
+            "-Wl,-exported_symbol,_df_abi_version",
+            "-Wl,-exported_symbol,_df_artifact_id",
+            "-Wl,-exported_symbol,_df_run_v1"
+          ],
+          "compiler": "clang",
+          "compiler_version": "Apple clang version 17.0.0 (clang-1700.0.13.5) Target: arm64-apple-darwin24.5.0 Thread model: posix InstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+          "target": "arm64-apple-darwin24.5.0",
+          "sdk_version": "15.5",
+          "objdump_version": "Apple LLVM version 17.0.0 Optimized build. Registered Targets: aarch64 - AArch64 (little endian) aarch64_32 - AArch64 (little endian ILP32) aarch64_be - AArch64 (big endian) arm - ARM arm64 - ARM64 (little endian) arm64_32 - ARM64 (little endian ILP32) armeb - ARM (big endian) thumb - Thumb thumbeb - Thumb (big endian) x86 - 32-bit X86: Pentium-Pro and above x86-64 - 64-bit X86: EM64T and AMD64",
+          "dynamic_exports": [
+            "df_abi_version",
+            "df_artifact_id",
+            "df_run_v1"
+          ],
+          "source": "/* DecodeForge generated source format: decodeforge_neon_c_v1. */\n/* Fixed schedule: four output rows, ascending block/lane, separate mul/add. */\n/* OI4 payload and all buffer extents are safe-caller obligations. */\n#include \"decodeforge/abi_v1.h\"\n#include <arm_neon.h>\n#include <fenv.h>\n#include <float.h>\n#include <math.h>\n#include <stddef.h>\n#include <stdint.h>\n#include <string.h>\n\n#if !defined(__aarch64__) || !defined(__ARM_NEON)\n#error \"decodeforge_neon_c_v1 requires AArch64 NEON\"\n#endif\n#if !defined(__BYTE_ORDER__) || !defined(__ORDER_LITTLE_ENDIAN__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__\n#error \"decodeforge_neon_c_v1 requires little-endian AArch64\"\n#endif\n#if !defined(__clang__)\n#error \"decodeforge_neon_c_v1 requires Clang\"\n#endif\n\n#pragma STDC FENV_ACCESS ON\n#pragma STDC FP_CONTRACT OFF\n\n_Static_assert(sizeof(float) == 4, \"binary32 required\");\n_Static_assert(FLT_RADIX == 2, \"binary32 radix required\");\n_Static_assert(FLT_MANT_DIG == 24, \"binary32 mantissa required\");\n_Static_assert(FLT_MAX_EXP == 128, \"binary32 exponent required\");\n_Static_assert(FLT_MIN_EXP == -125, \"binary32 exponent required\");\n_Static_assert(FLT_EVAL_METHOD == 0, \"no excess precision required\");\n\n#define DF_PUBLIC_V1 __attribute__((visibility(\"default\")))\n#define DF_HIDDEN_V1 __attribute__((visibility(\"hidden\")))\n#define DF_USED_V1 __attribute__((used))\n#define DF_NOINLINE_V1 __attribute__((noinline))\n\nstatic const char df_artifact_id_cstr_v1[] = \"sha256:564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44\";\n_Static_assert(sizeof(df_artifact_id_cstr_v1) == DF_ARTIFACT_ID_CSTR_BYTES_V1, \"artifact identity size\");\n\nDF_HIDDEN_V1 DF_USED_V1 DF_NOINLINE_V1 int df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44(const float *x, const uint8_t *packed_weight, float *y) {\n    for (uint32_t panel = 0; panel < UINT32_C(512); ++panel) {\n        const uint32_t row_base = panel * UINT32_C(4);\n        if (row_base + UINT32_C(4) <= UINT32_C(2048)) {\n            float32x4_t accumulator = vdupq_n_f32(0.0f);\n            for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                float32x4_t block_sum = vdupq_n_f32(0.0f);\n                const uint32_t block_start = block * UINT32_C(32);\n                const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                    const size_t q_offset = 16u + (size_t)lane * 4u;\n                    uint32_t q_word;\n                    memcpy(&q_word, record + q_offset, sizeof(q_word));\n                    const int8x8_t q8 = vreinterpret_s8_u64(vcreate_u64((uint64_t)q_word));\n                    const int16x8_t q16 = vmovl_s8(q8);\n                    const int32x4_t q32 = vmovl_s16(vget_low_s16(q16));\n                    const float32x4_t qf = vcvtq_f32_s32(q32);\n                    const float32x4_t xv = vdupq_n_f32(x[(size_t)block_start + (size_t)lane]);\n                    block_sum = vaddq_f32(block_sum, vmulq_f32(qf, xv));\n                }\n                const uint8x16_t scale_bytes = vld1q_u8(record);\n                const float32x4_t scales = vreinterpretq_f32_u8(scale_bytes);\n                block_sum = vmulq_f32(block_sum, scales);\n                accumulator = vaddq_f32(accumulator, block_sum);\n            }\n            vst1q_f32(y + row_base, accumulator);\n        } else {\n            for (uint32_t output_lane = 0; output_lane < UINT32_C(4); ++output_lane) {\n                const uint32_t row = row_base + output_lane;\n                if (row >= UINT32_C(2048)) break;\n                float accumulator = 0.0f;\n                for (uint32_t block = 0; block < UINT32_C(64); ++block) {\n                    const uint8_t *record = packed_weight + ((size_t)panel * (size_t)64 + (size_t)block) * (size_t)144;\n                    const size_t scale_offset = (size_t)output_lane * 4u;\n                    const uint32_t scale_bits = (uint32_t)record[scale_offset] | ((uint32_t)record[scale_offset + 1u] << 8) | ((uint32_t)record[scale_offset + 2u] << 16) | ((uint32_t)record[scale_offset + 3u] << 24);\n                    float scale;\n                    memcpy(&scale, &scale_bits, sizeof(scale));\n                    const uint32_t block_start = block * UINT32_C(32);\n                    const uint32_t lane_count = (UINT32_C(2048) - block_start < UINT32_C(32) ? UINT32_C(2048) - block_start : UINT32_C(32));\n                    float block_sum = 0.0f;\n                    for (uint32_t lane = 0; lane < lane_count; ++lane) {\n                        const uint8_t q_raw = record[16u + (size_t)lane * 4u + (size_t)output_lane];\n                        const float q_value = (float)((q_raw >= UINT8_C(128)) ? (int)q_raw - 256 : (int)q_raw);\n                        const float product = q_value * x[(size_t)block_start + (size_t)lane];\n                        block_sum = block_sum + product;\n                    }\n                    block_sum = block_sum * scale;\n                    accumulator = accumulator + block_sum;\n                }\n                y[row] = accumulator;\n            }\n        }\n    }\n    return 0;\n}\n\nDF_PUBLIC_V1 uint32_t df_abi_version(void) {\n    return DF_GENERATED_ABI_VERSION_V1;\n}\n\nDF_PUBLIC_V1 const char *df_artifact_id(void) {\n    return df_artifact_id_cstr_v1;\n}\n\nDF_PUBLIC_V1 int32_t df_run_v1(const df_call_v1 *call, const float *x, const uint8_t *packed_weight, float *y) {\n    if (call == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (call->abi_version != DF_GENERATED_ABI_VERSION_V1) return DF_STATUS_ABI_VERSION_V1;\n    if (call->struct_size != (uint32_t)sizeof(df_call_v1)) return DF_STATUS_STRUCT_SIZE_V1;\n    if (call->flags != UINT64_C(0)) return DF_STATUS_FLAGS_V1;\n    if (call->reserved0 != UINT32_C(0)) return DF_STATUS_RESERVED_V1;\n    if (call->m != UINT32_C(1) || call->n != UINT32_C(2048) || call->k != UINT32_C(2048) ) return DF_STATUS_SHAPE_V1;\n    if (call->x_stride != UINT32_C(2048) || call->y_stride != UINT32_C(2048) ) return DF_STATUS_STRIDE_V1;\n    if (call->packed_weight_bytes != UINT64_C(512) * UINT64_C(64) * UINT64_C(144) ) return DF_STATUS_PACKED_WEIGHT_BYTES_V1;\n    if (x == NULL || packed_weight == NULL || y == NULL) return DF_STATUS_NULL_ARGUMENT_V1;\n    if (((uintptr_t)packed_weight & (uintptr_t)15u) != (uintptr_t)0u) return DF_STATUS_PACKED_WEIGHT_ALIGNMENT_V1;\n#if defined(FE_TONEAREST) && defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM == 1 && defined(FLT_TRUE_MIN)\n    fenv_t df_saved_environment;\n    int32_t df_status = DF_STATUS_OK_V1;\n    if (feholdexcept(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    if (fegetround() != FE_TONEAREST) {\n        df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n        goto df_restore_environment;\n    }\n    {\n        volatile float df_probe_true_min = FLT_TRUE_MIN;\n        volatile float df_probe_one = 1.0f;\n        volatile float df_probe_min = FLT_MIN;\n        volatile float df_probe_half = 0.5f;\n        const float df_probe_true_min_result = df_probe_true_min * df_probe_one;\n        const float df_probe_half_min_result = df_probe_min * df_probe_half;\n        uint32_t df_probe_true_min_bits = UINT32_C(0);\n        uint32_t df_probe_half_min_bits = UINT32_C(0);\n        memcpy(&df_probe_true_min_bits, &df_probe_true_min_result, sizeof(df_probe_true_min_bits));\n        memcpy(&df_probe_half_min_bits, &df_probe_half_min_result, sizeof(df_probe_half_min_bits));\n        if (df_probe_true_min_bits != UINT32_C(0x00000001) || df_probe_half_min_bits != UINT32_C(0x00400000)) {\n            df_status = DF_STATUS_FP_ENVIRONMENT_V1;\n            goto df_restore_environment;\n        }\n    }\n    for (uint32_t input = 0; input < UINT32_C(2048); ++input) {\n        if (!isfinite(x[input])) {\n            df_status = DF_STATUS_NONFINITE_INPUT_V1;\n            goto df_restore_environment;\n        }\n    }\n    (void)df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44(x, packed_weight, y);\n    for (uint32_t output = 0; output < UINT32_C(2048); ++output) {\n        if (!isfinite(y[output])) {\n            df_status = DF_STATUS_NONFINITE_RESULT_V1;\n            goto df_restore_environment;\n        }\n    }\ndf_restore_environment:\n    if (fesetenv(&df_saved_environment) != 0) return DF_STATUS_FP_ENVIRONMENT_V1;\n    return df_status;\n#else\n    return DF_STATUS_FP_ENVIRONMENT_V1;\n#endif\n}\n",
+          "disassembly": "out/decodeforge_neon_v1.dylib:\n(__TEXT,__text) section\n_df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44:\n     420:\tmov\tx8, #0x0\n     424:\tadd\tx9, x1, #0x10\n     428:\tmov\tw10, #0x2400\n     42c:\tmov\tx11, #0x0\n     430:\tlsl\tx12, x8, #6\n     434:\tmovi.2d\tv0, #0000000000000000\n     438:\tmov\tx13, x9\n     43c:\tmov\tx14, x0\n     440:\tmov\tx15, #0x0\n     444:\tadd\tx16, x11, x12\n     448:\tadd\tx16, x16, x16, lsl #3\n     44c:\tlsl\tx16, x16, #4\n     450:\tmovi.2d\tv1, #0000000000000000\n     454:\tldr\tw17, [x13, x15]\n     458:\tfmov\td2, x17\n     45c:\tsshll.8h\tv2, v2, #0x0\n     460:\tsshll.4s\tv2, v2, #0x0\n     464:\tscvtf.4s\tv2, v2\n     468:\tldr\ts3, [x14, x15]\n     46c:\tfmul.4s\tv2, v2, v3[0]\n     470:\tfadd.4s\tv1, v1, v2\n     474:\tadd\tx15, x15, #0x4\n     478:\tcmp\tx15, #0x80\n     47c:\tb.ne\t0x454\n     480:\tldr\tq2, [x1, x16]\n     484:\tfmul.4s\tv1, v1, v2\n     488:\tfadd.4s\tv0, v0, v1\n     48c:\tadd\tx11, x11, #0x1\n     490:\tadd\tx14, x14, #0x80\n     494:\tadd\tx13, x13, #0x90\n     498:\tcmp\tx11, #0x40\n     49c:\tb.ne\t0x440\n     4a0:\tstr\tq0, [x2, x8, lsl #4]\n     4a4:\tadd\tx8, x8, #0x1\n     4a8:\tadd\tx9, x9, x10\n     4ac:\tcmp\tx8, #0x200\n     4b0:\tb.ne\t0x42c\n     4b4:\tmov\tw0, #0x0\n     4b8:\tret\n",
+          "audit": {
+            "backend": "neon",
+            "helper_symbol": "df_kernel_neon_v1_564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44",
+            "vector_path_observed": true,
+            "scalar_tail_observed": false,
+            "signed_widen_8_to_16_count": 1,
+            "signed_widen_16_to_32_count": 1,
+            "signed_q8_to_i32_count": 1,
+            "vector_scvtf_count": 1,
+            "vector_fmul_count": 2,
+            "vector_fadd_count": 2,
+            "vector_broadcast_count": 1,
+            "vector_store_count": 1,
+            "return_count": 1,
+            "conditional_branch_count": 3,
+            "logical_vector_lane_loop_observed": true
+          }
+        },
+        "correctness": {
+          "pre_timing_bit_exact": true,
+          "post_timing_bit_exact": true,
+          "expected_identity": "sha256:96d06e866b38c28e2f08acdfb6055515b95dc63aede37dddf3b4315b0e5e2f4a"
+        },
+        "warmup": {
+          "calls": 1480,
+          "elapsed_ns": 500092541
+        },
+        "calibration": {
+          "target_ns": 25000000,
+          "max_repetitions": 1048576,
+          "selected_repetitions": 128,
+          "attempts": [
+            {
+              "elapsed_ns": 339292,
+              "repetitions": 1
+            },
+            {
+              "elapsed_ns": 659750,
+              "repetitions": 2
+            },
+            {
+              "elapsed_ns": 1332250,
+              "repetitions": 4
+            },
+            {
+              "elapsed_ns": 2676292,
+              "repetitions": 8
+            },
+            {
+              "elapsed_ns": 5377834,
+              "repetitions": 16
+            },
+            {
+              "elapsed_ns": 10864292,
+              "repetitions": 32
+            },
+            {
+              "elapsed_ns": 21339166,
+              "repetitions": 64
+            },
+            {
+              "elapsed_ns": 43287500,
+              "repetitions": 128
+            }
+          ]
+        }
+      },
+      "samples": [
+        {
+          "pair_index": 0,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42599250,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 0,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 42950166,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 1,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42640333,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 1,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43381750,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 2,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43000292,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 2,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42661292,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 3,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42735166,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 3,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43329167,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 4,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42701250,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 4,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 42791500,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 5,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42860625,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 5,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43424292,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 6,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42901209,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 6,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 42791917,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 7,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42674583,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 7,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43289916,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 8,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42926084,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 8,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43492459,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 9,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43086542,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 9,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42740500,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 10,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42802625,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 10,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43320042,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 11,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43958000,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 11,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42984000,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 12,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 43807208,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 12,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43241167,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 13,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42732541,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 13,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43261791,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 14,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42835917,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 14,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43187584,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 15,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43165958,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 15,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42811125,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 16,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43469417,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 16,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42904500,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 17,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43062500,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 17,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42712792,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 18,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43289959,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 18,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42737917,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 19,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42853208,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 19,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43083875,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 20,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43173291,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 20,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42816834,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 21,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42715958,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 21,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43282875,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 22,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43347833,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 22,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42809542,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 23,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43205542,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 23,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42717750,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 24,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43367000,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 24,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42731083,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 25,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42818166,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 25,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43307000,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 26,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43138125,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 26,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42691334,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 27,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43067000,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 27,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42763167,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 28,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43151500,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 28,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42711250,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 29,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 44073542,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 29,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 44452375,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 30,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 43331459,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 30,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43361959,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 31,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43163125,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 31,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42773791,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 32,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42885542,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 32,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43195166,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 33,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43272083,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 33,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42858917,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 34,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43390208,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 34,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42846125,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 35,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42750000,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 35,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43322125,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 36,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42739292,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 36,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43238292,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 37,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43268833,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 37,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42765167,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 38,
+          "backend": "neon",
+          "position": "first",
+          "elapsed_ns": 43228125,
+          "repetitions": 128
+        },
+        {
+          "pair_index": 38,
+          "backend": "scalar",
+          "position": "second",
+          "elapsed_ns": 42698500,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 39,
+          "backend": "scalar",
+          "position": "first",
+          "elapsed_ns": 42839917,
+          "repetitions": 32
+        },
+        {
+          "pair_index": 39,
+          "backend": "neon",
+          "position": "second",
+          "elapsed_ns": 43241042,
+          "repetitions": 128
+        }
+      ]
+    }
+  ]
+}
