@@ -16,9 +16,9 @@ paired-BCa lower bounds exceed `3.95x`. The declared speedup gate passes. This
 claim covers the complete prepared-call kernel boundary only. Ryzen/AVX2
 remains deferred to optional G4 work. The hardened versioned runtime C ABI is
 the first completed G2 piece and is exercised through the actual release
-dynamic library. The eager PyTorch operator and G3 22-query-projection
-generation experiment remain unmerged; G3 has not started on `main`. This
-document defines their claim boundaries before results exist.
+dynamic library. The eager PyTorch operator is complete, and the G3
+22-query-projection generation experiment is in progress. This document defines
+its claim boundaries before results exist.
 
 ## Claim classes
 

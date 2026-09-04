@@ -50,8 +50,8 @@ dependencies.
 |---|---|---|
 | G0: semantics | complete | independent Python/Rust semantics, closed fixtures, and Apple M4 provenance bundle |
 | G1: compiler/kernel | complete | real `[2048,2048]` q-projection, generated scalar/NEON, audited dylibs, bit-exact corpus, three paired sessions |
-| G2: framework boundary | in progress | hardened C ABI merged; guarded eager operator remains to merge |
-| G3: model proof | not started on `main` | all 22 `q_proj` adapters plus reproducible prompt-to-text bundle |
+| G2: framework boundary | complete | hardened C ABI, guarded eager operator, lifecycle hardening, and real release-dylib checkpoint pass |
+| G3: model proof | in progress | frozen experiment, 22 canonical assets, and one-layer adapter pass; transactional installation and the prompt-to-text bundle remain |
 | G4: extension | deferred | selected only from G3 bottleneck evidence |
 
 The three G1 Apple M4 sessions measured `3.95671x`, `3.96176x`, and
