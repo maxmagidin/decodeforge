@@ -34,6 +34,9 @@ BRIDGE_MAX_AGGREGATE_PACKED_BYTES: Final = 2 * 1024 * 1024 * 1024
 TINYLLAMA_QPROJ_MODULE_ID: Final = (
     "sha256:564dbd74857d3fe00b25bf4acbe6cf06d6ff47ab603ae9eb1ba3a530edc8ea44"
 )
+TINYLLAMA_QPROJ_AGGREGATE_ID: Final = (
+    "sha256:f659b26572357af84a5e5b66138331a2e35c319c5c9b8300cf81f7ea217ae0de"
+)
 
 _IDENTITY_PREFIX: Final = "sha256:"
 _MAX_INVENTORY_BYTES: Final = 256 * 1024
@@ -306,6 +309,13 @@ def _inventory_identity(inventory: QProjAssetInventory) -> str:
 
 def _sha256(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _require_pinned_aggregate(identity: str) -> None:
+    if identity != TINYLLAMA_QPROJ_AGGREGATE_ID:
+        raise QProjModelError(
+            "q_proj aggregate identity is not the canonical pinned TinyLlama asset set"
+        )
 
 
 def _pairs_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -794,6 +804,7 @@ def _load_prepared_inventory(
         aggregate_identity=_string(wire["aggregate_identity"], "aggregate identity"),
     )
     _validate_inventory(inventory)
+    _require_pinned_aggregate(inventory.aggregate_identity)
     return inventory, tuple(assets)
 
 
@@ -1264,6 +1275,7 @@ __all__ = [
     "BRIDGE_MAX_AGGREGATE_PACKED_BYTES",
     "QPROJ_PACKED_BYTES",
     "QPROJ_TOTAL_PACKED_BYTES",
+    "TINYLLAMA_QPROJ_AGGREGATE_ID",
     "TINYLLAMA_QPROJ_K",
     "TINYLLAMA_QPROJ_LAYERS",
     "TINYLLAMA_QPROJ_MODULE_ID",

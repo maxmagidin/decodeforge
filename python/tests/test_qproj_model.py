@@ -491,3 +491,9 @@ def test_trusted_loader_rejects_non_closed_directory(tmp_path: Path) -> None:
     (tmp_path / "unexpected").write_text("x", encoding="utf-8")
     with pytest.raises(model_bridge.QProjModelError, match="unexpected"):
         model_bridge._load_prepared_inventory(tmp_path)
+
+
+def test_only_the_canonical_prepared_aggregate_is_installable() -> None:
+    model_bridge._require_pinned_aggregate(model_bridge.TINYLLAMA_QPROJ_AGGREGATE_ID)
+    with pytest.raises(model_bridge.QProjModelError, match="canonical pinned"):
+        model_bridge._require_pinned_aggregate(_identity(999))
