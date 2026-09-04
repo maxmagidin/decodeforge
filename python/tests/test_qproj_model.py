@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import types
 from pathlib import Path
 from typing import Any, cast
 
@@ -344,6 +345,26 @@ def test_model_linear_contract_is_checked_before_creation(
         )
 
 
+def test_model_state_surface_is_checked_before_adapter_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_loader(monkeypatch, _loaded())
+    model = _model()
+    projection = cast(Layer, model.model.layers[4]).self_attn.q_proj
+    assert isinstance(projection, nn.Linear)
+    projection.register_buffer("unexpected", torch.zeros(1))
+    calls = 0
+
+    def factory(_asset: model_bridge.VerifiedQProjAsset) -> FakeAdapter:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("factory must not run")
+
+    with pytest.raises(model_bridge.QProjModelError, match="state_dict"):
+        model_bridge.install_tinyllama_qproj(model, "verified", factory)
+    assert calls == 0
+
+
 def test_partial_adapter_creation_failure_closes_every_created_adapter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,6 +383,34 @@ def test_partial_adapter_creation_failure_closes_every_created_adapter(
         return adapter
 
     with pytest.raises(RuntimeError, match="creation failure"):
+        model_bridge.install_tinyllama_qproj(model, "verified", factory)
+    assert len(adapters) == 9 and all(adapter.closed for adapter in adapters)
+    assert all(
+        model.get_submodule(path) is original
+        for path, original in zip(
+            model_bridge.tinyllama_qproj_paths(), originals, strict=True
+        )
+    )
+
+
+def test_interrupt_during_creation_still_closes_every_owned_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_loader(monkeypatch, _loaded())
+    model = _model()
+    originals = tuple(
+        model.get_submodule(path) for path in model_bridge.tinyllama_qproj_paths()
+    )
+    adapters: list[FakeAdapter] = []
+
+    def factory(asset: model_bridge.VerifiedQProjAsset) -> FakeAdapter:
+        if asset.entry.layer == 9:
+            raise KeyboardInterrupt("injected creation interruption")
+        adapter = FakeAdapter(asset)
+        adapters.append(adapter)
+        return adapter
+
+    with pytest.raises(KeyboardInterrupt, match="creation interruption"):
         model_bridge.install_tinyllama_qproj(model, "verified", factory)
     assert len(adapters) == 9 and all(adapter.closed for adapter in adapters)
     assert all(
@@ -469,6 +518,38 @@ def test_cleanup_attempts_every_adapter_aggregates_and_retries(
     assert [adapter.close_calls for adapter in adapters].count(2) == 2
 
 
+def test_cleanup_does_not_overwrite_external_model_guard_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_loader(monkeypatch, _loaded())
+    model = _model()
+    adapters: list[FakeAdapter] = []
+    installation = model_bridge.install_tinyllama_qproj(
+        model, "verified", _collecting_factory(adapters)
+    )
+
+    def external_train(_model: nn.Module, _mode: bool = True) -> nn.Module:
+        return _model
+
+    replacement = types.MethodType(external_train, model)
+    model.train = replacement  # type: ignore[method-assign]
+    with pytest.raises(ExceptionGroup, match="cleanup did not complete") as captured:
+        installation.close()
+    assert any(
+        "guard changed outside" in str(error) for error in captured.value.exceptions
+    )
+    assert model.__dict__["train"] is replacement
+    assert all(adapter.closed for adapter in adapters)
+    assert not installation.closed
+    assert not installation.counters.closed
+
+    model.__dict__.pop("train")
+    installation.close()
+    assert installation.closed
+    model.train()
+    assert model.training
+
+
 def test_repeat_setup_teardown_leaves_no_live_adapter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -491,6 +572,42 @@ def test_trusted_loader_rejects_non_closed_directory(tmp_path: Path) -> None:
     (tmp_path / "unexpected").write_text("x", encoding="utf-8")
     with pytest.raises(model_bridge.QProjModelError, match="unexpected"):
         model_bridge._load_prepared_inventory(tmp_path)
+
+
+def test_trusted_loader_remains_anchored_when_root_path_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = tmp_path / "prepared"
+    replacement = tmp_path / "replacement"
+    for root, inventory in ((original, b"{}"), (replacement, b"not-json")):
+        root.mkdir()
+        (root / "inventory.json").write_bytes(inventory)
+        layers = root / "layers"
+        layers.mkdir()
+        for layer in range(model_bridge.TINYLLAMA_QPROJ_LAYERS):
+            (layers / f"{layer:02}").mkdir()
+
+    read_snapshot = model_bridge._read_snapshot
+    swapped = False
+
+    def swap_before_read(
+        directory_fd: int,
+        filename: str,
+        maximum: int,
+        label: str,
+        exact: int | None = None,
+    ) -> bytes:
+        nonlocal swapped
+        if filename == "inventory.json" and not swapped:
+            original.rename(tmp_path / "parked")
+            replacement.rename(original)
+            swapped = True
+        return read_snapshot(directory_fd, filename, maximum, label, exact)
+
+    monkeypatch.setattr(model_bridge, "_read_snapshot", swap_before_read)
+    with pytest.raises(model_bridge.QProjModelError, match="unsupported or missing"):
+        model_bridge._load_prepared_inventory(original)
+    assert swapped
 
 
 def test_only_the_canonical_prepared_aggregate_is_installable() -> None:

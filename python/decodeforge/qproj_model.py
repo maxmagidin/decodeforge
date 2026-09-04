@@ -17,7 +17,6 @@ import threading
 import types
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Final, Protocol, TypeAlias, cast
 
 import torch
@@ -360,15 +359,51 @@ def _integer(value: Any, label: str) -> int:
     return cast(int, value)
 
 
-def _plain_directory(path: Path, expected: set[str], label: str) -> None:
+def _open_directory(
+    path: str | os.PathLike[str], label: str, *, directory_fd: int | None = None
+) -> int:
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise QProjModelError(
+            "secure prepared-asset loading requires O_NOFOLLOW support"
+        )
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0)
+        | nofollow
+    )
     try:
-        metadata = path.lstat()
+        descriptor = os.open(path, flags, dir_fd=directory_fd)
     except OSError as error:
-        raise QProjModelError(f"unable to inspect {label}") from error
-    if not stat.S_ISDIR(metadata.st_mode) or path.is_symlink():
-        raise QProjModelError(f"{label} must be a plain directory")
+        raise QProjModelError(
+            f"unable to open {label} without following links"
+        ) from error
     try:
-        actual = {entry.name for entry in os.scandir(path)}
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise QProjModelError(f"{label} must be a plain directory")
+        return descriptor
+    except OSError as error:
+        os.close(descriptor)
+        raise QProjModelError(f"unable to inspect {label}") from error
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _require_directory_inventory(
+    descriptor: int, expected: set[str], label: str
+) -> None:
+    try:
+        actual: set[str] = set()
+        with os.scandir(descriptor) as entries:
+            for entry in entries:
+                if len(actual) == len(expected):
+                    raise QProjModelError(
+                        f"{label} has unexpected entries and exceeds "
+                        "its closed inventory bound"
+                    )
+                actual.add(entry.name)
     except OSError as error:
         raise QProjModelError(f"unable to enumerate {label}") from error
     if actual != expected:
@@ -376,11 +411,20 @@ def _plain_directory(path: Path, expected: set[str], label: str) -> None:
 
 
 def _read_snapshot(
-    path: Path, maximum: int, label: str, exact: int | None = None
+    directory_fd: int,
+    filename: str,
+    maximum: int,
+    label: str,
+    exact: int | None = None,
 ) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise QProjModelError(
+            "secure prepared-asset loading requires O_NOFOLLOW support"
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(filename, flags, dir_fd=directory_fd)
     except OSError as error:
         raise QProjModelError(
             f"unable to open {label} without following links"
@@ -531,19 +575,12 @@ def _verify_logical_and_fallback(
     return fallback_tensor
 
 
-def _load_prepared_inventory(
-    prepared_directory: str | os.PathLike[str],
+def _load_prepared_inventory_from_directories(
+    root_fd: int,
+    layers_fd: int,
 ) -> tuple[QProjAssetInventory, tuple[VerifiedQProjAsset, ...]]:
-    root = Path(prepared_directory)
-    _plain_directory(root, {"inventory.json", "layers"}, "prepared inventory")
-    layers = root / "layers"
-    _plain_directory(
-        layers,
-        {f"{layer:02}" for layer in range(TINYLLAMA_QPROJ_LAYERS)},
-        "prepared layers",
-    )
     inventory_raw = _read_snapshot(
-        root / "inventory.json", _MAX_INVENTORY_BYTES, "inventory.json"
+        root_fd, "inventory.json", _MAX_INVENTORY_BYTES, "inventory.json"
     )
     wire = _json(inventory_raw, "q_proj inventory")
     _exact_fields(
@@ -610,22 +647,50 @@ def _load_prepared_inventory(
         directory_name = _string(inventory_entry["directory"], "entry directory")
         if directory_name != f"layers/{layer:02}":
             raise QProjModelError("inventory directory order is not canonical")
-        layer_directory = root / directory_name
-        _plain_directory(
-            layer_directory,
-            {
+        layer_fd = _open_directory(
+            f"{layer:02}", f"layer {layer} asset", directory_fd=layers_fd
+        )
+        try:
+            layer_inventory = {
                 "manifest.json",
                 "pack-manifest.json",
                 "weights.oi4.bin",
                 "fallback.f32.bin",
-            },
-            f"layer {layer} asset",
-        )
-        manifest_raw = _read_snapshot(
-            layer_directory / "manifest.json",
-            _MAX_ASSET_MANIFEST_BYTES,
-            f"layer {layer} manifest",
-        )
+            }
+            _require_directory_inventory(
+                layer_fd, layer_inventory, f"layer {layer} asset"
+            )
+            manifest_raw = _read_snapshot(
+                layer_fd,
+                "manifest.json",
+                _MAX_ASSET_MANIFEST_BYTES,
+                f"layer {layer} manifest",
+            )
+            pack_manifest = _read_snapshot(
+                layer_fd,
+                "pack-manifest.json",
+                _MAX_PACK_MANIFEST_BYTES,
+                f"layer {layer} pack manifest",
+            )
+            payload = _read_snapshot(
+                layer_fd,
+                "weights.oi4.bin",
+                QPROJ_PACKED_BYTES,
+                f"layer {layer} packed payload",
+                QPROJ_PACKED_BYTES,
+            )
+            fallback_bytes = _read_snapshot(
+                layer_fd,
+                "fallback.f32.bin",
+                _FALLBACK_BYTES,
+                f"layer {layer} fallback",
+                _FALLBACK_BYTES,
+            )
+            _require_directory_inventory(
+                layer_fd, layer_inventory, f"layer {layer} asset"
+            )
+        finally:
+            os.close(layer_fd)
         if _sha256(manifest_raw) != inventory_entry["manifest_identity"]:
             raise QProjModelError(f"layer {layer} manifest identity mismatch")
         manifest = _json(manifest_raw, f"layer {layer} manifest")
@@ -718,24 +783,12 @@ def _load_prepared_inventory(
             or tool != {"name": "decodeforge-compiler", "version": "0.1.0"}
         ):
             raise QProjModelError(f"layer {layer} asset manifest contract mismatch")
-        pack_manifest = _read_snapshot(
-            layer_directory / "pack-manifest.json",
-            _MAX_PACK_MANIFEST_BYTES,
-            f"layer {layer} pack manifest",
-            _integer(pack["manifest_bytes"], "pack manifest bytes"),
-        )
-        payload = _read_snapshot(
-            layer_directory / "weights.oi4.bin",
-            QPROJ_PACKED_BYTES,
-            f"layer {layer} packed payload",
-            QPROJ_PACKED_BYTES,
-        )
-        fallback_bytes = _read_snapshot(
-            layer_directory / "fallback.f32.bin",
-            _FALLBACK_BYTES,
-            f"layer {layer} fallback",
-            _FALLBACK_BYTES,
-        )
+        if len(pack_manifest) != _integer(
+            pack["manifest_bytes"], "pack manifest bytes"
+        ):
+            raise QProjModelError(
+                f"layer {layer} pack manifest byte extent does not match its manifest"
+            )
         for actual, declared, label in (
             (_sha256(pack_manifest), pack["manifest_identity"], "pack manifest"),
             (_sha256(payload), pack["payload_identity"], "pack payload"),
@@ -806,6 +859,29 @@ def _load_prepared_inventory(
     _validate_inventory(inventory)
     _require_pinned_aggregate(inventory.aggregate_identity)
     return inventory, tuple(assets)
+
+
+def _load_prepared_inventory(
+    prepared_directory: str | os.PathLike[str],
+) -> tuple[QProjAssetInventory, tuple[VerifiedQProjAsset, ...]]:
+    root_fd = _open_directory(prepared_directory, "prepared inventory")
+    try:
+        root_inventory = {"inventory.json", "layers"}
+        _require_directory_inventory(root_fd, root_inventory, "prepared inventory")
+        layers_fd = _open_directory("layers", "prepared layers", directory_fd=root_fd)
+        try:
+            layers_inventory = {
+                f"{layer:02}" for layer in range(TINYLLAMA_QPROJ_LAYERS)
+            }
+            _require_directory_inventory(layers_fd, layers_inventory, "prepared layers")
+            result = _load_prepared_inventory_from_directories(root_fd, layers_fd)
+            _require_directory_inventory(layers_fd, layers_inventory, "prepared layers")
+            _require_directory_inventory(root_fd, root_inventory, "prepared inventory")
+            return result
+        finally:
+            os.close(layers_fd)
+    finally:
+        os.close(root_fd)
 
 
 def _resolve_target(model: nn.Module, path: str) -> tuple[nn.Module, str, nn.Module]:
@@ -982,6 +1058,7 @@ class _MethodState:
     name: str
     existed: bool
     value: object | None
+    installed: object
 
 
 class QProjModelInstallation:
@@ -997,6 +1074,7 @@ class QProjModelInstallation:
         self._inventory = inventory
         self._records = tuple(records)
         self._lock = threading.RLock()
+        self._guards_restored = False
         self._method_states = self._install_model_guards()
 
     @property
@@ -1006,9 +1084,12 @@ class QProjModelInstallation:
     @property
     def closed(self) -> bool:
         with self._lock:
-            return all(
-                record.restored and record.wrapper.adapter.closed
-                for record in self._records
+            return (
+                all(
+                    record.restored and record.wrapper.adapter.closed
+                    for record in self._records
+                )
+                and self._guards_restored
             )
 
     @property
@@ -1034,13 +1115,17 @@ class QProjModelInstallation:
                 live_adapters=live,
                 in_flight=in_flight,
                 layers=layers,
-                closed=restored == TINYLLAMA_QPROJ_LAYERS and live == 0,
+                closed=(
+                    restored == TINYLLAMA_QPROJ_LAYERS
+                    and live == 0
+                    and self._guards_restored
+                ),
             )
 
     def _install_model_guards(self) -> tuple[_MethodState, ...]:
         model = self._model
-        states = tuple(
-            _MethodState(name, name in model.__dict__, model.__dict__.get(name))
+        originals = tuple(
+            (name, name in model.__dict__, model.__dict__.get(name))
             for name in ("train", "_apply", "load_state_dict")
         )
         original_train = model.train
@@ -1067,28 +1152,48 @@ class QProjModelInstallation:
                 "state loading is unsupported while q_proj is installed"
             )
 
+        installed = {
+            "train": types.MethodType(guarded_train, model),
+            "_apply": types.MethodType(guarded_apply, model),
+            "load_state_dict": types.MethodType(guarded_load, model),
+        }
         try:
-            model.train = types.MethodType(guarded_train, model)  # type: ignore[method-assign]
-            model._apply = types.MethodType(guarded_apply, model)  # type: ignore[method-assign]
-            model.load_state_dict = types.MethodType(guarded_load, model)  # type: ignore[method-assign]
-        except Exception:
-            for state in states:
-                if state.existed:
-                    setattr(model, state.name, state.value)
+            model.train = installed["train"]  # type: ignore[method-assign]
+            model._apply = installed["_apply"]  # type: ignore[method-assign]
+            model.load_state_dict = installed["load_state_dict"]  # type: ignore[method-assign]
+        except BaseException:
+            for name, existed, value in originals:
+                if existed:
+                    setattr(model, name, value)
                 else:
-                    model.__dict__.pop(state.name, None)
+                    model.__dict__.pop(name, None)
             raise
-        return states
+        return tuple(
+            _MethodState(name, existed, value, installed[name])
+            for name, existed, value in originals
+        )
 
     def _restore_model_guards(self) -> None:
+        if self._guards_restored:
+            return
+        for state in self._method_states:
+            current = self._model.__dict__.get(state.name)
+            is_original = (state.existed and current is state.value) or (
+                not state.existed and state.name not in self._model.__dict__
+            )
+            if current is not state.installed and not is_original:
+                raise QProjModelError(
+                    f"model {state.name} guard changed outside its installation"
+                )
         for state in self._method_states:
             if state.existed:
                 setattr(self._model, state.name, state.value)
             else:
                 self._model.__dict__.pop(state.name, None)
+        self._guards_restored = True
 
     def close(self) -> None:
-        failures: list[Exception] = []
+        failures: list[BaseException] = []
         with self._lock:
             for record in self._records:
                 if record.restored:
@@ -1108,7 +1213,7 @@ class QProjModelInstallation:
                 try:
                     setattr(record.parent, record.child_name, record.original)
                     record.restored = True
-                except Exception as error:
+                except BaseException as error:
                     error.add_note(f"while restoring {record.entry.layer_path}")
                     failures.append(error)
 
@@ -1118,17 +1223,21 @@ class QProjModelInstallation:
                     continue
                 try:
                     adapter.close()
-                except Exception as error:
+                except BaseException as error:
                     error.add_note(f"while closing {record.entry.layer_path}")
                     failures.append(error)
 
-            if all(
+            if not self._guards_restored and all(
                 record.restored and record.wrapper.adapter.closed
                 for record in self._records
             ):
-                self._restore_model_guards()
+                try:
+                    self._restore_model_guards()
+                except BaseException as error:
+                    error.add_note("while restoring model-level guards")
+                    failures.append(error)
         if failures:
-            raise ExceptionGroup("q_proj cleanup did not complete", failures)
+            raise BaseExceptionGroup("q_proj cleanup did not complete", failures)
 
     def __enter__(self) -> QProjModelInstallation:
         return self
@@ -1139,20 +1248,20 @@ class QProjModelInstallation:
 
 def _close_created(
     created: Sequence[tuple[QProjAssetEntry, QProjAdapterLike]],
-) -> list[Exception]:
-    failures: list[Exception] = []
+) -> list[BaseException]:
+    failures: list[BaseException] = []
     for entry, adapter in created:
         if adapter.closed:
             continue
         try:
             adapter.close()
-        except Exception as error:
+        except BaseException as error:
             error.add_note(f"while rolling back {entry.layer_path}")
             failures.append(error)
     return failures
 
 
-def _close_failed_factory_exception(error: Exception) -> list[Exception]:
+def _close_failed_factory_exception(error: BaseException) -> list[BaseException]:
     """Retry cleanup owned by QProjAdapterInitializationError without importing it."""
 
     close = getattr(error, "close", None)
@@ -1161,7 +1270,7 @@ def _close_failed_factory_exception(error: Exception) -> list[Exception]:
         return []
     try:
         close()
-    except Exception as cleanup_error:
+    except BaseException as cleanup_error:
         cleanup_error.add_note("while retrying failed adapter initialization cleanup")
         return [cleanup_error]
     return []
@@ -1186,6 +1295,19 @@ def install_tinyllama_qproj(
         raise QProjModelError("verified asset snapshots do not match the inventory")
     targets = _validate_model(model)
     original_state_keys = tuple(model.state_dict().keys())
+    expected_qproj_state_keys = {f"{path}.weight" for path in tinyllama_qproj_paths()}
+    actual_qproj_state_keys = {
+        key
+        for key in original_state_keys
+        if any(
+            key == path or key.startswith(f"{path}.")
+            for path in tinyllama_qproj_paths()
+        )
+    }
+    if actual_qproj_state_keys != expected_qproj_state_keys:
+        raise QProjModelError(
+            "original state_dict must contain exactly the 22 q_proj weights"
+        )
 
     created: list[tuple[QProjAssetEntry, QProjAdapterLike]] = []
     try:
@@ -1200,7 +1322,7 @@ def install_tinyllama_qproj(
             seen_adapters.add(id(adapter))
             created.append((entry, adapter))
             _validate_adapter(adapter, entry)
-    except Exception as error:
+    except BaseException as error:
         failures = [
             error,
             *_close_failed_factory_exception(error),
@@ -1208,7 +1330,7 @@ def install_tinyllama_qproj(
         ]
         if len(failures) == 1:
             raise
-        raise ExceptionGroup(
+        raise BaseExceptionGroup(
             "q_proj adapter creation rollback failed", failures
         ) from error
 
@@ -1225,11 +1347,11 @@ def install_tinyllama_qproj(
                 targets, created, strict=True
             )
         ]
-    except Exception as error:
+    except BaseException as error:
         failures = [error, *_close_created(created)]
         if len(failures) == 1:
             raise
-        raise ExceptionGroup(
+        raise BaseExceptionGroup(
             "q_proj adapter wrapping rollback failed", failures
         ) from error
 
@@ -1252,19 +1374,19 @@ def install_tinyllama_qproj(
                 "installed state_dict must differ only by the 22 q_proj weights"
             )
         return QProjModelInstallation(model, inventory, records)
-    except Exception as error:
-        rollback_failures: list[Exception] = [error]
+    except BaseException as error:
+        rollback_failures: list[BaseException] = [error]
         for record in reversed(installed):
             try:
                 setattr(record.parent, record.child_name, record.original)
                 record.restored = True
-            except Exception as restore_error:
+            except BaseException as restore_error:
                 restore_error.add_note(f"while rolling back {record.entry.layer_path}")
                 rollback_failures.append(restore_error)
         rollback_failures.extend(_close_created(created))
         if len(rollback_failures) == 1:
             raise
-        raise ExceptionGroup(
+        raise BaseExceptionGroup(
             "q_proj installation rollback failed", rollback_failures
         ) from error
 
