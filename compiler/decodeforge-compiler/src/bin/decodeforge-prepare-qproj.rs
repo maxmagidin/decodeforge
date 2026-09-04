@@ -2,7 +2,7 @@
 
 //! Prepare all pinned TinyLlama q_proj assets for the DecodeForge native bridge.
 
-use decodeforge_compiler::prepare_tinyllama_q_proj_inventory_v1;
+use decodeforge_compiler::{prepare_tinyllama_q_proj_inventory_v1, verify_q_proj_inventory_v1};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
@@ -11,6 +11,7 @@ const USAGE: &str = r#"DecodeForge TinyLlama q_proj asset preparer
 
 USAGE:
   decodeforge-prepare-qproj --source PATH --output DIR
+  decodeforge-prepare-qproj --verify DIR
   decodeforge-prepare-qproj --help
 
 The source must be the exact pinned TinyLlama model.safetensors revision.
@@ -18,9 +19,9 @@ The output directory must not already exist.
 "#;
 
 #[derive(Debug, Eq, PartialEq)]
-struct Options {
-    source: PathBuf,
-    output: PathBuf,
+enum Command {
+    Prepare { source: PathBuf, output: PathBuf },
+    Verify { assets: PathBuf },
 }
 
 #[derive(Debug)]
@@ -34,16 +35,21 @@ impl fmt::Display for CliError {
 
 fn parse_options(
     arguments: impl IntoIterator<Item = OsString>,
-) -> Result<Option<Options>, CliError> {
+) -> Result<Option<Command>, CliError> {
     let mut arguments = arguments.into_iter();
     let mut source = None;
     let mut output = None;
+    let mut verify = None;
     while let Some(option) = arguments.next() {
         let option = option
             .to_str()
             .ok_or_else(|| CliError("options must be valid UTF-8".to_owned()))?;
         if matches!(option, "--help" | "-h") {
-            if arguments.next().is_some() || source.is_some() || output.is_some() {
+            if arguments.next().is_some()
+                || source.is_some()
+                || output.is_some()
+                || verify.is_some()
+            {
                 return Err(CliError(
                     "--help does not accept other arguments".to_owned(),
                 ));
@@ -56,7 +62,8 @@ fn parse_options(
         match option {
             "--source" if source.is_none() => source = Some(path_value("--source", value)?),
             "--output" if output.is_none() => output = Some(path_value("--output", value)?),
-            "--source" | "--output" => {
+            "--verify" if verify.is_none() => verify = Some(path_value("--verify", value)?),
+            "--source" | "--output" | "--verify" => {
                 return Err(CliError(format!(
                     "option {option} must appear exactly once"
                 )));
@@ -64,10 +71,13 @@ fn parse_options(
             _ => return Err(CliError(format!("unknown option {option:?}\n\n{USAGE}"))),
         }
     }
-    Ok(Some(Options {
-        source: source.ok_or_else(|| CliError(format!("missing --source\n\n{USAGE}")))?,
-        output: output.ok_or_else(|| CliError(format!("missing --output\n\n{USAGE}")))?,
-    }))
+    match (source, output, verify) {
+        (Some(source), Some(output), None) => Ok(Some(Command::Prepare { source, output })),
+        (None, None, Some(assets)) => Ok(Some(Command::Verify { assets })),
+        _ => Err(CliError(format!(
+            "choose exactly one mode: --source PATH --output DIR, or --verify DIR\n\n{USAGE}"
+        ))),
+    }
 }
 
 fn path_value(option: &str, value: OsString) -> Result<PathBuf, CliError> {
@@ -83,20 +93,36 @@ fn path_value(option: &str, value: OsString) -> Result<PathBuf, CliError> {
 }
 
 fn run() -> Result<(), CliError> {
-    let Some(options) = parse_options(std::env::args_os().skip(1))? else {
+    let Some(command) = parse_options(std::env::args_os().skip(1))? else {
         print!("{USAGE}");
         return Ok(());
     };
-    let prepared = prepare_tinyllama_q_proj_inventory_v1(&options.source, &options.output)
-        .map_err(|error| CliError(error.to_string()))?;
-    println!(
-        "asset-preparation: ok layers={} aggregate_identity={} packed_bytes={} fallback_bytes={} output={}",
-        prepared.inventory.layer_count,
-        prepared.inventory.aggregate_identity,
-        prepared.inventory.total_packed_bytes,
-        prepared.inventory.total_fallback_bytes,
-        prepared.output_directory.display(),
-    );
+    match command {
+        Command::Prepare { source, output } => {
+            let prepared = prepare_tinyllama_q_proj_inventory_v1(&source, &output)
+                .map_err(|error| CliError(error.to_string()))?;
+            println!(
+                "asset-preparation: ok layers={} aggregate_identity={} packed_bytes={} fallback_bytes={} output={}",
+                prepared.inventory.layer_count,
+                prepared.inventory.aggregate_identity,
+                prepared.inventory.total_packed_bytes,
+                prepared.inventory.total_fallback_bytes,
+                prepared.output_directory.display(),
+            );
+        }
+        Command::Verify { assets } => {
+            let verified =
+                verify_q_proj_inventory_v1(&assets).map_err(|error| CliError(error.to_string()))?;
+            println!(
+                "asset-verification: ok layers={} aggregate_identity={} packed_bytes={} fallback_bytes={} input={}",
+                verified.inventory.layer_count,
+                verified.inventory.aggregate_identity,
+                verified.inventory.total_packed_bytes,
+                verified.inventory.total_fallback_bytes,
+                assets.display(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -117,7 +143,7 @@ mod tests {
 
     #[test]
     fn exact_options_are_required() {
-        let options = parse_options(values(&[
+        let command = parse_options(values(&[
             "--source",
             "model.safetensors",
             "--output",
@@ -125,9 +151,33 @@ mod tests {
         ]))
         .unwrap()
         .unwrap();
-        assert_eq!(options.source, PathBuf::from("model.safetensors"));
-        assert_eq!(options.output, PathBuf::from("qproj-0"));
+        assert_eq!(
+            command,
+            Command::Prepare {
+                source: PathBuf::from("model.safetensors"),
+                output: PathBuf::from("qproj-0"),
+            }
+        );
+        assert_eq!(
+            parse_options(values(&["--verify", "qproj-assets"]))
+                .unwrap()
+                .unwrap(),
+            Command::Verify {
+                assets: PathBuf::from("qproj-assets")
+            }
+        );
         assert!(parse_options(values(&["--source", "model.safetensors"])).is_err());
+        assert!(
+            parse_options(values(&[
+                "--source",
+                "model.safetensors",
+                "--output",
+                "qproj-0",
+                "--verify",
+                "qproj-assets",
+            ]))
+            .is_err()
+        );
     }
 
     #[test]

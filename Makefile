@@ -2,7 +2,7 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
-	prepare-g3-assets
+	prepare-g3-assets verify-g3-assets
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -134,6 +134,11 @@ prepare-g3-assets:
 	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj -- --source "$(WEIGHTS)" --output "$(OUTPUT)"
+
+verify-g3-assets:
+	@test -n "$(ASSETS)" || { echo "verify-g3-assets: ASSETS=<prepared asset directory> is required" >&2; exit 2; }
+	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-prepare-qproj -- --verify "$(ASSETS)"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
