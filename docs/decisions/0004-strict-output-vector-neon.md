@@ -4,6 +4,11 @@
 - **Date:** 2026-08-31
 - **Decision owner:** Repository owner
 
+> **Sequencing update (2026-08-31):**
+> [ADR 0005](0005-prioritize-eager-q-projection-demo.md) moves schedule
+> selection from G2 to an evidence-selected G4 extension. The fixed lowering
+> decision in this ADR remains active.
+
 ## Context
 
 The verified Q8 region, Loop IR, and `DFQ8_B32_OI4_V1` pack already define a
@@ -80,7 +85,7 @@ follow-on work.
 - The first SIMD result is small enough to review: four output rows, one K
   recurrence, one pack layout, and one target.
 - It intentionally leaves K-unrolling, multiple accumulators, prefetching,
-  alternate packing, and runtime schedule selection for G2.
+  alternate packing, and runtime schedule selection for a future G4 extension.
 - A vector speedup is an empirical question. If the fixed schedule loses to
   generated scalar, the report must preserve that negative result rather than
   silently changing semantics or claiming a win.
