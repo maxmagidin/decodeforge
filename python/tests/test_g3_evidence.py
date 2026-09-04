@@ -260,8 +260,16 @@ def _accepted_session() -> JsonObject:
                         "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
                     ),
                 },
+                "bridge_library": {
+                    "path": "target/release/libdecodeforge_bridge.dylib",
+                    "size_bytes": 1048576,
+                    "sha256": "9" * 64,
+                },
                 "asset_inventory_identity": aggregate_identity,
                 "rebuild_commands": {
+                    "build_bridge": (
+                        "cargo build --release --locked -p decodeforge-bridge"
+                    ),
                     "prepare_assets": (
                         "make prepare-g3-assets WEIGHTS=<pinned> OUTPUT=<assets>"
                     ),

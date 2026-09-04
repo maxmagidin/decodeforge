@@ -257,6 +257,7 @@
       "required": [
         "checkout",
         "model",
+        "bridge_library",
         "asset_inventory_identity",
         "rebuild_commands"
       ],
@@ -290,14 +291,31 @@
             }
           }
         },
+        "bridge_library": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "size_bytes", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 67108864
+            },
+            "sha256": {
+              "$ref": "urn:decodeforge:schema:common-v1#/$defs/sha256"
+            }
+          }
+        },
         "asset_inventory_identity": {
           "const": "sha256:f659b26572357af84a5e5b66138331a2e35c319c5c9b8300cf81f7ea217ae0de"
         },
         "rebuild_commands": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["prepare_assets", "run_session"],
+          "required": ["build_bridge", "prepare_assets", "run_session"],
           "properties": {
+            "build_bridge": {"type": "string", "minLength": 1, "maxLength": 4096},
             "prepare_assets": {"type": "string", "minLength": 1, "maxLength": 4096},
             "run_session": {"type": "string", "minLength": 1, "maxLength": 4096}
           }
