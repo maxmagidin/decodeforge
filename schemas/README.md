@@ -1,6 +1,6 @@
 # DecodeForge V1 schemas
 
-This directory contains nine semantic JSON Schema Draft 2020-12 contracts:
+This directory contains ten semantic JSON Schema Draft 2020-12 contracts:
 
 - `compiler-request.schema.json`;
 - `quant-fixture.schema.json`;
@@ -10,7 +10,8 @@ This directory contains nine semantic JSON Schema Draft 2020-12 contracts:
 - `host-manifest.schema.json`;
 - `run-manifest.schema.json`;
 - `g1-benchmark-session.schema.json`;
-- `g3-experiment-spec.schema.json`.
+- `g3-experiment-spec.schema.json`;
+- `g3-generation-session.schema.json`.
 
 `common.schema.json` contains shared definitions and
 `diagnostic-codes.json` is the append-only stable-code registry. Every `$ref`
@@ -50,6 +51,18 @@ unresolved external tokenizer/configuration provenance, but such a spec is
 marked `blocked_external_provenance`; a `ready` spec requires resolved file
 identities, dependency versions, and at least two fixed input token IDs.
 
+The G3 generation-session schema is the single runner/result contract for the
+closed ten-file G3 bundle. It records immutable provenance, the exact ordered
+22-layer asset inventory, raw warmup and measured runs, paired logit hashes and
+comparison summaries, before/after/delta adapter counters, raw phase and
+cached-step and per-q_proj dispatch timings, receipt-bound offline preparation,
+lifecycle reconciliation, drift, and rejection state. Session JSON is a
+transient analyzer input: the retained ten-file bundle must support exact
+semantic reconstruction under the declared sorted-key compact-JSON identity
+algorithm; an unretained presentation-byte hash is not verification evidence.
+The canonical session template is explicitly `not_run`; it is not measured
+evidence and cannot satisfy the accepted-result branch.
+
 Run the complete offline contract check with:
 
 ```sh
@@ -57,7 +70,8 @@ uv run --frozen python scripts/validate_schemas.py --all
 ```
 
 In a source checkout, that command also validates the canonical
-`benchmarks/g3/spec.json` document against the G3 schema.
+`benchmarks/g3/spec.json` and `benchmarks/g3/session-template.json`
+documents against their G3 schemas.
 
 Validate a foundation fixture bundle without executing any artifact with:
 

@@ -47,11 +47,16 @@ SCHEMA_FILES: Final = {
     "run-manifest": SCHEMA_DIR / "run-manifest.schema.json",
     "g1-benchmark-session": SCHEMA_DIR / "g1-benchmark-session.schema.json",
     "g3-experiment-spec": SCHEMA_DIR / "g3-experiment-spec.schema.json",
+    "g3-generation-session": SCHEMA_DIR / "g3-generation-session.schema.json",
 }
 CATALOG_FILES: Final = (SCHEMA_DIR / "common.schema.json", *SCHEMA_FILES.values())
 FOUNDATION_REQUIRED_ARTIFACTS: Final = ("host.json", "report.md", "request.json")
 CANONICAL_SOURCE_DOCUMENTS: Final = (
     ("g3-experiment-spec", _SOURCE_ROOT / "benchmarks" / "g3" / "spec.json"),
+    (
+        "g3-generation-session",
+        _SOURCE_ROOT / "benchmarks" / "g3" / "session-template.json",
+    ),
 )
 
 JsonObject = dict[str, Any]
@@ -566,6 +571,10 @@ def validate_data(
         return _validate_schedule(instance)
     if schema_name == "g1-benchmark-session":
         from decodeforge.g1_evidence import _validate_session_semantics
+
+        return _validate_session_semantics(instance)
+    if schema_name == "g3-generation-session":
+        from decodeforge.g3_evidence import _validate_session_semantics
 
         return _validate_session_semantics(instance)
     return diagnostics
