@@ -898,6 +898,50 @@ def test_runtime_binding_destroy_failure_remains_reachable_and_retryable() -> No
     assert registry.get(binding_id) is None
 
 
+@pytest.mark.parametrize("registered", [False, True])
+def test_runtime_binding_invalid_handle_destroy_converges_to_closed(
+    registered: bool,
+) -> None:
+    class AlreadyDestroyedLibrary:
+        def __init__(self) -> None:
+            self.destroy_attempts = 0
+
+        def run(self, *_arguments: int) -> None:
+            return None
+
+        def destroy(self, _handle: int) -> None:
+            self.destroy_attempts += 1
+            raise bridge.TorchBridgeError(
+                bridge.BridgeStatus.INVALID_HANDLE,
+                "handle is not present in the bridge registry",
+            )
+
+    library = AlreadyDestroyedLibrary()
+    binding = bridge.RuntimeBinding(
+        library,  # type: ignore[arg-type]
+        1,
+        bridge.RuntimeDescriptor(
+            n=4,
+            k=8,
+            packed_weight_bytes=144,
+            module_id="sha256:" + "a" * 64,
+            packed_weight_id="sha256:" + "b" * 64,
+        ),
+    )
+    registry = bridge.BindingRegistry()
+    binding_id = registry.register(binding) if registered else None
+
+    binding.close()
+
+    assert binding.closed
+    assert library.destroy_attempts == 1
+    if binding_id is not None:
+        assert registry.get(binding_id) is None
+
+    binding.close()
+    assert library.destroy_attempts == 1
+
+
 def test_registry_clear_attempts_every_binding_and_aggregates_failures() -> None:
     class FlakyBinding(FakeBinding):
         def __init__(self, failures: int) -> None:

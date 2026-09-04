@@ -606,8 +606,7 @@ class RuntimeBinding:
                 return
             owner = self._registry_owner
             if owner is None:
-                self._ownership.library.destroy(self._ownership.handle)
-                self._closed = True
+                self._destroy_locked()
                 return
         registry, binding_id = owner
         try:
@@ -616,6 +615,16 @@ class RuntimeBinding:
             if error.status is BridgeStatus.INVALID_HANDLE and self.closed:
                 return
             raise
+
+    def _destroy_locked(self) -> None:
+        """Destroy or converge a definitively absent native handle to closed."""
+
+        try:
+            self._ownership.library.destroy(self._ownership.handle)
+        except TorchBridgeError as error:
+            if error.status is not BridgeStatus.INVALID_HANDLE:
+                raise
+        self._closed = True
 
     def _claim_registry(self, registry: BindingRegistry, binding_id: int) -> None:
         """Atomically transfer this live binding into one registry."""
@@ -640,8 +649,7 @@ class RuntimeBinding:
                     BridgeStatus.INTERNAL, "binding registry ownership is inconsistent"
                 )
             if not self._closed:
-                self._ownership.library.destroy(self._ownership.handle)
-                self._closed = True
+                self._destroy_locked()
             self._registry_owner = None
 
     def __enter__(self) -> RuntimeBinding:
