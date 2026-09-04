@@ -11,7 +11,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 from decodeforge import qproj_model as model_bridge  # noqa: E402
-from decodeforge.qproj_adapter import QProjCounters, QProjMetadata  # noqa: E402
+from decodeforge.qproj_adapter import (  # noqa: E402
+    QProjCounters,
+    QProjExecutionMode,
+    QProjMetadata,
+)
 from torch import nn  # noqa: E402
 
 
@@ -141,6 +145,8 @@ class FakeAdapter(nn.Module):
         self._closed = False
         self.close_calls = 0
         self.close_failures = 0
+        self.mode_failure: QProjExecutionMode | None = None
+        self._execution_mode = QProjExecutionMode.HYBRID_NATIVE
         self.eval()
 
     @property
@@ -166,6 +172,17 @@ class FakeAdapter(nn.Module):
     @property
     def closed(self) -> bool:
         return self._closed
+
+    @property
+    def execution_mode(self) -> QProjExecutionMode:
+        return self._execution_mode
+
+    def set_execution_mode(self, mode: QProjExecutionMode) -> QProjExecutionMode:
+        if mode is self.mode_failure:
+            raise RuntimeError("injected execution-mode failure")
+        previous = self._execution_mode
+        self._execution_mode = mode
+        return previous
 
     def forward(self, value: Any) -> Any:
         return value
@@ -548,6 +565,30 @@ def test_cleanup_does_not_overwrite_external_model_guard_mutation(
     assert installation.closed
     model.train()
     assert model.training
+
+
+def test_execution_mode_switch_is_all_22_or_rolls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_loader(monkeypatch, _loaded())
+    model = _model()
+    adapters: list[FakeAdapter] = []
+    installation = model_bridge.install_tinyllama_qproj(
+        model, "verified", _collecting_factory(adapters)
+    )
+    reference = QProjExecutionMode.SAME_Q8_REFERENCE
+    hybrid = QProjExecutionMode.HYBRID_NATIVE
+
+    assert installation.execution_mode is hybrid
+    assert installation.set_execution_mode(reference) is hybrid
+    assert all(adapter.execution_mode is reference for adapter in adapters)
+
+    adapters[10].mode_failure = hybrid
+    with pytest.raises(RuntimeError, match="execution-mode failure"):
+        installation.set_execution_mode(hybrid)
+    assert installation.execution_mode is reference
+    assert all(adapter.execution_mode is reference for adapter in adapters)
+    installation.close()
 
 
 def test_repeat_setup_teardown_leaves_no_live_adapter(

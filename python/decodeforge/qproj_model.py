@@ -22,7 +22,7 @@ from typing import Any, Final, Protocol, TypeAlias, cast
 import torch
 from torch import nn
 
-from .qproj_adapter import QProjCounters, QProjMetadata
+from .qproj_adapter import QProjCounters, QProjExecutionMode, QProjMetadata
 
 TINYLLAMA_QPROJ_LAYERS: Final = 22
 TINYLLAMA_QPROJ_N: Final = 2048
@@ -112,6 +112,7 @@ class VerifiedQProjAsset:
 class QProjLayerCounters:
     """Immutable per-layer adapter counter snapshot."""
 
+    layer: int
     layer_path: str
     forward: int
     native_attempt: int
@@ -152,9 +153,14 @@ class QProjAdapterLike(Protocol):
     @property
     def closed(self) -> bool: ...
 
+    @property
+    def execution_mode(self) -> QProjExecutionMode: ...
+
     def close(self) -> None: ...
 
     def eval(self) -> QProjAdapterLike: ...
+
+    def set_execution_mode(self, mode: QProjExecutionMode) -> QProjExecutionMode: ...
 
 
 AdapterFactory: TypeAlias = Callable[[VerifiedQProjAsset], QProjAdapterLike]
@@ -940,11 +946,12 @@ def _validate_model(model: nn.Module) -> list[tuple[nn.Module, str, nn.Linear]]:
 
 
 def _adapter_counter_snapshot(
-    path: str, adapter: QProjAdapterLike
+    layer: int, path: str, adapter: QProjAdapterLike
 ) -> QProjLayerCounters:
     counters = adapter.counters
     counters.validate()
     return QProjLayerCounters(
+        layer=layer,
         layer_path=path,
         forward=counters.forward,
         native_attempt=counters.native_attempt,
@@ -1097,7 +1104,9 @@ class QProjModelInstallation:
         with self._lock:
             layers = tuple(
                 _adapter_counter_snapshot(
-                    record.entry.layer_path, record.wrapper.adapter
+                    record.entry.layer,
+                    record.entry.layer_path,
+                    record.wrapper.adapter,
                 )
                 for record in self._records
             )
@@ -1121,6 +1130,68 @@ class QProjModelInstallation:
                     and self._guards_restored
                 ),
             )
+
+    @property
+    def execution_mode(self) -> QProjExecutionMode:
+        """Return the consistent execution mode shared by all 22 adapters."""
+
+        with self._lock:
+            modes = {record.wrapper.adapter.execution_mode for record in self._records}
+            if len(modes) != 1:
+                raise QProjModelError("q_proj adapters do not share one execution mode")
+            return next(iter(modes))
+
+    def set_execution_mode(self, mode: QProjExecutionMode) -> QProjExecutionMode:
+        """Transition all adapters, rolling back every completed transition.
+
+        The installation requires exclusive ownership of the model while this
+        method runs.  The transition is transactional on failure, but it does
+        not claim to serialize a concurrent root-model ``forward`` across all
+        22 independently synchronized adapters.
+        """
+
+        if not isinstance(mode, QProjExecutionMode):
+            raise TypeError("mode must be a QProjExecutionMode")
+        with self._lock:
+            snapshot = self.counters
+            if snapshot.closed or snapshot.live_adapters != TINYLLAMA_QPROJ_LAYERS:
+                raise QProjModelError("cannot switch a closed q_proj installation")
+            if snapshot.in_flight != 0:
+                raise QProjModelError("cannot switch q_proj mode with calls in flight")
+            previous = self.execution_mode
+            if previous is mode:
+                return previous
+
+            switched: list[QProjAdapterLike] = []
+            try:
+                for record in self._records:
+                    adapter = record.wrapper.adapter
+                    observed = adapter.set_execution_mode(mode)
+                    if observed is not previous:
+                        raise QProjModelError(
+                            "adapter returned an inconsistent prior execution mode"
+                        )
+                    switched.append(adapter)
+            except Exception as error:
+                failures: list[Exception] = [error]
+                for adapter in reversed(switched):
+                    try:
+                        adapter.set_execution_mode(previous)
+                    except Exception as rollback_error:
+                        rollback_error.add_note(
+                            "while rolling back q_proj execution mode"
+                        )
+                        failures.append(rollback_error)
+                if len(failures) == 1:
+                    raise
+                raise ExceptionGroup(
+                    "q_proj execution-mode rollback failed", failures
+                ) from error
+            if self.counters.in_flight != 0:
+                raise QProjModelError(
+                    "q_proj mode transition ended with calls in flight"
+                )
+            return previous
 
     def _install_model_guards(self) -> tuple[_MethodState, ...]:
         model = self._model
