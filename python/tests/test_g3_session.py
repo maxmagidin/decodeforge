@@ -18,6 +18,7 @@ from decodeforge.g3_session import (
     VerifiedInputState,
     _load_preparation_receipt,
     _load_verified_components,
+    _normalized_architecture,
     _open_directory,
     publish_new_json,
     run_session,
@@ -252,7 +253,12 @@ class _Harness:
                                 "macOS default scheduler; no hard affinity requested"
                             ),
                         },
-                    }
+                    },
+                    "bridge_library": {
+                        "path": "libdecodeforge_bridge.dylib",
+                        "size_bytes": 1,
+                        "sha256": "0" * 64,
+                    },
                 },
                 None,
                 Path("fake-bridge"),
@@ -479,3 +485,8 @@ def test_preparation_receipt_is_identity_and_content_bound(tmp_path: Path) -> No
     nonfinite.write_text('{"elapsed":NaN}', encoding="utf-8")
     with pytest.raises(G3SessionError, match="valid JSON"):
         _load_preparation_receipt(nonfinite)
+
+
+def test_darwin_arm64_uses_the_contract_architecture_name() -> None:
+    assert _normalized_architecture("arm64") == "aarch64"
+    assert _normalized_architecture("x86_64") == "x86_64"

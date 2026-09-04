@@ -15,6 +15,7 @@ import os
 import platform
 import resource
 import secrets
+import shlex
 import stat
 import statistics
 import subprocess
@@ -710,6 +711,11 @@ def _sysctl(name: str) -> str:
     return _command_line(["sysctl", "-n", name])
 
 
+def _normalized_architecture(machine: str) -> str:
+    value = machine.lower()
+    return "aarch64" if value == "arm64" else value
+
+
 def _verify_environment(spec: Mapping[str, Any]) -> JsonObject:
     software = _object(spec.get("software"), "software")
     expected_versions = {
@@ -755,7 +761,7 @@ def _verify_environment(spec: Mapping[str, Any]) -> JsonObject:
         "os_version": os_version,
         "os_build": _command_line(["sw_vers", "-buildVersion"]),
         "kernel_release": platform.release(),
-        "arch": platform.machine().lower(),
+        "arch": _normalized_architecture(platform.machine()),
         "cpu_model": _sysctl("machdep.cpu.brand_string"),
         "hardware_model": _sysctl("hw.model"),
         "physical_cores": int(_sysctl("hw.physicalcpu")),
@@ -1941,15 +1947,18 @@ def run_session(
         "provenance": {
             "checkout": checkout_evidence,
             "model": assets_record["source"],
+            "bridge_library": _object(
+                verified.evidence.get("bridge_library"), "bridge library evidence"
+            ),
             "asset_inventory_identity": assets_record["aggregate_identity"],
             "rebuild_commands": {
-                "prepare_assets": (
-                    " ".join(
-                        _string(value, "preparation argument")
-                        for value in preparation_argv
-                    )
+                "build_bridge": (
+                    "cargo build --quiet --release --locked -p decodeforge-bridge"
                 ),
-                "run_session": " ".join(sys.argv),
+                "prepare_assets": shlex.join(
+                    _string(value, "preparation argument") for value in preparation_argv
+                ),
+                "run_session": shlex.join(sys.argv),
             },
         },
         "environment": {
