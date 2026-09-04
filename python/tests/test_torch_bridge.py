@@ -37,6 +37,7 @@ class FakeTensor:
         conjugate: bool = False,
         negative: bool = False,
         contiguous: bool = True,
+        finite: bool = True,
         device_type: str = "cpu",
     ) -> None:
         self.shape = shape
@@ -47,6 +48,7 @@ class FakeTensor:
         self._conjugate = conjugate
         self._negative = negative
         self._contiguous = contiguous
+        self._finite = finite
         self.device = FakeDevice(device_type)
         self.calls: list[str] = []
 
@@ -80,6 +82,20 @@ class FakeTorch:
 
     def __init__(self) -> None:
         self.outputs: list[FakeTensor] = []
+
+    class _FiniteResult:
+        def __init__(self, value: bool) -> None:
+            self.value = value
+
+        def all(self) -> FakeTorch._FiniteResult:
+            return self
+
+        def item(self) -> bool:
+            return self.value
+
+    def isfinite(self, tensor: FakeTensor) -> FakeTorch._FiniteResult:
+        tensor.calls.append("isfinite")
+        return self._FiniteResult(tensor._finite)
 
     def empty(
         self, shape: tuple[int, ...], *, dtype: object, device: str
@@ -207,7 +223,9 @@ def test_real_torch_registration_preserves_decode_shape_and_prefill_falls_back(
     )
     assert dispatcher(prefill) is prefill
     assert dispatcher.last_guard_reason == "m_gt_one"
-    assert dispatcher.counters == bridge.DispatchCounters(1, 0, 0, 0, 1)
+    assert dispatcher.counters == bridge.DispatchCounters(
+        1, 0, 0, 0, 1, fallback_success=1
+    )
 
 
 def test_native_preserves_all_singleton_leading_dimensions(
@@ -234,6 +252,19 @@ def test_direct_native_operator_rechecks_guards_and_never_falls_back(
             8,
             torch_module=torch,
         )
+    with pytest.raises(bridge.TorchBridgeError, match="nonfinite"):
+        bridge._native_q8_linear(
+            FakeTensor(
+                (1, 8),
+                dtype=torch.float32,
+                layout=torch.strided,
+                finite=False,
+            ),
+            binding_id,
+            4,
+            8,
+            torch_module=torch,
+        )
 
 
 @pytest.mark.parametrize(
@@ -243,6 +274,7 @@ def test_direct_native_operator_rechecks_guards_and_never_falls_back(
         ("_conjugate", True, "conjugate"),
         ("_negative", True, "negative"),
         ("_contiguous", False, "non_contiguous"),
+        ("_finite", False, "nonfinite"),
     ],
 )
 def test_guard_misses_fallback_on_original_tensor(
@@ -270,7 +302,9 @@ def test_guard_misses_fallback_on_original_tensor(
     assert callable_(x) == "fallback"
     assert seen == [x]
     assert callable_.last_guard_reason == reason
-    assert callable_.counters == bridge.DispatchCounters(1, 0, 0, 0, 1)
+    assert callable_.counters == bridge.DispatchCounters(
+        1, 0, 0, 0, 1, fallback_success=1
+    )
 
 
 def test_guard_reasons_cover_m_gt_one_device_dtype_layout_shape_and_numel(
@@ -292,8 +326,12 @@ def test_guard_reasons_cover_m_gt_one_device_dtype_layout_shape_and_numel(
         (FakeTensor((1, 8), dtype=torch.float32, layout=object()), "layout"),
         (FakeTensor((1, 7), dtype=torch.float32, layout=torch.strided), "shape"),
         (FakeTensor((1, 8), dtype=torch.float32, layout=torch.strided), "numel"),
+        (
+            FakeTensor((1, 8), dtype=torch.float32, layout=torch.strided, finite=False),
+            "nonfinite",
+        ),
     ]
-    cases[-1][0].numel = lambda: 7  # type: ignore[method-assign]
+    cases[-2][0].numel = lambda: 7  # type: ignore[method-assign]
     callable_ = bridge.NativeQ8Linear(
         binding_id, 4, 8, lambda original: original, native_operator=lambda *_: None
     )
@@ -330,7 +368,7 @@ def test_native_errors_are_hard_and_counters_remain_partitioned(
     bad = FakeTensor((2, 8), dtype=torch.float32, layout=torch.strided)
     assert callable_(bad) == "fallback"
     counters = callable_.counters
-    assert counters == bridge.DispatchCounters(2, 1, 0, 1, 1)
+    assert counters == bridge.DispatchCounters(2, 1, 0, 1, 1, fallback_success=1)
     counters.validate()
 
 
@@ -359,7 +397,7 @@ def test_counter_snapshots_remain_valid_during_a_native_call(
     )
     worker.start()
     assert entered.wait(timeout=5)
-    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0)
+    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0, in_flight=1)
     release.set()
     worker.join(timeout=5)
     assert not worker.is_alive()
@@ -391,12 +429,14 @@ def test_counter_snapshots_remain_valid_during_a_fallback_call(
     worker = threading.Thread(target=lambda: results.append(callable_(bad)))
     worker.start()
     assert entered.wait(timeout=5)
-    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0)
+    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0, in_flight=1)
     release.set()
     worker.join(timeout=5)
     assert not worker.is_alive()
     assert results == ["fallback"]
-    assert callable_.counters == bridge.DispatchCounters(1, 0, 0, 0, 1)
+    assert callable_.counters == bridge.DispatchCounters(
+        1, 0, 0, 0, 1, fallback_success=1
+    )
 
 
 def test_raising_fallback_is_counted_only_after_it_finishes(
@@ -430,12 +470,21 @@ def test_raising_fallback_is_counted_only_after_it_finishes(
     worker = threading.Thread(target=invoke)
     worker.start()
     assert entered.wait(timeout=5)
-    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0)
+    assert callable_.counters == bridge.DispatchCounters(0, 0, 0, 0, 0, in_flight=1)
     release.set()
     worker.join(timeout=5)
     assert not worker.is_alive()
     assert len(errors) == 1 and isinstance(errors[0], RuntimeError)
-    assert callable_.counters == bridge.DispatchCounters(1, 0, 0, 0, 1)
+    assert callable_.counters == bridge.DispatchCounters(
+        1, 0, 0, 0, 1, fallback_error=1
+    )
+
+
+def test_counter_validation_rejects_inconsistent_or_negative_snapshots() -> None:
+    with pytest.raises(AssertionError, match="fallback counter"):
+        bridge.DispatchCounters(1, 0, 0, 0, 1).validate()
+    with pytest.raises(AssertionError, match="nonnegative"):
+        bridge.DispatchCounters(0, 0, 0, 0, 0, in_flight=-1).validate()
 
 
 def test_binding_forgery_and_closed_lifetime_are_guard_misses(
@@ -657,6 +706,76 @@ def test_runtime_library_maps_status_and_last_error(tmp_path: Path) -> None:
         library.run(41, 0x1000, 8, 0x2000, 4)
     assert error.value.status is bridge.BridgeStatus.NONFINITE_INPUT
     assert "native status failure" in error.value.detail
+
+
+@pytest.mark.parametrize("handle", [True, 0, -1, 1 << 64])
+def test_runtime_library_rejects_handles_outside_unsigned_64_bit_range(
+    tmp_path: Path, handle: int
+) -> None:
+    library, fake = _fake_library(tmp_path)
+    for operation in (
+        lambda: library.get_descriptor(handle),
+        lambda: library.run(handle, 0x1000, 8, 0x2000, 4),
+        lambda: library.destroy(handle),
+    ):
+        with pytest.raises(bridge.TorchBridgeError) as error:
+            operation()
+        assert error.value.status is bridge.BridgeStatus.INVALID_HANDLE
+    with pytest.raises(bridge.TorchBridgeError) as error:
+        bridge.RuntimeBinding(
+            library,
+            handle,
+            bridge.RuntimeDescriptor(
+                n=4,
+                k=8,
+                packed_weight_bytes=144,
+                module_id="sha256:" + "a" * 64,
+                packed_weight_id="sha256:" + "b" * 64,
+            ),
+        )
+    assert error.value.status is bridge.BridgeStatus.INVALID_HANDLE
+    assert fake.runs == []
+    assert fake.destroyed == []
+
+
+def test_runtime_binding_close_waits_for_an_in_flight_run() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    events: list[str] = []
+
+    class BlockingLibrary:
+        def run(self, *_arguments: int) -> None:
+            events.append("run_entered")
+            entered.set()
+            assert release.wait(timeout=5)
+            events.append("run_finished")
+
+        def destroy(self, _handle: int) -> None:
+            events.append("destroyed")
+
+    binding = bridge.RuntimeBinding(
+        BlockingLibrary(),  # type: ignore[arg-type]
+        1,
+        bridge.RuntimeDescriptor(
+            n=4,
+            k=8,
+            packed_weight_bytes=144,
+            module_id="sha256:" + "a" * 64,
+            packed_weight_id="sha256:" + "b" * 64,
+        ),
+    )
+    run = threading.Thread(target=lambda: binding.run(0x1000, 8, 0x2000, 4))
+    close = threading.Thread(target=binding.close)
+    run.start()
+    assert entered.wait(timeout=5)
+    close.start()
+    assert events == ["run_entered"]
+    release.set()
+    run.join(timeout=5)
+    close.join(timeout=5)
+    assert not run.is_alive() and not close.is_alive()
+    assert events == ["run_entered", "run_finished", "destroyed"]
+    assert binding.closed
 
 
 def test_runtime_library_rejects_overlapping_borrowed_ranges(

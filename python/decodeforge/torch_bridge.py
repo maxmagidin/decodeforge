@@ -28,6 +28,7 @@ MAX_PACKED_WEIGHT_BYTES: Final = 128 * 1024 * 1024
 MAX_VECTOR_ELEMENTS: Final = MAX_PACKED_WEIGHT_BYTES // 4
 MAX_ERROR_BYTES: Final = 4096
 MAX_DYLIB_BYTES: Final = 8 * 1024 * 1024
+_MAX_HANDLE: Final = (1 << 64) - 1
 _POINTER_MAX: Final = (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1
 OPERATOR_SCHEMA: Final = (
     "q8_linear_v1(Tensor x, int binding_id, int n, int k) -> Tensor"
@@ -116,6 +117,19 @@ def _identity(value: str, field: str) -> str:
     ):
         raise ValueError(f"{field} must be sha256:<64 lowercase hex digits>")
     return value
+
+
+def _require_handle(handle: int) -> int:
+    if (
+        isinstance(handle, bool)
+        or not isinstance(handle, int)
+        or not 1 <= handle <= _MAX_HANDLE
+    ):
+        raise TorchBridgeError(
+            BridgeStatus.INVALID_HANDLE,
+            "handle must be a nonzero unsigned 64-bit integer",
+        )
+    return handle
 
 
 def _bounded_bytes(
@@ -463,8 +477,7 @@ class RuntimeLibrary:
         return RuntimeBinding(self, int(handle.value), descriptor)
 
     def get_descriptor(self, handle: int) -> RuntimeDescriptor:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         descriptor = _CDescriptor()
         status = int(
             self._descriptor(ctypes.c_uint64(handle), ctypes.byref(descriptor))
@@ -480,8 +493,7 @@ class RuntimeLibrary:
         output_address: int,
         output_length: int,
     ) -> None:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         input_range = _pointer_range(input_address, input_length, "input")
         output_range = _pointer_range(output_address, output_length, "output")
         if input_range[0] < output_range[1] and output_range[0] < input_range[1]:
@@ -502,8 +514,7 @@ class RuntimeLibrary:
         self._raise_status(status)
 
     def destroy(self, handle: int) -> None:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         self._raise_status(int(self._destroy(ctypes.c_uint64(handle))))
 
 
@@ -534,7 +545,7 @@ class RuntimeBinding:
         descriptor: RuntimeDescriptor,
     ) -> None:
         self.library = library
-        self.handle = handle
+        self.handle = _require_handle(handle)
         self.descriptor = descriptor
         self._closed = False
         self._lock = threading.RLock()
@@ -709,6 +720,8 @@ def _tensor_guard_reason(
         return "shape"
     if int(x.numel()) != k:
         return "numel"
+    if not bool(torch_module.isfinite(x).all().item()):
+        return "nonfinite"
     return None
 
 
@@ -801,19 +814,38 @@ def _call_registered_native(x: Any, binding_id: int, n: int, k: int) -> Any:
 
 @dataclass(frozen=True)
 class DispatchCounters:
-    """Immutable snapshot of completed eager dispatch accounting."""
+    """Immutable snapshot of completed outcomes and current in-flight work."""
 
     dispatch: int
     native_attempt: int
     native_success: int
     native_error: int
     fallback: int
+    fallback_success: int = 0
+    fallback_error: int = 0
+    in_flight: int = 0
 
     def validate(self) -> None:
+        if any(
+            value < 0
+            for value in (
+                self.dispatch,
+                self.native_attempt,
+                self.native_success,
+                self.native_error,
+                self.fallback,
+                self.fallback_success,
+                self.fallback_error,
+                self.in_flight,
+            )
+        ):
+            raise AssertionError("dispatch counters must be nonnegative")
         if self.dispatch != self.native_attempt + self.fallback:
             raise AssertionError("dispatch counter invariant failed")
         if self.native_attempt != self.native_success + self.native_error:
             raise AssertionError("native counter invariant failed")
+        if self.fallback != self.fallback_success + self.fallback_error:
+            raise AssertionError("fallback counter invariant failed")
 
 
 FallbackCallable: TypeAlias = Callable[[Any], Any]
@@ -861,6 +893,9 @@ class NativeQ8Linear:
         self._native_success = 0
         self._native_error = 0
         self._fallback = 0
+        self._fallback_success = 0
+        self._fallback_error = 0
+        self._in_flight = 0
         self._last_guard_reason: str | None = None
         self._counter_lock = threading.Lock()
 
@@ -873,6 +908,9 @@ class NativeQ8Linear:
                 native_success=self._native_success,
                 native_error=self._native_error,
                 fallback=self._fallback,
+                fallback_success=self._fallback_success,
+                fallback_error=self._fallback_error,
+                in_flight=self._in_flight,
             )
         snapshot.validate()
         return snapshot
@@ -889,6 +927,8 @@ class NativeQ8Linear:
             self._native_success = 0
             self._native_error = 0
             self._fallback = 0
+            self._fallback_success = 0
+            self._fallback_error = 0
             self._last_guard_reason = None
 
     def guard_reason(self, x: Any) -> str | None:
@@ -908,23 +948,36 @@ class NativeQ8Linear:
         if reason is not None:
             with self._counter_lock:
                 self._last_guard_reason = reason
+                self._in_flight += 1
             try:
-                return self.fallback(x)
-            finally:
+                result = self.fallback(x)
+            except BaseException:
                 with self._counter_lock:
+                    self._in_flight -= 1
                     self._dispatch += 1
                     self._fallback += 1
+                    self._fallback_error += 1
+                raise
+            with self._counter_lock:
+                self._in_flight -= 1
+                self._dispatch += 1
+                self._fallback += 1
+                self._fallback_success += 1
+            return result
         with self._counter_lock:
             self._last_guard_reason = None
+            self._in_flight += 1
         try:
             result = self._native_operator(x, self.binding_id, self.n, self.k)
-        except Exception:
+        except BaseException:
             with self._counter_lock:
+                self._in_flight -= 1
                 self._dispatch += 1
                 self._native_attempt += 1
                 self._native_error += 1
             raise
         with self._counter_lock:
+            self._in_flight -= 1
             self._dispatch += 1
             self._native_attempt += 1
             self._native_success += 1
