@@ -2,7 +2,7 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
-	test-g3-adapter-real \
+	test-g3-adapter-real run-g3-session \
 	prepare-g3-assets verify-g3-assets
 
 UV := uv
@@ -148,6 +148,21 @@ test-g3-adapter-real: verify-g3-assets
 	$(UV) run --frozen --extra pytorch-cpu python scripts/check_qproj_adapter_real.py \
 		--library "$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.dylib" \
 		--assets "$(ASSETS)" --spec "$${SPEC:-benchmarks/g3/spec.json}"
+
+run-g3-session:
+	@test -n "$(SESSION_ID)" || { echo "run-g3-session: SESSION_ID is required" >&2; exit 2; }
+	@test -n "$(SESSION_INDEX)" || { echo "run-g3-session: SESSION_INDEX is required" >&2; exit 2; }
+	@test -n "$(MODEL_DIR)" || { echo "run-g3-session: MODEL_DIR is required" >&2; exit 2; }
+	@test -n "$(ASSETS)" || { echo "run-g3-session: ASSETS is required" >&2; exit 2; }
+	@test -n "$(LIBRARY)" || { echo "run-g3-session: LIBRARY is required" >&2; exit 2; }
+	@test -n "$(LIBRARY_SHA256)" || { echo "run-g3-session: LIBRARY_SHA256 is required" >&2; exit 2; }
+	@test -n "$(PREPARATION_RECEIPT)" || { echo "run-g3-session: PREPARATION_RECEIPT is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "run-g3-session: OUTPUT is required" >&2; exit 2; }
+	$(UV) run --frozen --extra pytorch-cpu python scripts/run_g3_session.py \
+		--session-id "$(SESSION_ID)" --session-index "$(SESSION_INDEX)" \
+		--model-dir "$(MODEL_DIR)" --assets "$(ASSETS)" \
+		--library "$(LIBRARY)" --library-sha256 "$(LIBRARY_SHA256)" \
+		--preparation-receipt "$(PREPARATION_RECEIPT)" --output "$(OUTPUT)"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
