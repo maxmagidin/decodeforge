@@ -546,7 +546,7 @@ class _RuntimeOwnership:
 class RuntimeBinding:
     """A process-local owner of one bridge handle and its library."""
 
-    __slots__ = ("_ownership", "_closed", "_lock")
+    __slots__ = ("_closed", "_lock", "_ownership", "_registry_owner")
 
     def __init__(
         self,
@@ -561,6 +561,7 @@ class RuntimeBinding:
         )
         self._closed = False
         self._lock = threading.RLock()
+        self._registry_owner: tuple[BindingRegistry, int] | None = None
 
     @property
     def library(self) -> RuntimeLibrary:
@@ -603,10 +604,45 @@ class RuntimeBinding:
         with self._lock:
             if self._closed:
                 return
-            try:
+            owner = self._registry_owner
+            if owner is None:
                 self._ownership.library.destroy(self._ownership.handle)
-            finally:
                 self._closed = True
+                return
+        registry, binding_id = owner
+        try:
+            registry.close(binding_id)
+        except TorchBridgeError as error:
+            if error.status is BridgeStatus.INVALID_HANDLE and self.closed:
+                return
+            raise
+
+    def _claim_registry(self, registry: BindingRegistry, binding_id: int) -> None:
+        """Atomically transfer this live binding into one registry."""
+
+        with self._lock:
+            if self._closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
+                )
+            if self._registry_owner is not None:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "binding is already registered"
+                )
+            self._registry_owner = (registry, binding_id)
+
+    def _close_from_registry(self, registry: BindingRegistry, binding_id: int) -> None:
+        """Close while the owning registry retains reachability for failures."""
+
+        with self._lock:
+            if self._registry_owner != (registry, binding_id):
+                raise TorchBridgeError(
+                    BridgeStatus.INTERNAL, "binding registry ownership is inconsistent"
+                )
+            if not self._closed:
+                self._ownership.library.destroy(self._ownership.handle)
+                self._closed = True
+            self._registry_owner = None
 
     def __enter__(self) -> RuntimeBinding:
         if self.closed:
@@ -628,13 +664,15 @@ class BindingRegistry:
         self._entries: dict[int, BindingLike] = {}
 
     def register(self, binding: BindingLike) -> int:
-        if binding.closed:
-            raise TorchBridgeError(
-                BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
-            )
         with self._lock:
             binding_id = self._next_id
             self._next_id += 1
+            if isinstance(binding, RuntimeBinding):
+                binding._claim_registry(self, binding_id)
+            elif binding.closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
+                )
             self._entries[binding_id] = binding
             return binding_id
 
@@ -642,7 +680,29 @@ class BindingRegistry:
         if isinstance(binding_id, bool) or not isinstance(binding_id, int):
             return None
         with self._lock:
-            return self._entries.get(binding_id)
+            binding = self._entries.get(binding_id)
+            if binding is None:
+                return None
+            if binding.closed:
+                self._entries.pop(binding_id, None)
+                return None
+            return binding
+
+    def _close_locked(self, binding_id: int) -> None:
+        binding = self._entries.get(binding_id)
+        if binding is None:
+            raise TorchBridgeError(
+                BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
+            )
+        if isinstance(binding, RuntimeBinding):
+            binding._close_from_registry(self, binding_id)
+        elif not binding.closed:
+            binding.close()
+            if not binding.closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INTERNAL, "binding close did not close the binding"
+                )
+        self._entries.pop(binding_id, None)
 
     def close(self, binding_id: int) -> None:
         if isinstance(binding_id, bool) or not isinstance(binding_id, int):
@@ -650,19 +710,19 @@ class BindingRegistry:
                 BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
             )
         with self._lock:
-            binding = self._entries.pop(binding_id, None)
-        if binding is None:
-            raise TorchBridgeError(
-                BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
-            )
-        binding.close()
+            self._close_locked(binding_id)
 
     def clear(self) -> None:
+        failures: list[Exception] = []
         with self._lock:
-            bindings = list(self._entries.values())
-            self._entries.clear()
-        for binding in bindings:
-            binding.close()
+            for binding_id in tuple(self._entries):
+                try:
+                    self._close_locked(binding_id)
+                except Exception as error:
+                    error.add_note(f"while closing binding ID {binding_id}")
+                    failures.append(error)
+        if failures:
+            raise ExceptionGroup("one or more bindings could not be closed", failures)
 
 
 _BINDINGS = BindingRegistry()
@@ -973,8 +1033,13 @@ class NativeQ8Linear:
             reason = _tensor_guard_reason(
                 x, self.binding_id, self.n, self.k, torch_module=torch
             )
-        except Exception:
-            reason = "guard_error"
+        except Exception as error:
+            with self._counter_lock:
+                self._last_guard_reason = "guard_error"
+            raise TorchBridgeError(
+                BridgeStatus.INVALID_ARGUMENT,
+                "guard inspection failed before dispatch",
+            ) from error
         if reason is not None:
             with self._counter_lock:
                 self._last_guard_reason = reason
