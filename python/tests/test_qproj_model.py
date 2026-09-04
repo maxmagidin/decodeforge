@@ -156,6 +156,7 @@ class FakeAdapter(nn.Module):
             fallback_attempt=0,
             fallback_success=0,
             fallback_error=0,
+            predispatch_error=0,
             rejected_closed=0,
             in_flight=0,
             closed=self._closed,
