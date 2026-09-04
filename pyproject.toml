@@ -22,6 +22,15 @@ g1-benchmark = [
     "scipy==1.17.1",
     "torch==2.13.0",
 ]
+# G3 generation is isolated from the base package and pins the exact eager
+# inference stack used by the reproducible TinyLlama checkpoint.
+g3-generation = [
+    "numpy==2.4.4",
+    "safetensors==0.6.2",
+    "tokenizers==0.22.2",
+    "torch==2.13.0",
+    "transformers==5.12.1",
+]
 
 [dependency-groups]
 dev = [
