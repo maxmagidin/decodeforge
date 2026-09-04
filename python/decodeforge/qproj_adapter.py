@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Final, TypeAlias
+from typing import Any, Final, TypeAlias, cast
 
 import torch
 import torch.nn.functional as functional
@@ -36,6 +36,64 @@ NativeCallable: TypeAlias = Callable[[Any, int, int, int], Any]
 
 class QProjAdapterError(RuntimeError):
     """A prepared-asset, ownership, or lifecycle contract violation."""
+
+
+class QProjAdapterInitializationError(QProjAdapterError):
+    """Own a binding whose cleanup failed during adapter construction."""
+
+    def __init__(
+        self,
+        binding_id: int,
+        initialization_error: BaseException,
+        cleanup_error: BaseException,
+    ) -> None:
+        super().__init__(
+            "q-projection adapter initialization and binding cleanup both failed; "
+            "call close() on this exception to retry cleanup"
+        )
+        self._binding_id = binding_id
+        self._initialization_error = initialization_error
+        self._cleanup_error = cleanup_error
+        self._closed = False
+        self._lock = threading.Lock()
+
+    @property
+    def binding_id(self) -> int:
+        """Return the retained process-local binding ID."""
+
+        return self._binding_id
+
+    @property
+    def initialization_error(self) -> BaseException:
+        """Return the error that made adapter construction fail."""
+
+        return self._initialization_error
+
+    @property
+    def cleanup_error(self) -> BaseException:
+        """Return the first cleanup error retained for diagnosis."""
+
+        return self._cleanup_error
+
+    @property
+    def closed(self) -> bool:
+        """Return whether a cleanup retry successfully released the binding."""
+
+        with self._lock:
+            return self._closed
+
+    def close(self) -> None:
+        """Retry cleanup while retaining ownership after another failure."""
+
+        with self._lock:
+            if self._closed:
+                return
+            close_binding(self._binding_id)
+            self._closed = True
+
+    def __del__(self) -> None:
+        with suppress(Exception):
+            self.close()
 
 
 @dataclass(frozen=True)
@@ -62,6 +120,7 @@ class QProjCounters:
     fallback_attempt: int
     fallback_success: int
     fallback_error: int
+    predispatch_error: int
     rejected_closed: int
     in_flight: int
     closed: bool
@@ -77,12 +136,15 @@ class QProjCounters:
             self.fallback_attempt,
             self.fallback_success,
             self.fallback_error,
+            self.predispatch_error,
             self.rejected_closed,
             self.in_flight,
         )
         if any(value < 0 for value in values):
             raise AssertionError("q-projection counters must be nonnegative")
-        if self.forward != self.native_attempt + self.fallback_attempt:
+        if self.forward != (
+            self.native_attempt + self.fallback_attempt + self.predispatch_error
+        ):
             raise AssertionError("forward counter does not partition by dispatch path")
         if self.native_attempt != self.native_success + self.native_error:
             raise AssertionError("native counter invariant failed")
@@ -148,8 +210,12 @@ def fallback_weight_identity(weight: torch.Tensor) -> str:
     if sys.byteorder != "little":
         raise QProjAdapterError("fallback identities require a little-endian host")
     owned = _owned_fallback(weight)
-    array = owned.numpy()
-    digest = hashlib.sha256(array.tobytes(order="C")).hexdigest()
+    return _fallback_bytes_identity(owned)
+
+
+def _fallback_bytes_identity(weight: torch.Tensor) -> str:
+    array = weight.numpy()
+    digest = hashlib.sha256(memoryview(cast(Any, array))).hexdigest()
     return f"{_IDENTITY_PREFIX}{digest}"
 
 
@@ -160,8 +226,7 @@ def _owned_fallback_with_identity(
     if sys.byteorder != "little":
         raise QProjAdapterError("fallback identities require a little-endian host")
     owned = _owned_fallback(weight)
-    digest = hashlib.sha256(owned.numpy().tobytes(order="C")).hexdigest()
-    actual = f"{_IDENTITY_PREFIX}{digest}"
+    actual = _fallback_bytes_identity(owned)
     if actual != required:
         raise QProjAdapterError(
             f"fallback weight identity {actual} does not equal declared {required}"
@@ -172,10 +237,12 @@ def _owned_fallback_with_identity(
 class QProjAdapter(nn.Module):
     """Own one native binding and its exact same-Q8 FP32 fallback.
 
-    The fallback buffer is intentionally nonpersistent: it is reconstructed from
-    the identity-bound prepared asset rather than duplicated in a model
-    ``state_dict``.  ``close`` is idempotent and waits for every admitted forward
-    call before destroying the registry binding.
+    This module is permanently in evaluation mode and rejects ``_apply``-based
+    dtype/device transformations. The fallback buffer is intentionally
+    nonpersistent: it is reconstructed from the identity-bound prepared asset
+    rather than duplicated in a model ``state_dict``. Loading state into an
+    installed adapter is rejected. ``close`` is idempotent, waits for every
+    admitted forward call, and retains ownership when destruction fails.
     """
 
     same_q8_weight: torch.Tensor
@@ -213,6 +280,7 @@ class QProjAdapter(nn.Module):
         self._counter_lock = threading.Lock()
         self._closing = False
         self._closed = False
+        self._close_failed = False
         self._in_flight = 0
         self._forward = 0
         self._native_attempt = 0
@@ -221,6 +289,7 @@ class QProjAdapter(nn.Module):
         self._fallback_attempt = 0
         self._fallback_success = 0
         self._fallback_error = 0
+        self._predispatch_error = 0
         self._rejected_closed = 0
         self._binding_id: int | None = None
 
@@ -257,9 +326,18 @@ class QProjAdapter(nn.Module):
                 self._fallback,
                 native_operator=native_operator,
             )
-        except BaseException:
-            with suppress(Exception):
+            super().train(False)
+        except BaseException as initialization_error:
+            try:
                 close_binding(binding_id)
+            except BaseException as cleanup_error:
+                self._binding_id = None
+                self._closed = True
+                raise QProjAdapterInitializationError(
+                    binding_id,
+                    initialization_error,
+                    cleanup_error,
+                ) from initialization_error
             self._binding_id = None
             self._closed = True
             raise
@@ -312,6 +390,7 @@ class QProjAdapter(nn.Module):
             fallback_attempt = self._fallback_attempt
             fallback_success = self._fallback_success
             fallback_error = self._fallback_error
+            predispatch_error = self._predispatch_error
             rejected_closed = self._rejected_closed
         with self._lifecycle:
             in_flight = self._in_flight
@@ -324,6 +403,7 @@ class QProjAdapter(nn.Module):
             fallback_attempt=fallback_attempt,
             fallback_success=fallback_success,
             fallback_error=fallback_error,
+            predispatch_error=predispatch_error,
             rejected_closed=rejected_closed,
             in_flight=in_flight,
             closed=closed,
@@ -331,8 +411,9 @@ class QProjAdapter(nn.Module):
         snapshot.validate()
         return snapshot
 
-    def _validate_fallback_storage(self) -> None:
-        weight = self.same_q8_weight
+    def _validate_fallback_storage(self, weight: torch.Tensor | None = None) -> None:
+        if weight is None:
+            weight = self.same_q8_weight
         if (
             id(weight) != self._fallback_object_id
             or weight.device.type != "cpu"
@@ -350,11 +431,19 @@ class QProjAdapter(nn.Module):
             raise QProjAdapterError("same-Q8 fallback buffer was replaced or mutated")
 
     def _fallback(self, x: Any) -> Any:
-        return functional.linear(x, self.same_q8_weight, bias=None)
+        weight = self.same_q8_weight
+        self._validate_fallback_storage(weight)
+        snapshot = weight.detach().clone(memory_format=torch.contiguous_format)
+        actual_identity = _fallback_bytes_identity(snapshot)
+        if actual_identity != self._metadata.fallback_weight_id:
+            raise QProjAdapterError(
+                "same-Q8 fallback buffer content no longer matches its identity"
+            )
+        return functional.linear(x, snapshot, bias=None)
 
     def _begin_forward(self) -> None:
         with self._lifecycle:
-            if self._closing or self._closed:
+            if self._closing or self._closed or self._close_failed:
                 with self._counter_lock:
                     self._rejected_closed += 1
                 raise QProjAdapterError("q-projection adapter is closed")
@@ -370,7 +459,13 @@ class QProjAdapter(nn.Module):
         self._begin_forward()
         try:
             with self._dispatch_lock:
-                self._validate_fallback_storage()
+                try:
+                    self._validate_fallback_storage()
+                except BaseException:
+                    with self._counter_lock:
+                        self._forward += 1
+                        self._predispatch_error += 1
+                    raise
                 try:
                     result = self._callable(x)
                 except BaseException:
@@ -413,11 +508,9 @@ class QProjAdapter(nn.Module):
     def close(self) -> None:
         binding_id: int | None
         with self._lifecycle:
+            while self._closing:
+                self._lifecycle.wait()
             if self._closed:
-                return
-            if self._closing:
-                while not self._closed:
-                    self._lifecycle.wait()
                 return
             self._closing = True
             while self._in_flight:
@@ -426,12 +519,62 @@ class QProjAdapter(nn.Module):
         try:
             if binding_id is not None:
                 close_binding(binding_id)
-        finally:
+        except BaseException:
             with self._lifecycle:
-                self._binding_id = None
-                self._closed = True
                 self._closing = False
+                self._close_failed = True
                 self._lifecycle.notify_all()
+            raise
+        with self._lifecycle:
+            self._binding_id = None
+            self._closed = True
+            self._closing = False
+            self._close_failed = False
+            self._lifecycle.notify_all()
+
+    def train(self, mode: bool = True) -> QProjAdapter:
+        """Keep the native/fallback adapter permanently in evaluation mode."""
+
+        if not isinstance(mode, bool):
+            raise ValueError("training mode is expected to be boolean")
+        if mode:
+            raise QProjAdapterError("q-projection adapter is inference-only")
+        return super().train(False)
+
+    def _apply(
+        self, fn: Callable[[torch.Tensor], torch.Tensor], recurse: bool = True
+    ) -> QProjAdapter:
+        """Reject dtype/device/storage transformations of the owned fallback."""
+
+        del fn, recurse
+        raise QProjAdapterError(
+            "q-projection adapter does not support dtype or device transformations"
+        )
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        local_metadata: dict[str, Any],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Reject state loading; adapters must be rebuilt from prepared assets."""
+
+        del (
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+        raise QProjAdapterError(
+            "q-projection adapter state must be rebuilt from prepared assets"
+        )
 
     def __enter__(self) -> QProjAdapter:
         if self.closed:
@@ -456,6 +599,7 @@ class QProjAdapter(nn.Module):
 __all__ = [
     "QProjAdapter",
     "QProjAdapterError",
+    "QProjAdapterInitializationError",
     "QProjCounters",
     "QProjMetadata",
     "fallback_weight_identity",

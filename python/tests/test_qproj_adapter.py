@@ -18,6 +18,7 @@ from decodeforge import torch_bridge as bridge  # noqa: E402
 from decodeforge.qproj_adapter import (  # noqa: E402
     QProjAdapter,
     QProjAdapterError,
+    QProjAdapterInitializationError,
     QProjCounters,
     fallback_weight_identity,
 )
@@ -27,7 +28,14 @@ PACK_ID = "sha256:" + "b" * 64
 
 
 class FakeBinding:
-    def __init__(self, n: int = 4, k: int = 8, *, pack_id: str = PACK_ID) -> None:
+    def __init__(
+        self,
+        n: int = 4,
+        k: int = 8,
+        *,
+        pack_id: str = PACK_ID,
+        close_failures: int = 0,
+    ) -> None:
         self.descriptor = bridge.RuntimeDescriptor(
             n=n,
             k=k,
@@ -37,6 +45,7 @@ class FakeBinding:
         )
         self.closed = False
         self.close_calls = 0
+        self.close_failures = close_failures
 
     def run(
         self,
@@ -49,6 +58,9 @@ class FakeBinding:
 
     def close(self) -> None:
         self.close_calls += 1
+        if self.close_failures:
+            self.close_failures -= 1
+            raise RuntimeError("injected close failure")
         self.closed = True
 
 
@@ -174,7 +186,19 @@ def test_m1_native_matches_exact_fallback_and_m_gt_one_falls_back(
     assert torch.equal(adapter(prefill), expected_prefill)
     assert native_calls == [decode]
     assert adapter.last_guard_reason == "m_gt_one"
-    assert adapter.counters == QProjCounters(2, 1, 1, 0, 1, 1, 0, 0, 0, False)
+    assert adapter.counters == QProjCounters(
+        forward=2,
+        native_attempt=1,
+        native_success=1,
+        native_error=0,
+        fallback_attempt=1,
+        fallback_success=1,
+        fallback_error=0,
+        predispatch_error=0,
+        rejected_closed=0,
+        in_flight=0,
+        closed=False,
+    )
     adapter.close()
 
 
@@ -237,7 +261,19 @@ def test_injected_native_error_is_hard_and_never_reruns_fallback(
     with pytest.raises(bridge.TorchBridgeError, match="injected"):
         adapter(torch.ones((1, 1, 8), dtype=torch.float32))
     assert adapter.last_guard_reason is None
-    assert adapter.counters == QProjCounters(1, 1, 0, 1, 0, 0, 0, 0, 0, False)
+    assert adapter.counters == QProjCounters(
+        forward=1,
+        native_attempt=1,
+        native_success=0,
+        native_error=1,
+        fallback_attempt=0,
+        fallback_success=0,
+        fallback_error=0,
+        predispatch_error=0,
+        rejected_closed=0,
+        in_flight=0,
+        closed=False,
+    )
     adapter.close()
 
 
@@ -341,4 +377,127 @@ def test_standard_in_place_fallback_mutation_fails_closed(
     adapter.same_q8_weight.add_(1.0)
     with pytest.raises(QProjAdapterError, match="replaced or mutated"):
         adapter(torch.ones((1, 1, 8), dtype=torch.float32))
+    assert adapter.counters.predispatch_error == 1
+    assert adapter.counters.forward == 1
+    adapter.close()
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda weight: weight.data.add_(1.0),
+        lambda weight: weight.numpy().__setitem__((0, 0), 12345.0),
+        lambda weight: weight.untyped_storage().__setitem__(
+            0, (weight.untyped_storage()[0] + 1) % 256
+        ),
+    ],
+)
+def test_alias_fallback_mutation_cannot_produce_a_wrong_result(
+    registry: bridge.BindingRegistry,
+    mutate: Callable[[Any], None],
+) -> None:
+    adapter, _binding, _weight_source = _adapter(registry)
+    original_version = adapter.same_q8_weight._version
+    mutate(adapter.same_q8_weight)
+    assert adapter.same_q8_weight._version == original_version
+
+    with pytest.raises(QProjAdapterError, match="no longer matches its identity"):
+        adapter(torch.ones((1, 2, 8), dtype=torch.float32))
+    counters = adapter.counters
+    assert counters.forward == 1
+    assert counters.fallback_attempt == 1
+    assert counters.fallback_error == 1
+    assert counters.fallback_success == 0
+    assert counters.predispatch_error == 0
+    adapter.close()
+
+
+def test_close_failure_retains_retryable_ownership_and_rejects_forward(
+    registry: bridge.BindingRegistry,
+) -> None:
+    binding = FakeBinding(close_failures=1)
+    adapter, _binding, _weight_source = _adapter(registry, binding=binding)
+
+    with pytest.raises(RuntimeError, match="injected close failure"):
+        adapter.close()
+    assert not adapter.closed
+    assert registry.get(1) is binding
+    with pytest.raises(QProjAdapterError, match="closed"):
+        adapter(torch.ones((1, 1, 8), dtype=torch.float32))
+
+    adapter.close()
+    adapter.close()
+    assert adapter.closed
+    assert binding.close_calls == 2
+    assert registry.get(1) is None
+    assert adapter.counters.rejected_closed == 1
+
+
+def test_constructor_cleanup_failure_returns_a_retryable_owner(
+    registry: bridge.BindingRegistry,
+) -> None:
+    binding = FakeBinding(pack_id="sha256:" + "c" * 64, close_failures=1)
+
+    with pytest.raises(QProjAdapterInitializationError) as caught:
+        QProjAdapter(
+            layer_name="model.layers.0.self_attn.q_proj",
+            library=FakeLibrary(binding),  # type: ignore[arg-type]
+            pack_manifest_json=b"{}",
+            packed_weight=b"packed",
+            fallback_weight=_weight(),
+            fallback_weight_id=fallback_weight_identity(_weight()),
+            fallback_parent_packed_weight_id=PACK_ID,
+        )
+
+    owner = caught.value
+    assert isinstance(owner.initialization_error, QProjAdapterError)
+    assert isinstance(owner.cleanup_error, RuntimeError)
+    assert owner.binding_id == 1
+    assert not owner.closed
+    assert registry.get(owner.binding_id) is binding
+    owner.close()
+    owner.close()
+    assert owner.closed
+    assert binding.close_calls == 2
+    assert registry.get(owner.binding_id) is None
+
+
+def test_adapter_is_permanently_eval_and_rejects_apply_transformations(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter, _binding, _weight_source = _adapter(registry)
+    original = adapter.same_q8_weight
+    assert not adapter.training
+    assert adapter.eval() is adapter
+    assert adapter.train(False) is adapter
+    with pytest.raises(QProjAdapterError, match="inference-only"):
+        adapter.train()
+
+    for transform in (
+        adapter.cpu,
+        adapter.float,
+        adapter.double,
+        lambda: adapter.to(dtype=torch.float64),
+    ):
+        with pytest.raises(QProjAdapterError, match="does not support"):
+            transform()
+        assert adapter.same_q8_weight is original
+        assert adapter.same_q8_weight.dtype is torch.float32
+        assert adapter.same_q8_weight.device.type == "cpu"
+    adapter.close()
+
+
+def test_state_dict_is_empty_and_loading_is_explicitly_rejected(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter, _binding, _weight_source = _adapter(registry)
+    parent = torch.nn.Module()
+    parent.projection = adapter
+    assert adapter.state_dict() == {}
+    assert parent.state_dict() == {}
+
+    with pytest.raises(QProjAdapterError, match="rebuilt from prepared assets"):
+        adapter.load_state_dict({})
+    with pytest.raises(QProjAdapterError, match="rebuilt from prepared assets"):
+        parent.load_state_dict({})
     adapter.close()
