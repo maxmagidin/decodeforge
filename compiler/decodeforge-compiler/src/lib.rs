@@ -20,6 +20,8 @@ use std::fmt;
 pub mod codegen;
 pub mod ir;
 pub mod lower;
+#[allow(unsafe_code)]
+pub mod model_assets;
 pub mod native;
 pub mod pack;
 
@@ -43,6 +45,15 @@ pub use ir::{
     Q8LinearShape, ReductionOrder, VectorAxis,
 };
 pub use lower::lower_q8_linear;
+pub use model_assets::{
+    ASSET_BUNDLE_FORMAT_V1, AssetManifestV1, FallbackArtifactV1, ModelSourceSpecV1,
+    ModuleArtifactV1, PreparedAssetV1, PreparedQProjInventoryV1, Q_PROJ_INVENTORY_FORMAT_V1,
+    Q8LinearTensorSpecV1, QProjInventoryEntryV1, QProjInventoryV1, TINYLLAMA_MODEL_ID,
+    TINYLLAMA_MODEL_REVISION, ToolProvenanceV1, VerifiedAssetV1, VerifiedQProjInventoryV1,
+    prepare_q_proj_inventory_v1, prepare_q8_linear_asset_v1, prepare_tinyllama_q_proj_inventory_v1,
+    tinyllama_q_proj_spec_v1, tinyllama_q_proj_specs_v1, verify_q_proj_inventory_v1,
+    verify_q8_linear_asset_v1,
+};
 pub use pack::{
     PACK_ALIGNMENT, PACK_BLOCK_SIZE, PACK_FORMAT, PACK_RECORD_BYTES, PACK_TILE, PackManifestV1,
     PackSpecV1, PackedWeightsV1, expected_payload_bytes,

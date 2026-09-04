@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 decodeforge-core = { path = "../decodeforge-core" }
 decodeforge-runtime = { path = "../decodeforge-runtime" }
+memmap2 = "=0.9.9"
 object = { version = "=0.40.0", default-features = false, features = ["macho", "read_core", "std"] }
 rustix = { version = "=1.1.4", features = ["fs", "process"] }
 serde = { version = "=1.0.229", features = ["derive"] }

@@ -1,7 +1,8 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
-	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result
+	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
+	prepare-g3-assets
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -127,6 +128,12 @@ verify-g1-result:
 	diff -u "$(G1_RESULT)/report.json" "$$output/report.json"; \
 	diff -u "$(G1_RESULT)/report.md" "$$output/report.md"; \
 	echo "verify-g1-result: ok"
+
+prepare-g3-assets:
+	@test -n "$(WEIGHTS)" || { echo "prepare-g3-assets: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
+	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-prepare-qproj -- --source "$(WEIGHTS)" --output "$(OUTPUT)"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
