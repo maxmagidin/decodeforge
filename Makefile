@@ -2,6 +2,7 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
+	test-g3-adapter-real \
 	prepare-g3-assets verify-g3-assets
 
 UV := uv
@@ -139,6 +140,14 @@ verify-g3-assets:
 	@test -n "$(ASSETS)" || { echo "verify-g3-assets: ASSETS=<prepared asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj -- --verify "$(ASSETS)"
+
+test-g3-adapter-real: verify-g3-assets
+	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
+		echo "test-g3-adapter-real: requires an Apple-arm64 macOS host" >&2; exit 2; }
+	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
+	$(UV) run --frozen --extra pytorch-cpu python scripts/check_qproj_adapter_real.py \
+		--library "$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.dylib" \
+		--assets "$(ASSETS)" --spec "$${SPEC:-benchmarks/g3/spec.json}"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all
