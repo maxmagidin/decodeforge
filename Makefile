@@ -3,7 +3,7 @@
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
 	test-g3-adapter-real run-g3-session \
-	prepare-g3-assets verify-g3-assets
+	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -135,6 +135,16 @@ prepare-g3-assets:
 	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj -- --source "$(WEIGHTS)" --output "$(OUTPUT)"
+
+prepare-g3-assets-timed:
+	@test -n "$(WEIGHTS)" || { echo "prepare-g3-assets-timed: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets-timed: OUTPUT=<new asset directory> is required" >&2; exit 2; }
+	@test -n "$(RECEIPT)" || { echo "prepare-g3-assets-timed: RECEIPT=<new receipt JSON outside OUTPUT> is required" >&2; exit 2; }
+	$(CARGO) build --quiet --release --locked -p decodeforge-compiler \
+		--bin decodeforge-prepare-qproj
+	$(UV) run --frozen python scripts/prepare_g3_assets_timed.py \
+		--checkout . --source "$(WEIGHTS)" --output "$(OUTPUT)" \
+		--receipt "$(RECEIPT)" --prepare-tool "$(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-prepare-qproj"
 
 verify-g3-assets:
 	@test -n "$(ASSETS)" || { echo "verify-g3-assets: ASSETS=<prepared asset directory> is required" >&2; exit 2; }

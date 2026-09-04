@@ -10,6 +10,25 @@ The fixed prompt IDs were produced with the exact locked Transformers and
 tokenizers versions under strict offline, local-files-only loading. Execution
 must reject any artifact, dependency, host, or tokenization mismatch.
 
+Capture the required offline-preparation timing separately from generation:
+
+```console
+make prepare-g3-assets-timed \
+  WEIGHTS=/absolute/path/to/model.safetensors \
+  OUTPUT=/private/tmp/decodeforge-g3-assets \
+  RECEIPT=/private/tmp/decodeforge-g3-prepare-receipt.json
+```
+
+Both output paths must be new, and the receipt must be outside both the asset
+directory and the clean source checkout. The clock surrounds only the
+descriptor-stable copy of `decodeforge-prepare-qproj --source ... --output
+...`; that command returns after its atomic no-replace directory publication
+and parent sync. The wrapper then verifies the complete prepared inventory and
+publishes the identity-bound receipt atomically without replacement. Retain
+the exact preparation executable named by the receipt: receipt verification
+rehashes it and generation additionally binds its checkout, source, and asset
+paths.
+
 `session-template.json` is the closed runner/result envelope. It is
 intentionally marked `not_run` and contains no measured values or acceptance
 claim. A runner may populate its accepted or rejected evidence branch only
