@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g3-tinyllama-qproj-generation-v1",
+  "format": "decodeforge_g3_experiment_spec_v1",
+  "readiness": "ready",
+  "model": {
+    "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+    "local_files_only": true,
+    "weights_file": {
+      "role": "model_weights",
+      "filename": "model.safetensors",
+      "resolution": "resolved",
+      "size_bytes": 2200119864,
+      "sha256": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
+    },
+    "configuration_files": [
+      {
+        "role": "model_config",
+        "filename": "config.json",
+        "resolution": "resolved",
+        "size_bytes": 608,
+        "sha256": "486bedda3a6988332e60d9638a09ca4b260d34ebcf1b19e22cf3b140b63d8fe9"
+      },
+      {
+        "role": "generation_config",
+        "filename": "generation_config.json",
+        "resolution": "resolved",
+        "size_bytes": 124,
+        "sha256": "18046d04f5bd8b4998095ecabdd17a1bf0053d9acdccead4a05be4a3575f3c5c"
+      }
+    ],
+    "tokenizer_files": [
+      {
+        "role": "tokenizer_json",
+        "filename": "tokenizer.json",
+        "resolution": "resolved",
+        "size_bytes": 1842767,
+        "sha256": "bcd04f0eadf90287bd26e1a183ac487d8a141b09b06aecb7725bbdd343640f2e"
+      },
+      {
+        "role": "tokenizer_model",
+        "filename": "tokenizer.model",
+        "resolution": "resolved",
+        "size_bytes": 499723,
+        "sha256": "9e556afd44213b6bd1be2b850ebbbd98f5481437a8021afaf58ee7fb1818d347"
+      },
+      {
+        "role": "tokenizer_config",
+        "filename": "tokenizer_config.json",
+        "resolution": "resolved",
+        "size_bytes": 1289,
+        "sha256": "7b41ba7d0eb91e77914ca3dafde559ea3e19878769b7e68409e89bed5222e77a"
+      },
+      {
+        "role": "special_tokens_map",
+        "filename": "special_tokens_map.json",
+        "resolution": "resolved",
+        "size_bytes": 551,
+        "sha256": "82d96d7a9e6ced037f12394b7ea6a5b02e6ca87e0d11edaa8d60d9be857ce7db"
+      }
+    ]
+  },
+  "software": {
+    "python": {
+      "resolution": "resolved",
+      "version": "3.12.14",
+      "source": "g1_primary_host_evidence"
+    },
+    "torch": {
+      "resolution": "resolved",
+      "version": "2.13.0",
+      "source": "project_lock"
+    },
+    "transformers": {
+      "resolution": "resolved",
+      "version": "5.12.1",
+      "source": "project_lock"
+    },
+    "tokenizers": {
+      "resolution": "resolved",
+      "version": "0.22.2",
+      "source": "project_lock"
+    },
+    "safetensors": {
+      "resolution": "resolved",
+      "version": "0.6.2",
+      "source": "project_lock"
+    },
+    "rust": {
+      "resolution": "resolved",
+      "version": "1.98.0",
+      "source": "rust_toolchain"
+    },
+    "clang": {
+      "resolution": "resolved",
+      "version": "Apple clang version 17.0.0 (clang-1700.0.13.5)",
+      "source": "g1_primary_host_evidence"
+    }
+  },
+  "host": {
+    "host_id": "apple-m4-primary",
+    "os": "macos",
+    "os_version": "15.5",
+    "os_build": "24F74",
+    "kernel_release": "24.5.0",
+    "arch": "aarch64",
+    "cpu_model": "Apple M4",
+    "hardware_model": "Mac16,13",
+    "physical_cores": 10,
+    "logical_cores": 10,
+    "features": ["neon"],
+    "affinity_policy": "macOS default scheduler; no hard affinity requested"
+  },
+  "prompt": {
+    "text": "Write one short sentence about a compiler.",
+    "encoding": "UTF-8",
+    "tokenization": {
+      "resolution": "resolved",
+      "method": "AutoTokenizer.from_pretrained-local-files-only",
+      "add_special_tokens": true,
+      "input_ids": [1, 14350, 697, 3273, 10541, 1048, 263, 6516, 29889]
+    }
+  },
+  "generation": {
+    "device": "cpu",
+    "model_compute_dtype": "float32",
+    "eval_mode": true,
+    "torch_inference_mode": true,
+    "decoding": "greedy",
+    "do_sample": false,
+    "num_beams": 1,
+    "use_cache": true,
+    "min_new_tokens": 2,
+    "max_new_tokens": 8,
+    "seed": 1729,
+    "torch_num_threads": 1,
+    "torch_num_interop_threads": 1
+  },
+  "correctness": {
+    "direct_operator": {
+      "comparison": "elementwise_abs_diff_le_atol_plus_rtol_abs_reference",
+      "absolute_tolerance": 0.0001,
+      "relative_tolerance": 0.0001,
+      "require_finite": true,
+      "equal_nan": false,
+      "scope": "all_22_preinstallation_probes_and_every_hybrid_native_output"
+    },
+    "model_logits": {
+      "comparison": "elementwise_abs_diff_le_atol_plus_rtol_abs_reference",
+      "absolute_tolerance": 0.001,
+      "relative_tolerance": 0.001,
+      "require_finite": true,
+      "equal_nan": false,
+      "scope": "every_generation_step_hybrid_vs_same_q8_reference"
+    },
+    "tokens": {
+      "policy": "exact_token_id_match",
+      "minimum_compared_new_tokens": 2,
+      "scope": "every_generated_position"
+    },
+    "generated_text_role": "demonstration_only_not_correctness_evidence"
+  },
+  "execution": {
+    "paths": ["same_q8_reference", "hybrid_native"],
+    "path_order": "alternate_by_repetition_reference_first_on_even_repetitions",
+    "warmup_complete_generations_per_path": 2,
+    "measured_generations_per_path_per_session": 10,
+    "independent_sessions": 3,
+    "rejection_policy": {
+      "reject_on_nonfinite": true,
+      "reject_on_environment_mismatch": true,
+      "reject_on_artifact_identity_mismatch": true,
+      "reject_on_direct_operator_failure": true,
+      "reject_on_logit_failure": true,
+      "reject_on_token_mismatch": true,
+      "reject_unless_all_22_prefill_fallback": true,
+      "reject_unless_all_22_cached_decode_native": true,
+      "reject_on_native_or_fallback_error": true,
+      "reject_on_call_reconciliation_failure": true,
+      "reject_on_nonzero_inflight_at_end": true,
+      "reject_on_missing_timing_sample": true,
+      "drift_metric": "ratio_of_last_window_median_to_first_window_median_total_generation_ns_per_path",
+      "drift_window_generations": 3,
+      "drift_ratio_lower": 0.9,
+      "drift_ratio_upper": 1.1,
+      "manual_outlier_exclusion": false,
+      "retry_rejected_session": false
+    }
+  },
+  "timing": {
+    "clock": "time.perf_counter_ns",
+    "cpu_synchronization": "none_cpu_calls_are_synchronous",
+    "sample_retention": "retain_all_samples_no_trimming",
+    "reporting": {
+      "cold": "report_each_fresh_process_startup_once_without_pooling_into_warmed_samples",
+      "warmed": "report_only_measured_generations_after_both_paths_complete_all_warmups"
+    },
+    "offline_preparation": {
+      "start_event": "before_pinned_model_file_is_opened_by_prepare_command",
+      "stop_event": "after_inventory_and_all_22_asset_sets_are_atomically_published",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_fresh_process",
+      "included_in_steady_state_decode": false
+    },
+    "cold_startup": {
+      "start_event": "fresh_generation_process_entry_before_imports",
+      "stop_event": "after_model_load_and_all_22_adapter_builds_complete",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_fresh_process",
+      "included_in_steady_state_decode": false
+    },
+    "model_load": {
+      "start_event": "immediately_before_local_from_pretrained_call",
+      "stop_event": "after_base_model_is_on_cpu_float32_in_eval_mode",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_fresh_process",
+      "included_in_steady_state_decode": false
+    },
+    "module_build_load": {
+      "start_event": "before_first_asset_inventory_validation",
+      "stop_event": "after_transactional_install_of_all_22_ready_adapters",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_fresh_process",
+      "included_in_steady_state_decode": false
+    },
+    "prompt_prefill": {
+      "start_event": "immediately_before_model_forward_on_all_fixed_input_ids_without_past_key_values",
+      "stop_event": "after_finite_prefill_logits_and_past_key_values_return",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_generation",
+      "included_in_steady_state_decode": false
+    },
+    "time_to_first_token": {
+      "start_event": "same_timestamp_as_prompt_prefill_start",
+      "stop_event": "after_first_greedy_token_id_is_selected",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_generation",
+      "included_in_steady_state_decode": false
+    },
+    "cached_decode_step": {
+      "start_event": "immediately_before_one_token_model_forward_with_past_key_values",
+      "stop_event": "after_next_greedy_token_id_is_selected_and_updated_past_key_values_return",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_cached_decode_step",
+      "included_in_steady_state_decode": true
+    },
+    "q_projection_dispatch": {
+      "start_event": "adapter_forward_linearization_point_entry",
+      "stop_event": "after_native_or_same_q8_fallback_result_is_recorded",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_q_projection_call",
+      "included_in_steady_state_decode": true
+    },
+    "total_generation": {
+      "start_event": "same_timestamp_as_prompt_prefill_start",
+      "stop_event": "after_final_requested_or_eos_token_id_is_selected_before_text_decoding",
+      "unit": "nanoseconds",
+      "sample_scope": "once_per_generation",
+      "included_in_steady_state_decode": false
+    },
+    "peak_resident_memory": {
+      "start_event": "fresh_process_entry",
+      "stop_event": "after_adapter_cleanup",
+      "unit": "bytes",
+      "sampling": "maximum_process_resident_set_observed_over_interval",
+      "baseline_policy": "report_absolute_peak_and_pre_model_load_baseline_separately"
+    }
+  }
+}

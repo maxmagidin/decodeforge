@@ -1,0 +1,699 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:decodeforge:schema:g3-experiment-spec-v1",
+  "title": "DecodeForge G3 generation experiment specification V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol_id",
+    "format",
+    "readiness",
+    "model",
+    "software",
+    "host",
+    "prompt",
+    "generation",
+    "correctness",
+    "execution",
+    "timing"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:decodeforge:schema:common-v1#/$defs/schema_version"
+    },
+    "protocol_id": {
+      "type": "string",
+      "const": "g3-tinyllama-qproj-generation-v1"
+    },
+    "format": {
+      "type": "string",
+      "const": "decodeforge_g3_experiment_spec_v1"
+    },
+    "readiness": {
+      "type": "string",
+      "enum": ["ready", "blocked_external_provenance"]
+    },
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "software": {
+      "$ref": "#/$defs/software"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "prompt": {
+      "$ref": "#/$defs/prompt"
+    },
+    "generation": {
+      "$ref": "#/$defs/generation"
+    },
+    "correctness": {
+      "$ref": "#/$defs/correctness"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "timing": {
+      "$ref": "#/$defs/timing"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"readiness": {"const": "ready"}},
+        "required": ["readiness"]
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "properties": {
+              "configuration_files": {
+                "items": {"$ref": "#/$defs/resolved_artifact"}
+              },
+              "tokenizer_files": {
+                "items": {"$ref": "#/$defs/resolved_artifact"}
+              }
+            }
+          },
+          "software": {
+            "properties": {
+              "transformers": {"$ref": "#/$defs/resolved_software"},
+              "tokenizers": {"$ref": "#/$defs/resolved_software"}
+            }
+          },
+          "prompt": {
+            "properties": {
+              "tokenization": {"$ref": "#/$defs/resolved_tokenization"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "readiness": {"const": "blocked_external_provenance"}
+        },
+        "required": ["readiness"]
+      },
+      "then": {
+        "properties": {
+          "prompt": {
+            "properties": {
+              "tokenization": {"$ref": "#/$defs/unresolved_tokenization"}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "resolved_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "filename", "resolution", "size_bytes", "sha256"],
+      "properties": {
+        "role": {"$ref": "#/$defs/artifact_role"},
+        "filename": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/portable_path"
+        },
+        "resolution": {"const": "resolved"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "sha256": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/sha256"
+        }
+      }
+    },
+    "unresolved_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "filename",
+        "resolution",
+        "size_bytes",
+        "sha256",
+        "reason"
+      ],
+      "properties": {
+        "role": {"$ref": "#/$defs/artifact_role"},
+        "filename": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/portable_path"
+        },
+        "resolution": {"const": "unresolved_external_artifact"},
+        "size_bytes": {"type": "null"},
+        "sha256": {"type": "null"},
+        "reason": {
+          "type": "string",
+          "const": "not checked in and not present in the inspected local cache"
+        }
+      }
+    },
+    "artifact_identity": {
+      "oneOf": [
+        {"$ref": "#/$defs/resolved_artifact"},
+        {"$ref": "#/$defs/unresolved_artifact"}
+      ]
+    },
+    "artifact_role": {
+      "type": "string",
+      "enum": [
+        "model_weights",
+        "model_config",
+        "generation_config",
+        "tokenizer_json",
+        "tokenizer_model",
+        "tokenizer_config",
+        "special_tokens_map"
+      ]
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "revision",
+        "local_files_only",
+        "weights_file",
+        "configuration_files",
+        "tokenizer_files"
+      ],
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "const": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        },
+        "revision": {
+          "type": "string",
+          "const": "fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+        },
+        "local_files_only": {"type": "boolean", "const": true},
+        "weights_file": {
+          "allOf": [
+            {"$ref": "#/$defs/resolved_artifact"},
+            {
+              "properties": {
+                "role": {"const": "model_weights"},
+                "filename": {"const": "model.safetensors"},
+                "size_bytes": {"const": 2200119864},
+                "sha256": {
+                  "const": "6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
+                }
+              }
+            }
+          ]
+        },
+        "configuration_files": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "model_config"},
+                    "filename": {"const": "config.json"}
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "generation_config"},
+                    "filename": {"const": "generation_config.json"}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "tokenizer_files": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "tokenizer_json"},
+                    "filename": {"const": "tokenizer.json"}
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "tokenizer_model"},
+                    "filename": {"const": "tokenizer.model"}
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "tokenizer_config"},
+                    "filename": {"const": "tokenizer_config.json"}
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/artifact_identity"},
+                {
+                  "properties": {
+                    "role": {"const": "special_tokens_map"},
+                    "filename": {"const": "special_tokens_map.json"}
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "resolved_software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "version", "source"],
+      "properties": {
+        "resolution": {"const": "resolved"},
+        "version": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["project_lock", "rust_toolchain", "g1_primary_host_evidence"]
+        }
+      }
+    },
+    "unresolved_software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "version", "source", "reason"],
+      "properties": {
+        "resolution": {"const": "unresolved_external_dependency"},
+        "version": {"type": "null"},
+        "source": {"const": "not_pinned_in_repository"},
+        "reason": {
+          "const": "must be pinned with the tokenizer artifacts before execution"
+        }
+      }
+    },
+    "software_identity": {
+      "oneOf": [
+        {"$ref": "#/$defs/resolved_software"},
+        {"$ref": "#/$defs/unresolved_software"}
+      ]
+    },
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python",
+        "torch",
+        "transformers",
+        "tokenizers",
+        "safetensors",
+        "rust",
+        "clang"
+      ],
+      "properties": {
+        "python": {"$ref": "#/$defs/resolved_software"},
+        "torch": {"$ref": "#/$defs/resolved_software"},
+        "transformers": {"$ref": "#/$defs/software_identity"},
+        "tokenizers": {"$ref": "#/$defs/software_identity"},
+        "safetensors": {"$ref": "#/$defs/resolved_software"},
+        "rust": {"$ref": "#/$defs/resolved_software"},
+        "clang": {"$ref": "#/$defs/resolved_software"}
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_id",
+        "os",
+        "os_version",
+        "os_build",
+        "kernel_release",
+        "arch",
+        "cpu_model",
+        "hardware_model",
+        "physical_cores",
+        "logical_cores",
+        "features",
+        "affinity_policy"
+      ],
+      "properties": {
+        "host_id": {"type": "string", "const": "apple-m4-primary"},
+        "os": {"type": "string", "const": "macos"},
+        "os_version": {"type": "string", "const": "15.5"},
+        "os_build": {"type": "string", "const": "24F74"},
+        "kernel_release": {"type": "string", "const": "24.5.0"},
+        "arch": {"type": "string", "const": "aarch64"},
+        "cpu_model": {"type": "string", "const": "Apple M4"},
+        "hardware_model": {"type": "string", "const": "Mac16,13"},
+        "physical_cores": {"type": "integer", "const": 10},
+        "logical_cores": {"type": "integer", "const": 10},
+        "features": {"type": "array", "const": ["neon"]},
+        "affinity_policy": {
+          "const": "macOS default scheduler; no hard affinity requested"
+        }
+      }
+    },
+    "resolved_tokenization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "method", "add_special_tokens", "input_ids"],
+      "properties": {
+        "resolution": {"const": "resolved"},
+        "method": {"const": "AutoTokenizer.from_pretrained-local-files-only"},
+        "add_special_tokens": {"type": "boolean", "const": true},
+        "input_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4096,
+          "items": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+        }
+      }
+    },
+    "unresolved_tokenization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "method", "add_special_tokens", "input_ids", "reason"],
+      "properties": {
+        "resolution": {"const": "unresolved_external_artifacts"},
+        "method": {"const": "AutoTokenizer.from_pretrained-local-files-only"},
+        "add_special_tokens": {"type": "boolean", "const": true},
+        "input_ids": {"type": "null"},
+        "reason": {
+          "const": "token IDs must be computed from the pinned, hash-verified tokenizer files"
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "encoding", "tokenization"],
+      "properties": {
+        "text": {"type": "string", "minLength": 2, "maxLength": 4096},
+        "encoding": {"type": "string", "const": "UTF-8"},
+        "tokenization": {
+          "oneOf": [
+            {"$ref": "#/$defs/resolved_tokenization"},
+            {"$ref": "#/$defs/unresolved_tokenization"}
+          ]
+        }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device",
+        "model_compute_dtype",
+        "eval_mode",
+        "torch_inference_mode",
+        "decoding",
+        "do_sample",
+        "num_beams",
+        "use_cache",
+        "min_new_tokens",
+        "max_new_tokens",
+        "seed",
+        "torch_num_threads",
+        "torch_num_interop_threads"
+      ],
+      "properties": {
+        "device": {"const": "cpu"},
+        "model_compute_dtype": {"const": "float32"},
+        "eval_mode": {"type": "boolean", "const": true},
+        "torch_inference_mode": {"type": "boolean", "const": true},
+        "decoding": {"const": "greedy"},
+        "do_sample": {"type": "boolean", "const": false},
+        "num_beams": {"type": "integer", "const": 1},
+        "use_cache": {"type": "boolean", "const": true},
+        "min_new_tokens": {"type": "integer", "minimum": 2, "maximum": 4096},
+        "max_new_tokens": {"type": "integer", "minimum": 2, "maximum": 4096},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "torch_num_threads": {"type": "integer", "minimum": 1, "maximum": 1024},
+        "torch_num_interop_threads": {"type": "integer", "minimum": 1, "maximum": 1024}
+      }
+    },
+    "allclose_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comparison",
+        "absolute_tolerance",
+        "relative_tolerance",
+        "require_finite",
+        "equal_nan",
+        "scope"
+      ],
+      "properties": {
+        "comparison": {"const": "elementwise_abs_diff_le_atol_plus_rtol_abs_reference"},
+        "absolute_tolerance": {"type": "number", "minimum": 0},
+        "relative_tolerance": {"type": "number", "minimum": 0},
+        "require_finite": {"type": "boolean", "const": true},
+        "equal_nan": {"type": "boolean", "const": false},
+        "scope": {
+          "type": "string",
+          "enum": [
+            "all_22_preinstallation_probes_and_every_hybrid_native_output",
+            "every_generation_step_hybrid_vs_same_q8_reference"
+          ]
+        }
+      }
+    },
+    "correctness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direct_operator", "model_logits", "tokens", "generated_text_role"],
+      "properties": {
+        "direct_operator": {
+          "allOf": [
+            {"$ref": "#/$defs/allclose_policy"},
+            {
+              "properties": {
+                "scope": {
+                  "const": "all_22_preinstallation_probes_and_every_hybrid_native_output"
+                }
+              }
+            }
+          ]
+        },
+        "model_logits": {
+          "allOf": [
+            {"$ref": "#/$defs/allclose_policy"},
+            {
+              "properties": {
+                "scope": {
+                  "const": "every_generation_step_hybrid_vs_same_q8_reference"
+                }
+              }
+            }
+          ]
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "minimum_compared_new_tokens", "scope"],
+          "properties": {
+            "policy": {"const": "exact_token_id_match"},
+            "minimum_compared_new_tokens": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 4096
+            },
+            "scope": {"const": "every_generated_position"}
+          }
+        },
+        "generated_text_role": {
+          "const": "demonstration_only_not_correctness_evidence"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paths",
+        "path_order",
+        "warmup_complete_generations_per_path",
+        "measured_generations_per_path_per_session",
+        "independent_sessions",
+        "rejection_policy"
+      ],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "const": ["same_q8_reference", "hybrid_native"]
+        },
+        "path_order": {
+          "const": "alternate_by_repetition_reference_first_on_even_repetitions"
+        },
+        "warmup_complete_generations_per_path": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "measured_generations_per_path_per_session": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1000000
+        },
+        "independent_sessions": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1024
+        },
+        "rejection_policy": {
+          "$ref": "#/$defs/rejection_policy"
+        }
+      }
+    },
+    "rejection_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reject_on_nonfinite",
+        "reject_on_environment_mismatch",
+        "reject_on_artifact_identity_mismatch",
+        "reject_on_direct_operator_failure",
+        "reject_on_logit_failure",
+        "reject_on_token_mismatch",
+        "reject_unless_all_22_prefill_fallback",
+        "reject_unless_all_22_cached_decode_native",
+        "reject_on_native_or_fallback_error",
+        "reject_on_call_reconciliation_failure",
+        "reject_on_nonzero_inflight_at_end",
+        "reject_on_missing_timing_sample",
+        "drift_metric",
+        "drift_window_generations",
+        "drift_ratio_lower",
+        "drift_ratio_upper",
+        "manual_outlier_exclusion",
+        "retry_rejected_session"
+      ],
+      "properties": {
+        "reject_on_nonfinite": {"type": "boolean", "const": true},
+        "reject_on_environment_mismatch": {"type": "boolean", "const": true},
+        "reject_on_artifact_identity_mismatch": {"type": "boolean", "const": true},
+        "reject_on_direct_operator_failure": {"type": "boolean", "const": true},
+        "reject_on_logit_failure": {"type": "boolean", "const": true},
+        "reject_on_token_mismatch": {"type": "boolean", "const": true},
+        "reject_unless_all_22_prefill_fallback": {"type": "boolean", "const": true},
+        "reject_unless_all_22_cached_decode_native": {"type": "boolean", "const": true},
+        "reject_on_native_or_fallback_error": {"type": "boolean", "const": true},
+        "reject_on_call_reconciliation_failure": {"type": "boolean", "const": true},
+        "reject_on_nonzero_inflight_at_end": {"type": "boolean", "const": true},
+        "reject_on_missing_timing_sample": {"type": "boolean", "const": true},
+        "drift_metric": {
+          "const": "ratio_of_last_window_median_to_first_window_median_total_generation_ns_per_path"
+        },
+        "drift_window_generations": {"type": "integer", "minimum": 2, "maximum": 1024},
+        "drift_ratio_lower": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "drift_ratio_upper": {"type": "number", "minimum": 1},
+        "manual_outlier_exclusion": {"type": "boolean", "const": false},
+        "retry_rejected_session": {"type": "boolean", "const": false}
+      }
+    },
+    "duration_phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_event",
+        "stop_event",
+        "unit",
+        "sample_scope",
+        "included_in_steady_state_decode"
+      ],
+      "properties": {
+        "start_event": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "stop_event": {
+          "$ref": "urn:decodeforge:schema:common-v1#/$defs/non_empty_string"
+        },
+        "unit": {"const": "nanoseconds"},
+        "sample_scope": {
+          "type": "string",
+          "enum": ["once_per_fresh_process", "once_per_generation", "once_per_cached_decode_step", "once_per_q_projection_call"]
+        },
+        "included_in_steady_state_decode": {"type": "boolean"}
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clock",
+        "cpu_synchronization",
+        "sample_retention",
+        "reporting",
+        "offline_preparation",
+        "cold_startup",
+        "model_load",
+        "module_build_load",
+        "prompt_prefill",
+        "time_to_first_token",
+        "cached_decode_step",
+        "q_projection_dispatch",
+        "total_generation",
+        "peak_resident_memory"
+      ],
+      "properties": {
+        "clock": {"const": "time.perf_counter_ns"},
+        "cpu_synchronization": {"const": "none_cpu_calls_are_synchronous"},
+        "sample_retention": {"const": "retain_all_samples_no_trimming"},
+        "reporting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cold", "warmed"],
+          "properties": {
+            "cold": {"const": "report_each_fresh_process_startup_once_without_pooling_into_warmed_samples"},
+            "warmed": {"const": "report_only_measured_generations_after_both_paths_complete_all_warmups"}
+          }
+        },
+        "offline_preparation": {"$ref": "#/$defs/duration_phase"},
+        "cold_startup": {"$ref": "#/$defs/duration_phase"},
+        "model_load": {"$ref": "#/$defs/duration_phase"},
+        "module_build_load": {"$ref": "#/$defs/duration_phase"},
+        "prompt_prefill": {"$ref": "#/$defs/duration_phase"},
+        "time_to_first_token": {"$ref": "#/$defs/duration_phase"},
+        "cached_decode_step": {"$ref": "#/$defs/duration_phase"},
+        "q_projection_dispatch": {"$ref": "#/$defs/duration_phase"},
+        "total_generation": {"$ref": "#/$defs/duration_phase"},
+        "peak_resident_memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_event", "stop_event", "unit", "sampling", "baseline_policy"],
+          "properties": {
+            "start_event": {"const": "fresh_process_entry"},
+            "stop_event": {"const": "after_adapter_cleanup"},
+            "unit": {"const": "bytes"},
+            "sampling": {"const": "maximum_process_resident_set_observed_over_interval"},
+            "baseline_policy": {"const": "report_absolute_peak_and_pre_model_load_baseline_separately"}
+          }
+        }
+      }
+    }
+  }
+}
