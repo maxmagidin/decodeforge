@@ -669,10 +669,14 @@ fn run_impl(
         ));
     }
     // SAFETY: Both ranges have checked non-null aligned pointers and bounded
-    // lengths, and the ranges are disjoint.  Extents were validated above;
-    // malformed calls leave output untouched.
+    // lengths, and the ranges are disjoint. The foreign caller's documented
+    // contract guarantees that input remains immutable and output remains
+    // exclusively accessible for the call, including against other concurrent
+    // calls. Extents were validated above; malformed calls leave output
+    // untouched.
     let output = unsafe { std::slice::from_raw_parts_mut(output_pointer, output_length) };
-    // SAFETY: The input range is checked and disjoint from output.
+    // SAFETY: The input range is checked and disjoint from output, and the
+    // foreign caller guarantees that it remains immutable for the call.
     let input = unsafe { std::slice::from_raw_parts(input_pointer, input_length) };
     let result = catch_unwind(AssertUnwindSafe(|| {
         let mut prepared = entry
@@ -951,11 +955,14 @@ pub unsafe extern "C" fn df_runtime_create_neon_v1(
 /// Run one exact generated call for a live handle.
 ///
 /// # Safety
-/// `input_pointer` must point to `input_length` readable, aligned `f32`s and
-/// `output_pointer` to `output_length` writable, aligned `f32`s for the
-/// duration of this call. The ranges must not overlap. A handle is process
-/// local and must have been returned by create and not destroyed; concurrent
-/// run/query calls are permitted, as is destroy (which linearizes separately).
+/// `input_pointer` must point to `input_length` readable, aligned `f32`s that
+/// remain immutable, and `output_pointer` to `output_length` writable, aligned
+/// `f32`s that remain exclusively accessible for this call. The two ranges
+/// must not overlap. During concurrent runs, every output range must also be
+/// disjoint from every other active call's input and output ranges; immutable
+/// input ranges may be shared. A handle is process local and must have been
+/// returned by create and not destroyed; concurrent run/query calls are
+/// permitted, as is destroy (which linearizes separately).
 pub unsafe extern "C" fn df_runtime_run_v1(
     handle: u64,
     input_pointer: *const f32,

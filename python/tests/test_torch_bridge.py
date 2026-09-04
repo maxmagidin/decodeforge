@@ -778,6 +778,51 @@ def test_runtime_binding_close_waits_for_an_in_flight_run() -> None:
     assert binding.closed
 
 
+def test_runtime_binding_ownership_and_descriptor_are_read_only() -> None:
+    descriptor = bridge.RuntimeDescriptor(
+        n=4,
+        k=8,
+        packed_weight_bytes=144,
+        module_id="sha256:" + "a" * 64,
+        packed_weight_id="sha256:" + "b" * 64,
+    )
+
+    class RecordingLibrary:
+        def __init__(self) -> None:
+            self.handles: list[int] = []
+
+        def run(self, handle: int, *_arguments: int) -> None:
+            self.handles.append(handle)
+
+        def destroy(self, _handle: int) -> None:
+            return None
+
+    library = RecordingLibrary()
+    binding = bridge.RuntimeBinding(
+        library,  # type: ignore[arg-type]
+        11,
+        descriptor,
+    )
+
+    for field, replacement in (
+        ("handle", 22),
+        (
+            "descriptor",
+            bridge.RuntimeDescriptor(
+                4, 8, 144, "sha256:" + "c" * 64, "sha256:" + "d" * 64
+            ),
+        ),
+        ("library", object()),
+    ):
+        with pytest.raises(AttributeError):
+            setattr(binding, field, replacement)
+
+    binding.run(0x1000, 8, 0x2000, 4)
+    assert library.handles == [11]
+    assert binding.handle == 11
+    assert binding.descriptor is descriptor
+
+
 def test_runtime_library_rejects_overlapping_borrowed_ranges(
     tmp_path: Path,
 ) -> None:

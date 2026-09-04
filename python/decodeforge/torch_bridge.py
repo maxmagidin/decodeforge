@@ -519,7 +519,8 @@ class RuntimeLibrary:
 
 
 class BindingLike(Protocol):
-    descriptor: RuntimeDescriptor
+    @property
+    def descriptor(self) -> RuntimeDescriptor: ...
 
     @property
     def closed(self) -> bool: ...
@@ -535,8 +536,17 @@ class BindingLike(Protocol):
     def close(self) -> None: ...
 
 
+@dataclass(frozen=True)
+class _RuntimeOwnership:
+    library: RuntimeLibrary
+    handle: int
+    descriptor: RuntimeDescriptor
+
+
 class RuntimeBinding:
     """A process-local owner of one bridge handle and its library."""
+
+    __slots__ = ("_ownership", "_closed", "_lock")
 
     def __init__(
         self,
@@ -544,11 +554,25 @@ class RuntimeBinding:
         handle: int,
         descriptor: RuntimeDescriptor,
     ) -> None:
-        self.library = library
-        self.handle = _require_handle(handle)
-        self.descriptor = descriptor
+        self._ownership = _RuntimeOwnership(
+            library=library,
+            handle=_require_handle(handle),
+            descriptor=descriptor,
+        )
         self._closed = False
         self._lock = threading.RLock()
+
+    @property
+    def library(self) -> RuntimeLibrary:
+        return self._ownership.library
+
+    @property
+    def handle(self) -> int:
+        return self._ownership.handle
+
+    @property
+    def descriptor(self) -> RuntimeDescriptor:
+        return self._ownership.descriptor
 
     @property
     def closed(self) -> bool:
@@ -567,8 +591,8 @@ class RuntimeBinding:
                 raise TorchBridgeError(
                     BridgeStatus.INVALID_HANDLE, "runtime binding is closed"
                 )
-            self.library.run(
-                self.handle,
+            self._ownership.library.run(
+                self._ownership.handle,
                 input_address,
                 input_length,
                 output_address,
@@ -580,7 +604,7 @@ class RuntimeBinding:
             if self._closed:
                 return
             try:
-                self.library.destroy(self.handle)
+                self._ownership.library.destroy(self._ownership.handle)
             finally:
                 self._closed = True
 
@@ -733,7 +757,13 @@ def _native_q8_linear(
     *,
     torch_module: Any | None = None,
 ) -> Any:
-    """Run one native call; this function never invokes fallback."""
+    """Run one native call; this function never invokes fallback.
+
+    The caller must not mutate ``x`` or expose the returned output to another
+    thread until this call returns. The bridge borrows the input storage and
+    exclusively borrows the newly allocated output storage during native
+    execution.
+    """
 
     torch = _torch_module() if torch_module is None else torch_module
     if (
