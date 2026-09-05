@@ -13,6 +13,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import pwd
 import resource
 import secrets
 import shlex
@@ -33,10 +34,9 @@ from torch import nn
 from torch.nn import functional as torch_functional
 
 from .contracts import validate_data
+from .g3_preparation import VerifiedPreparationReceipt, verify_preparation_receipt
 from .qproj_adapter import QProjAdapter, QProjExecutionMode
 from .qproj_model import (
-    QPROJ_TOTAL_PACKED_BYTES,
-    TINYLLAMA_QPROJ_AGGREGATE_ID,
     QProjAssetInventory,
     QProjModelCounters,
     VerifiedQProjAsset,
@@ -120,7 +120,7 @@ Installer: TypeAlias = Callable[
 InputVerifier: TypeAlias = Callable[
     [SessionRequest, Mapping[str, Any]], "VerifiedInputState"
 ]
-PreparationLoader: TypeAlias = Callable[[Path], JsonObject]
+PreparationLoader: TypeAlias = Callable[[Path], VerifiedPreparationReceipt]
 PreparationCommandVerifier: TypeAlias = Callable[
     [SessionRequest, Sequence[Any], str], None
 ]
@@ -158,10 +158,12 @@ class VerifiedInputState:
         failures: list[BaseException] = []
         if self.model_directory_fd is not None:
             descriptor = self.model_directory_fd
+            model_cleaned = False
             try:
                 if self._model_snapshot_path is not None:
                     for name in self._model_snapshot_files:
-                        os.unlink(name, dir_fd=descriptor)
+                        with suppress(FileNotFoundError):
+                            os.unlink(name, dir_fd=descriptor)
                     held = os.fstat(descriptor)
                     named = os.stat(self._model_snapshot_path, follow_symlinks=False)
                     if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino):
@@ -169,21 +171,23 @@ class VerifiedInputState:
                             "model snapshot pathname no longer names the held directory"
                         )
                     os.rmdir(self._model_snapshot_path)
+                model_cleaned = True
             except BaseException as error:
                 failures.append(error)
-            finally:
+            if model_cleaned:
                 try:
                     os.close(descriptor)
                 except BaseException as error:
                     failures.append(error)
-                self.model_directory_fd = None
+                else:
+                    self.model_directory_fd = None
+                    self._model_snapshot_path = None
         if self._bridge_descriptor is not None:
             try:
                 os.close(self._bridge_descriptor)
             except BaseException as error:
                 failures.append(error)
             self._bridge_descriptor = None
-        self._model_snapshot_path = None
         if len(failures) == 1:
             raise failures[0]
         if failures:
@@ -280,6 +284,8 @@ def publish_new_json(path: Path, value: object) -> None:
     encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
     temporary_name = f".{path.name}.{secrets.token_hex(16)}.tmp"
     descriptor = -1
+    linked = False
+    temporary_exists = False
     try:
         descriptor = os.open(
             temporary_name,
@@ -287,6 +293,7 @@ def publish_new_json(path: Path, value: object) -> None:
             0o600,
             dir_fd=directory,
         )
+        temporary_exists = True
         with os.fdopen(descriptor, "wb", closefd=True) as output:
             descriptor = -1
             output.write(encoded)
@@ -299,13 +306,41 @@ def publish_new_json(path: Path, value: object) -> None:
             dst_dir_fd=directory,
             follow_symlinks=False,
         )
+        linked = True
         os.fsync(directory)
+        os.unlink(temporary_name, dir_fd=directory)
+        temporary_exists = False
+        os.fsync(directory)
+    except BaseException as error:
+        rollback_failures: list[BaseException] = [error]
+        if linked:
+            try:
+                os.unlink(path.name, dir_fd=directory)
+                os.fsync(directory)
+            except BaseException as rollback_error:
+                rollback_failures.append(rollback_error)
+        if len(rollback_failures) > 1:
+            raise BaseExceptionGroup(
+                "JSON publication rollback failed", rollback_failures
+            ) from error
+        raise
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-        with suppress(FileNotFoundError):
-            os.unlink(temporary_name, dir_fd=directory)
+        if temporary_exists:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary_name, dir_fd=directory)
+            os.fsync(directory)
         os.close(directory)
+
+
+def require_external_session_output(output: Path, spec_path: Path) -> None:
+    """Reject result publication inside the checkout whose clean state is evidence."""
+
+    repository = spec_path.resolve(strict=True).parents[2]
+    candidate = output.parent.resolve(strict=True) / output.name
+    if candidate.is_relative_to(repository):
+        raise G3SessionError("session output must be outside the measured checkout")
 
 
 def _stat_fingerprint(value: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -400,144 +435,6 @@ def _hash_descriptor(descriptor: int, label: str) -> str:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _load_preparation_receipt(path: Path) -> JsonObject:
-    raw = _read_stable(path, maximum=1024 * 1024)
-
-    def closed_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, item in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key {key}")
-            result[key] = item
-        return result
-
-    try:
-        value = _object(
-            json.loads(
-                raw,
-                parse_constant=lambda constant: (_ for _ in ()).throw(
-                    ValueError(f"nonfinite JSON constant {constant}")
-                ),
-                object_pairs_hook=closed_object,
-            ),
-            "preparation receipt",
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-        raise G3SessionError("preparation receipt is not valid JSON") from error
-    expected_keys = {
-        "schema_version",
-        "format",
-        "protocol_id",
-        "checkout",
-        "command",
-        "source",
-        "tool",
-        "output",
-        "timing",
-        "receipt_identity",
-    }
-    if set(value) != expected_keys:
-        raise G3SessionError("preparation receipt is not a closed document")
-    claimed = _string(value["receipt_identity"], "receipt identity")
-    unsigned = {key: item for key, item in value.items() if key != "receipt_identity"}
-    encoded = json.dumps(
-        unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    actual = _IDENTITY_PREFIX + _sha256(
-        b"DecodeForge/g3-offline-preparation-receipt/v1\0" + encoded
-    )
-    if claimed != actual:
-        raise G3SessionError("preparation receipt identity mismatch")
-    if (
-        value["schema_version"] != 1
-        or value["format"] != "decodeforge_g3_offline_preparation_receipt_v1"
-        or value["protocol_id"] != PROTOCOL_ID
-    ):
-        raise G3SessionError("preparation receipt protocol mismatch")
-    checkout = _object(value["checkout"], "preparation checkout")
-    revision = checkout.get("revision")
-    if (
-        set(checkout) != {"revision", "dirty"}
-        or not isinstance(revision, str)
-        or len(revision) != 40
-        or any(character not in "0123456789abcdef" for character in revision)
-        or checkout.get("dirty") is not False
-    ):
-        raise G3SessionError("preparation receipt was produced by a dirty checkout")
-    command = _object(value["command"], "preparation command")
-    arguments = command.get("argv")
-    if (
-        set(command) != {"argv"}
-        or not isinstance(arguments, list)
-        or not arguments
-        or not all(isinstance(argument, str) and argument for argument in arguments)
-    ):
-        raise G3SessionError("preparation receipt command is invalid")
-    source = _object(value["source"], "preparation source")
-    if source != {
-        "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
-        "filename": "model.safetensors",
-        "bytes": 2_200_119_864,
-        "identity": (
-            "sha256:6e6001da2106d4757498752a021df6c2bdc332c650aae4bae6b0c004dcf14933"
-        ),
-    }:
-        raise G3SessionError("preparation receipt source is not canonical")
-    tool = _object(value["tool"], "preparation tool")
-    executable_identity = tool.get("executable_identity")
-    if (
-        set(tool) != {"name", "version", "executable_identity"}
-        or tool.get("name") != "decodeforge-prepare-qproj"
-        or tool.get("version") != "0.1.0"
-        or not isinstance(executable_identity, str)
-        or len(executable_identity) != 71
-        or not executable_identity.startswith(_IDENTITY_PREFIX)
-        or any(
-            character not in "0123456789abcdef"
-            for character in executable_identity[len(_IDENTITY_PREFIX) :]
-        )
-    ):
-        raise G3SessionError("preparation receipt tool is invalid")
-    output = _object(value["output"], "preparation output")
-    if (
-        set(output)
-        != {
-            "asset_inventory_identity",
-            "layer_count",
-            "total_packed_bytes",
-            "total_fallback_bytes",
-        }
-        or output.get("asset_inventory_identity") != TINYLLAMA_QPROJ_AGGREGATE_ID
-        or output.get("layer_count") != 22
-        or output.get("total_packed_bytes") != QPROJ_TOTAL_PACKED_BYTES
-        or output.get("total_fallback_bytes") != 369_098_752
-    ):
-        raise G3SessionError("preparation receipt output is not canonical")
-    timing = _object(value["timing"], "preparation timing")
-    start = _integer(timing.get("start_ns"), "preparation start")
-    stop = _integer(timing.get("stop_ns"), "preparation stop")
-    elapsed = _integer(timing.get("elapsed_ns"), "preparation elapsed")
-    if (
-        set(timing) != {"clock", "start_ns", "stop_ns", "elapsed_ns"}
-        or timing.get("clock") != "time.perf_counter_ns"
-        or start < 0
-        or stop < 0
-        or elapsed <= 0
-        or stop - start != elapsed
-    ):
-        raise G3SessionError("preparation receipt timing is invalid")
-    return {
-        "source": "separately_captured_prepare_command",
-        "receipt_identity": claimed,
-        "elapsed_ns": elapsed,
-        "asset_inventory_identity": TINYLLAMA_QPROJ_AGGREGATE_ID,
-        "_checkout_revision": revision,
-        "_command_argv": arguments,
-        "_tool_executable_identity": executable_identity,
-    }
 
 
 def _verify_preparation_command(
@@ -672,43 +569,74 @@ def _require_directory_inventory(
         raise G3SessionError(f"{label} contains missing or unpinned extra files")
 
 
+def _command_output(command: Sequence[str], *, allow_empty: bool = False) -> str:
+    if not command or not Path(command[0]).is_absolute():
+        raise G3SessionError("provenance commands require absolute executables")
+    clean_environment = {
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_OPTIONAL_LOCKS": "0",
+    }
+    with tempfile.TemporaryFile() as output:
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=output,
+                stderr=output,
+                env=clean_environment,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise G3SessionError(f"unable to inspect {' '.join(command)}") from error
+        size = os.fstat(output.fileno()).st_size
+        if size > 64 * 1024:
+            raise G3SessionError("provenance command output exceeds its byte bound")
+        output.seek(0)
+        try:
+            text = output.read().decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise G3SessionError("provenance command output is not UTF-8") from error
+    if not allow_empty and not text.strip():
+        raise G3SessionError("provenance command returned no output")
+    return text
+
+
 def _command_line(command: Sequence[str]) -> str:
-    try:
-        result = subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise G3SessionError(f"unable to inspect {' '.join(command)}") from error
-    return result.stdout.splitlines()[0].strip()
+    return _command_output(command).splitlines()[0].strip()
 
 
 def _checkout_evidence(spec_path: Path) -> JsonObject:
     repository = spec_path.resolve(strict=True).parents[2]
-    revision = _command_line(["git", "-C", str(repository), "rev-parse", "HEAD"])
+    revision = _command_line(
+        ["/usr/bin/git", "-C", str(repository), "rev-parse", "HEAD"]
+    )
     if len(revision) != 40 or any(
         character not in "0123456789abcdef" for character in revision
     ):
         raise G3SessionError("unable to resolve checkout revision")
-    try:
-        status = subprocess.run(
-            ["git", "-C", str(repository), "status", "--porcelain"],
-            check=True,
-            capture_output=True,
-            timeout=10,
-        ).stdout
-    except (OSError, subprocess.SubprocessError) as error:
-        raise G3SessionError("unable to inspect checkout state") from error
+    status = _command_output(
+        [
+            "/usr/bin/git",
+            "-C",
+            str(repository),
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+        ],
+        allow_empty=True,
+    )
     if status:
         raise G3SessionError("accepted evidence requires a clean checkout")
     return {"revision": revision, "dirty": False}
 
 
 def _sysctl(name: str) -> str:
-    return _command_line(["sysctl", "-n", name])
+    return _command_line(["/usr/sbin/sysctl", "-n", name])
 
 
 def _normalized_architecture(machine: str) -> str:
@@ -737,7 +665,8 @@ def _verify_environment(spec: Mapping[str, Any]) -> JsonObject:
             f"numpy version mismatch: expected 2.4.4, got {numpy_version}"
         )
     expected_versions["numpy"] = numpy_version
-    rust_line = _command_line(["rustup", "run", "1.98.0", "rustc", "--version"])
+    rustup = Path("/opt/homebrew/bin/rustup").resolve(strict=True)
+    rust_line = _command_line([str(rustup), "run", "1.98.0", "rustc", "--version"])
     rust_version = rust_line.split()[1] if len(rust_line.split()) >= 2 else ""
     expected_rust = _string(
         _object(software.get("rust"), "rust").get("version"), "rust"
@@ -745,7 +674,7 @@ def _verify_environment(spec: Mapping[str, Any]) -> JsonObject:
     if rust_version != expected_rust:
         raise G3SessionError("Rust version mismatch")
     expected_versions["rust"] = rust_version
-    clang_line = _command_line(["clang", "--version"])
+    clang_line = _command_line(["/usr/bin/clang", "--version"])
     expected_clang = _string(
         _object(software.get("clang"), "clang").get("version"), "clang"
     )
@@ -759,7 +688,7 @@ def _verify_environment(spec: Mapping[str, Any]) -> JsonObject:
         "host_id": "apple-m4-primary",
         "os": "macos" if platform.system() == "Darwin" else platform.system().lower(),
         "os_version": os_version,
-        "os_build": _command_line(["sw_vers", "-buildVersion"]),
+        "os_build": _command_line(["/usr/bin/sw_vers", "-buildVersion"]),
         "kernel_release": platform.release(),
         "arch": _normalized_architecture(platform.machine()),
         "cpu_model": _sysctl("machdep.cpu.brand_string"),
@@ -1005,7 +934,7 @@ def default_dependencies() -> SessionDependencies:
         load_runtime=_default_load_runtime,
         install=_default_install,
         configure_torch=_configure_torch,
-        load_preparation_receipt=_load_preparation_receipt,
+        load_preparation_receipt=verify_preparation_receipt,
         checkout_evidence=_checkout_evidence,
         verify_preparation_command=_verify_preparation_command,
         peak_rss_bytes=_peak_rss_bytes,
@@ -1588,20 +1517,14 @@ def run_session(
         raise G3SessionError("session_index must be in the frozen range 0..2")
     spec, spec_sha = _load_spec(request.spec_path)
     deps = default_dependencies() if dependencies is None else dependencies
+    checkout_preflight = deps.checkout_evidence(request.spec_path)
     verified = deps.verify_inputs(request, spec)
     try:
-        offline_preparation = deps.load_preparation_receipt(request.preparation_receipt)
-        preparation_checkout = _string(
-            offline_preparation.pop("_checkout_revision"),
-            "preparation checkout revision",
-        )
-        preparation_argv = _array(
-            offline_preparation.pop("_command_argv"), "preparation argv"
-        )
-        preparation_executable_identity = _string(
-            offline_preparation.pop("_tool_executable_identity"),
-            "preparation executable identity",
-        )
+        preparation_receipt = deps.load_preparation_receipt(request.preparation_receipt)
+        offline_preparation = preparation_receipt.session_projection()
+        preparation_checkout = preparation_receipt.checkout_revision
+        preparation_argv = preparation_receipt.command_argv
+        preparation_executable_identity = preparation_receipt.tool_executable_identity
         deps.verify_preparation_command(
             request, preparation_argv, preparation_executable_identity
         )
@@ -1913,8 +1836,10 @@ def run_session(
             }
         )
     final_counters = installation.counters
-    checkout_evidence = deps.checkout_evidence(request.spec_path)
-    if checkout_evidence.get("revision") != preparation_checkout:
+    checkout_final = deps.checkout_evidence(request.spec_path)
+    if checkout_preflight != checkout_final:
+        raise G3SessionError("checkout changed during the generation session")
+    if checkout_preflight.get("revision") != preparation_checkout:
         raise G3SessionError("preparation and session checkout revisions differ")
     result: JsonObject = {
         "schema_version": 1,
@@ -1945,16 +1870,14 @@ def run_session(
             "attention_mask": [1] * len(prompt_ids),
         },
         "provenance": {
-            "checkout": checkout_evidence,
+            "checkout": checkout_preflight,
             "model": assets_record["source"],
             "bridge_library": _object(
                 verified.evidence.get("bridge_library"), "bridge library evidence"
             ),
             "asset_inventory_identity": assets_record["aggregate_identity"],
             "rebuild_commands": {
-                "build_bridge": (
-                    "cargo build --quiet --release --locked -p decodeforge-bridge"
-                ),
+                "build_bridge": "make build-g3-bridge",
                 "prepare_assets": shlex.join(
                     _string(value, "preparation argument") for value in preparation_argv
                 ),
@@ -2037,5 +1960,6 @@ __all__ = [
     "SessionRequest",
     "default_dependencies",
     "publish_new_json",
+    "require_external_session_output",
     "run_session",
 ]

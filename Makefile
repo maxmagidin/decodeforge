@@ -2,7 +2,7 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
-	test-g3-adapter-real run-g3-session analyze-g3 verify-g3-result \
+	test-g3-adapter-real build-g3-bridge run-g3-session analyze-g3 verify-g3-result \
 	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets
 
 UV := uv
@@ -158,6 +158,9 @@ test-g3-adapter-real: verify-g3-assets
 	$(UV) run --frozen --extra pytorch-cpu python scripts/check_qproj_adapter_real.py \
 		--library "$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.dylib" \
 		--assets "$(ASSETS)" --spec "$${SPEC:-benchmarks/g3/spec.json}"
+
+build-g3-bridge:
+	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
 
 run-g3-session:
 	@test -n "$(SESSION_ID)" || { echo "run-g3-session: SESSION_ID is required" >&2; exit 2; }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,17 +11,19 @@ from typing import Any, cast
 
 import pytest
 import torch
+from decodeforge.g3_preparation import VerifiedPreparationReceipt
 from decodeforge.g3_session import (
     G3SessionError,
     InstallResult,
     SessionDependencies,
     SessionRequest,
     VerifiedInputState,
-    _load_preparation_receipt,
+    _command_line,
     _load_verified_components,
     _normalized_architecture,
     _open_directory,
     publish_new_json,
+    require_external_session_output,
     run_session,
 )
 from decodeforge.qproj_adapter import QProjExecutionMode
@@ -219,6 +222,7 @@ class _Installation:
 class _Harness:
     correct_prompt: bool = True
     bad_counters: bool = False
+    changing_checkout: bool = False
 
     def dependencies(self) -> SessionDependencies:
         clock = _Clock()
@@ -287,6 +291,16 @@ class _Harness:
         def load_tokenizer(_path: Path, _spec: Mapping[str, Any]) -> LlamaTokenizer:
             return LlamaTokenizer(correct_prompt=self.correct_prompt)
 
+        checkout_calls = 0
+
+        def checkout(_path: Path) -> dict[str, Any]:
+            nonlocal checkout_calls
+            checkout_calls += 1
+            revision = (
+                "2" * 40 if self.changing_checkout and checkout_calls > 1 else "1" * 40
+            )
+            return {"revision": revision, "dirty": False}
+
         return SessionDependencies(
             verify_inputs=verify,
             load_model=lambda _path, _spec: LlamaForCausalLM(),
@@ -294,19 +308,15 @@ class _Harness:
             load_runtime=lambda _path, _sha: cast(Any, object()),
             install=install,
             configure_torch=lambda _spec: None,
-            load_preparation_receipt=lambda _path: {
-                "source": "separately_captured_prepare_command",
-                "receipt_identity": _ident(700),
-                "elapsed_ns": 1,
-                "asset_inventory_identity": TINYLLAMA_QPROJ_AGGREGATE_ID,
-                "_checkout_revision": "1" * 40,
-                "_command_argv": ["decodeforge-prepare-qproj", "--offline"],
-                "_tool_executable_identity": _ident(900),
-            },
-            checkout_evidence=lambda _path: {
-                "revision": "1" * 40,
-                "dirty": False,
-            },
+            load_preparation_receipt=lambda _path: VerifiedPreparationReceipt(
+                checkout_revision="1" * 40,
+                command_argv=("decodeforge-prepare-qproj", "--offline"),
+                tool_executable_identity=_ident(900),
+                receipt_identity=_ident(700),
+                elapsed_ns=1,
+                asset_inventory_identity=TINYLLAMA_QPROJ_AGGREGATE_ID,
+            ),
+            checkout_evidence=checkout,
             verify_preparation_command=lambda _request, _argv, _identity: None,
             clock_ns=clock,
             peak_rss_bytes=lambda: 100,
@@ -405,6 +415,14 @@ def test_retained_directory_descriptor_survives_path_swap(tmp_path: Path) -> Non
     assert observed == ["verified", "verified"]
 
 
+def test_checkout_change_during_session_fails_closed() -> None:
+    with pytest.raises(G3SessionError, match="checkout changed"):
+        run_session(
+            _request(),
+            dependencies=_Harness(changing_checkout=True).dependencies(),
+        )
+
+
 def test_result_publication_is_no_replace_and_rejects_symlink_parent(
     tmp_path: Path,
 ) -> None:
@@ -471,22 +489,74 @@ def _write_receipt(path: Path, *, tool_name: str = "decodeforge-prepare-qproj") 
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def test_preparation_receipt_is_identity_and_content_bound(tmp_path: Path) -> None:
-    valid = tmp_path / "valid.json"
-    _write_receipt(valid)
-    assert _load_preparation_receipt(valid)["elapsed_ns"] == 10
-
-    invalid = tmp_path / "invalid.json"
-    _write_receipt(invalid, tool_name="other-tool")
-    with pytest.raises(G3SessionError, match="tool"):
-        _load_preparation_receipt(invalid)
-
-    nonfinite = tmp_path / "nonfinite.json"
-    nonfinite.write_text('{"elapsed":NaN}', encoding="utf-8")
-    with pytest.raises(G3SessionError, match="valid JSON"):
-        _load_preparation_receipt(nonfinite)
-
-
 def test_darwin_arm64_uses_the_contract_architecture_name() -> None:
     assert _normalized_architecture("arm64") == "aarch64"
     assert _normalized_architecture("x86_64") == "x86_64"
+
+
+def test_empty_provenance_command_output_fails_closed() -> None:
+    with pytest.raises(G3SessionError, match="no output"):
+        _command_line(["/usr/bin/true"])
+
+
+def test_publication_rolls_back_after_post_link_fsync_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "session.json"
+    real_fsync = os.fsync
+    calls = 0
+
+    def fail_second(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected directory fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_second)
+    with pytest.raises(OSError, match="injected"):
+        publish_new_json(output, {"accepted": True})
+    assert not output.exists()
+
+
+def test_snapshot_cleanup_failure_retains_retryable_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    (snapshot / "one").write_bytes(b"x")
+    state = VerifiedInputState(
+        {},
+        _open_directory(snapshot),
+        Path("unused"),
+        _model_snapshot_path=snapshot,
+        _model_snapshot_files=("one",),
+    )
+    real_rmdir = os.rmdir
+    failed = False
+
+    def fail_once(path: os.PathLike[str] | str, *args: Any, **kwargs: Any) -> None:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("injected cleanup failure")
+        real_rmdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rmdir", fail_once)
+    with pytest.raises(OSError, match="injected"):
+        state.close()
+    assert state.model_directory_fd is not None
+    assert state._model_snapshot_path == snapshot
+    state.close()
+    assert state.model_directory_fd is None
+    assert not snapshot.exists()
+
+
+def test_session_output_must_be_outside_measured_checkout(tmp_path: Path) -> None:
+    with pytest.raises(G3SessionError, match="outside"):
+        require_external_session_output(
+            _SPEC.parents[2] / "result.json",
+            _SPEC,
+        )
+    external = tmp_path / "result.json"
+    require_external_session_output(external, _SPEC)

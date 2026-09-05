@@ -13,6 +13,7 @@ from pathlib import Path  # noqa: E402
 from decodeforge.g3_session import (  # noqa: E402
     SessionRequest,
     publish_new_json,
+    require_external_session_output,
     run_session,
 )
 
@@ -29,6 +30,7 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--spec", type=Path, default=Path("benchmarks/g3/spec.json"))
     arguments = parser.parse_args()
+    require_external_session_output(arguments.output, arguments.spec)
     result = run_session(
         SessionRequest(
             session_id=arguments.session_id,
