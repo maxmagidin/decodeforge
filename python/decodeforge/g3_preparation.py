@@ -528,8 +528,44 @@ def _require_new_receipt(path: Path) -> None:
         os.close(parent_fd)
 
 
+def _index_is_unflagged(output: bytes) -> bool:
+    """Reject index flags that can hide tracked-file changes from status."""
+
+    if not output:
+        return True
+    if not output.endswith(b"\0"):
+        raise G3PreparationError("checkout index metadata is malformed")
+    permitted_tags = {
+        b"H",
+        b"h",
+        b"S",
+        b"s",
+        b"M",
+        b"m",
+        b"R",
+        b"r",
+        b"C",
+        b"c",
+        b"K",
+        b"k",
+        b"?",
+    }
+    for record in output[:-1].split(b"\0"):
+        if (
+            len(record) < 3
+            or record[1:2] != b" "
+            or not record[2:]
+            or record[:1] not in permitted_tags
+        ):
+            raise G3PreparationError("checkout index metadata is malformed")
+        tag = record[:1]
+        if tag.lower() == b"s" or tag.islower():
+            return False
+    return True
+
+
 def _checkout_state(checkout: Path) -> tuple[str, bool]:
-    def git(*arguments: str) -> str:
+    def git_bytes(*arguments: str) -> bytes:
         with tempfile.TemporaryFile() as output:
             try:
                 result = subprocess.run(
@@ -551,23 +587,36 @@ def _checkout_state(checkout: Path) -> tuple[str, bool]:
             stdout = output.read(1024 * 1024 + 1)
         if result.returncode != 0 or len(stdout) > 1024 * 1024:
             raise G3PreparationError("unable to bind the preparation checkout")
+        return stdout
+
+    def git_text(*arguments: str) -> str:
         try:
-            return stdout.decode("utf-8").strip()
+            return git_bytes(*arguments).decode("utf-8").strip()
         except UnicodeDecodeError as error:
             raise G3PreparationError("checkout metadata is not UTF-8") from error
 
-    root = Path(git("rev-parse", "--show-toplevel"))
+    root = Path(git_text("rev-parse", "--show-toplevel"))
     try:
         if root.resolve(strict=True) != checkout.resolve(strict=True):
             raise G3PreparationError("checkout does not name its Git root")
     except OSError as error:
         raise G3PreparationError("checkout root is unavailable") from error
-    revision = git("rev-parse", "HEAD")
+    revision = git_text("rev-parse", "HEAD")
     if len(revision) != 40 or any(
         character not in "0123456789abcdef" for character in revision
     ):
         raise G3PreparationError("checkout revision is not a full object ID")
-    dirty = bool(git("status", "--porcelain=v1", "--untracked-files=all"))
+    dirty = bool(
+        git_bytes(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=no",
+            "--ignore-submodules=none",
+        )
+    )
+    if not _index_is_unflagged(git_bytes("ls-files", "-v", "-z", "--full-name")):
+        raise G3PreparationError("checkout index contains hidden tracked-file flags")
     return revision, dirty
 
 

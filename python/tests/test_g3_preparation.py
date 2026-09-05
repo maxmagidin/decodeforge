@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
+from decodeforge import g3_preparation as g3_preparation_module
 from decodeforge.g3_preparation import (
     CANONICAL_ASSET_INVENTORY_IDENTITY,
     G3PreparationError,
@@ -406,3 +408,38 @@ def test_postpublication_checkout_change_rolls_back_receipt(tmp_path: Path) -> N
             checkout_state=lambda _checkout: next(states),
         )
     assert not receipt.exists()
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_checkout_state_rejects_hidden_tracked_file_flags(
+    tmp_path: Path, flag: str
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    tracked = checkout / "tracked.txt"
+    tracked.write_text("committed\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    subprocess.run(["git", "-C", str(checkout), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "-c",
+            "user.name=DecodeForge Test",
+            "-c",
+            "user.email=test@decodeforge.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "update-index", flag, "tracked.txt"],
+        check=True,
+    )
+    tracked.write_text("hidden mutation\n", encoding="utf-8")
+
+    with pytest.raises(G3PreparationError, match="hidden tracked-file flags"):
+        g3_preparation_module._checkout_state(checkout)
