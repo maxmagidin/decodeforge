@@ -281,12 +281,13 @@ def publish_new_json(path: Path, value: object) -> None:
     if path.name in {"", ".", ".."} or Path(path.name).name != path.name:
         raise ValueError("output must name one file in an existing directory")
     directory = _open_directory(path.parent)
-    encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
     temporary_name = f".{path.name}.{secrets.token_hex(16)}.tmp"
     descriptor = -1
     linked = False
     temporary_exists = False
+    linked_identity: tuple[int, int] | None = None
     try:
+        encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
         descriptor = os.open(
             temporary_name,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
@@ -307,6 +308,8 @@ def publish_new_json(path: Path, value: object) -> None:
             follow_symlinks=False,
         )
         linked = True
+        linked_metadata = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        linked_identity = (linked_metadata.st_dev, linked_metadata.st_ino)
         os.fsync(directory)
         os.unlink(temporary_name, dir_fd=directory)
         temporary_exists = False
@@ -315,6 +318,9 @@ def publish_new_json(path: Path, value: object) -> None:
         rollback_failures: list[BaseException] = [error]
         if linked:
             try:
+                current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) != linked_identity:
+                    raise G3SessionError("session output changed during rollback")
                 os.unlink(path.name, dir_fd=directory)
                 os.fsync(directory)
             except BaseException as rollback_error:
@@ -632,6 +638,33 @@ def _checkout_evidence(spec_path: Path) -> JsonObject:
     )
     if status:
         raise G3SessionError("accepted evidence requires a clean checkout")
+    index = _command_output(
+        ["/usr/bin/git", "-C", str(repository), "ls-files", "-v"],
+        allow_empty=True,
+    )
+    if any(
+        line and (line[0].islower() or line[0] == "S") for line in index.splitlines()
+    ):
+        raise G3SessionError("checkout index contains hidden tracked-file flags")
+    producer_names = (
+        "decodeforge.g3_session",
+        "decodeforge.g3_preparation",
+        "decodeforge.qproj_adapter",
+        "decodeforge.qproj_model",
+        "decodeforge.torch_bridge",
+    )
+    for name in producer_names:
+        module_path = getattr(sys.modules.get(name), "__file__", None)
+        if module_path is None or not Path(module_path).resolve(
+            strict=True
+        ).is_relative_to(repository):
+            raise G3SessionError(
+                "session producer code is outside the measured checkout"
+            )
+    if Path(sys.argv[0]).name == "run_g3_session.py" and not Path(sys.argv[0]).resolve(
+        strict=True
+    ).is_relative_to(repository):
+        raise G3SessionError("session CLI is outside the measured checkout")
     return {"revision": revision, "dirty": False}
 
 

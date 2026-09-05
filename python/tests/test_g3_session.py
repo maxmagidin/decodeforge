@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import decodeforge.g3_session as g3_session_module
 import pytest
 import torch
 from decodeforge.g3_preparation import VerifiedPreparationReceipt
@@ -18,6 +19,7 @@ from decodeforge.g3_session import (
     SessionDependencies,
     SessionRequest,
     VerifiedInputState,
+    _checkout_evidence,
     _command_line,
     _load_verified_components,
     _normalized_architecture,
@@ -517,6 +519,44 @@ def test_publication_rolls_back_after_post_link_fsync_failure(
     with pytest.raises(OSError, match="injected"):
         publish_new_json(output, {"accepted": True})
     assert not output.exists()
+
+
+def test_publication_never_unlinks_a_swapped_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "session.json"
+    real_fsync = os.fsync
+    calls = 0
+
+    def swap_then_fail(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            output.unlink()
+            output.write_text("replacement", encoding="utf-8")
+            raise OSError("injected")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", swap_then_fail)
+    with pytest.raises(BaseExceptionGroup, match="rollback"):
+        publish_new_json(output, {"accepted": True})
+    assert output.read_text(encoding="utf-8") == "replacement"
+
+
+def test_checkout_rejects_hidden_index_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def command(arguments: Any, *, allow_empty: bool = False) -> str:
+        del allow_empty
+        if "rev-parse" in arguments:
+            return "1" * 40 + "\n"
+        if "ls-files" in arguments:
+            return "S python/decodeforge/g3_session.py\n"
+        return ""
+
+    monkeypatch.setattr(g3_session_module, "_command_output", command)
+    with pytest.raises(G3SessionError, match="hidden tracked-file"):
+        _checkout_evidence(_SPEC)
 
 
 def test_snapshot_cleanup_failure_retains_retryable_ownership(
