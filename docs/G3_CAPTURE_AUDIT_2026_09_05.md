@@ -45,3 +45,18 @@ set; no session from the rejected implementation is reused or silently retried.
   execution, fixture parity and G1 report regeneration.
 - `git diff --check` passed. The local aggregate log is
   `.lavish/g3-lifecycle-check.log`.
+
+## Accepted capture at ad15f5d
+
+The corrected clean revision `ad15f5d293722a615b1440b320e4197126500f36`
+produced three accepted fresh-process sessions with indices 0, 1 and 2. The
+external `capture-ad15f5d` directory retains the new preparation receipt,
+assets, bridge, raw session JSON and logs. The bundle was independently
+reconstructed and verified before being added to the repository.
+
+Publication also removes three trailing spaces from the generated Markdown
+summary. The checked-in bundle was regenerated from the same untouched session
+objects; no measurement, tolerance, prompt, identity-bearing session field or
+selection policy changed. The original external bundle is retained and can be
+verified with its original analyzer revision. The checked-in analyzer
+regenerates the published bundle, including its Markdown, byte for byte.

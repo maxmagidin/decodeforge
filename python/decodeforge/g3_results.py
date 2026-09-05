@@ -730,8 +730,8 @@ def _readme(sessions: list[JsonObject], analysis: JsonObject) -> bytes:
         "",
         f"Protocol: `{PROTOCOL_ID}`",
         "",
-        "This closed bundle contains three independently captured, schema-valid ",
-        "accepted sessions. Generated text is demonstration output only; direct ",
+        "This closed bundle contains three independently captured, schema-valid",
+        "accepted sessions. Generated text is demonstration output only; direct",
         "operator, model-logit, token, and dispatch evidence determine correctness.",
         "",
         f"Accepted sessions: {summary['accepted_session_count']}",
@@ -767,7 +767,7 @@ def _readme(sessions: list[JsonObject], analysis: JsonObject) -> bytes:
             "cached single-token decode calls. This bundle does not establish a "
             "blanket whole-model speedup or a comparison with stock PyTorch.",
             "",
-            "`analysis.json` retains the canonical session objects needed to ",
+            "`analysis.json` retains the canonical session objects needed to",
             "reconstruct and independently regenerate every bundle member.",
         ]
     )
