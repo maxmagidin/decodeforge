@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeAlias, cast
@@ -362,9 +363,7 @@ def verify_preparation_receipt(
 ) -> VerifiedPreparationReceipt:
     """Verify a bounded receipt while retaining execution provenance."""
 
-    value = _validate_receipt(
-        _json(_read_leaf(Path(path), _MAX_RECEIPT_BYTES, "receipt"), "receipt")
-    )
+    value = load_preparation_receipt_document(path)
     timing = cast(JsonObject, value["timing"])
     output = cast(JsonObject, value["output"])
     checkout = cast(JsonObject, value["checkout"])
@@ -387,18 +386,36 @@ def verify_preparation_receipt(
     )
 
 
+def load_preparation_receipt_document(
+    path: str | os.PathLike[str],
+) -> JsonObject:
+    """Return an independent fully validated receipt document.
+
+    This portable form validates the closed receipt and its domain-separated
+    identity but deliberately does not require the recorded executable to
+    remain present. Use :func:`verify_preparation_receipt` at capture/session
+    time when the stronger live executable rehash is required.
+    """
+
+    value = _validate_receipt(
+        _json(_read_leaf(Path(path), _MAX_RECEIPT_BYTES, "receipt"), "receipt")
+    )
+    return deepcopy(value)
+
+
 def load_preparation_receipt(path: str | os.PathLike[str]) -> JsonObject:
     """Verify a bounded receipt and return its frozen session projection."""
 
     return verify_preparation_receipt(path).session_projection()
 
 
-def _publish_new(path: Path, value: Mapping[str, Any]) -> None:
+def _publish_new(path: Path, value: Mapping[str, Any]) -> os.stat_result:
     parent_fd, name = _open_parent(path)
     temporary = f".decodeforge-receipt-{secrets.token_hex(16)}.tmp"
     descriptor: int | None = None
     linked = False
     temporary_exists = False
+    published: os.stat_result | None = None
     try:
         nofollow = getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(
@@ -439,6 +456,13 @@ def _publish_new(path: Path, value: Mapping[str, Any]) -> None:
         linked = True
         os.unlink(temporary, dir_fd=parent_fd)
         temporary_exists = False
+        published = os.fstat(descriptor)
+        named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if published.st_nlink != 1 or _fingerprint(published) != _fingerprint(named):
+            os.unlink(name, dir_fd=parent_fd)
+            linked = False
+            os.fsync(parent_fd)
+            raise G3PreparationError("published receipt identity changed")
         os.fsync(parent_fd)
     except FileExistsError as error:
         raise G3PreparationError("receipt path already exists") from error
@@ -459,6 +483,27 @@ def _publish_new(path: Path, value: Mapping[str, Any]) -> None:
                 os.fsync(parent_fd)
             except OSError:
                 pass
+        os.close(parent_fd)
+    if published is None:
+        raise G3PreparationError("receipt publication did not complete")
+    return published
+
+
+def _remove_published(path: Path, expected: os.stat_result) -> None:
+    parent_fd, name = _open_parent(path)
+    try:
+        observed = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(observed.st_mode)
+            or observed.st_nlink != 1
+            or _fingerprint(observed) != _fingerprint(expected)
+        ):
+            raise G3PreparationError("published receipt changed before rollback")
+        os.unlink(name, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+    except OSError as error:
+        raise G3PreparationError("unable to roll back published receipt") from error
+    finally:
         os.close(parent_fd)
 
 
@@ -648,6 +693,14 @@ def capture_preparation_receipt(
         pass
     else:
         raise G3PreparationError("receipt must be outside the preparation checkout")
+    try:
+        output_absolute.relative_to(checkout_absolute)
+    except ValueError:
+        pass
+    else:
+        raise G3PreparationError(
+            "asset output must be outside the preparation checkout"
+        )
     _require_new_receipt(receipt_absolute)
 
     _require_checkout_producer(checkout)
@@ -727,5 +780,17 @@ def capture_preparation_receipt(
     }
     value = {**unsigned, "receipt_identity": receipt_identity(unsigned)}
     _validate_receipt(value)
-    _publish_new(receipt, value)
-    return load_preparation_receipt(receipt)
+    published = _publish_new(receipt_absolute, value)
+    try:
+        published_revision, published_dirty = checkout_state(checkout)
+        if published_revision != revision or published_dirty:
+            raise G3PreparationError("checkout changed during receipt publication")
+        return load_preparation_receipt(receipt_absolute)
+    except BaseException as error:
+        try:
+            _remove_published(receipt_absolute, published)
+        except BaseException as cleanup_error:
+            raise BaseExceptionGroup(
+                "receipt verification and rollback both failed", [error, cleanup_error]
+            ) from error
+        raise

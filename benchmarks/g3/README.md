@@ -19,8 +19,8 @@ make prepare-g3-assets-timed \
   RECEIPT=/private/tmp/decodeforge-g3-prepare-receipt.json
 ```
 
-Both output paths must be new, and the receipt must be outside both the asset
-directory and the clean source checkout. The clock surrounds only the
+Both the asset and receipt outputs must be new and outside the clean source
+checkout; the receipt must also be outside the asset directory. The clock surrounds only the
 descriptor-stable copy of `decodeforge-prepare-qproj --source ... --output
 ...`; that command returns after its atomic no-replace directory publication
 and parent sync. The wrapper then verifies the complete prepared inventory and

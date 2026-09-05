@@ -14,6 +14,7 @@ from decodeforge.g3_preparation import (
     G3PreparationError,
     capture_preparation_receipt,
     load_preparation_receipt,
+    load_preparation_receipt_document,
     receipt_identity,
     verify_preparation_receipt,
 )
@@ -112,6 +113,36 @@ def test_receipt_parser_retains_provenance_and_projects_session(tmp_path: Path) 
         "elapsed_ns": 150,
         "asset_inventory_identity": CANONICAL_ASSET_INVENTORY_IDENTITY,
     }
+
+
+def test_portable_document_is_closed_identity_bound_and_deep_independent(
+    tmp_path: Path,
+) -> None:
+    tool = _tool(tmp_path)
+    receipt = tmp_path / "receipt.json"
+    unsigned = _unsigned(tool, tmp_path)
+    _write_receipt(receipt, unsigned)
+
+    first = load_preparation_receipt_document(receipt)
+    tool.unlink()
+    second = load_preparation_receipt_document(receipt)
+    first["source"]["model_id"] = "mutated/in-memory"
+    assert second["source"] == SOURCE
+    with pytest.raises(G3PreparationError, match="preparation tool"):
+        verify_preparation_receipt(receipt)
+
+    unsigned["source"]["unexpected"] = True
+    _write_receipt(receipt, unsigned)
+    with pytest.raises(G3PreparationError, match="source is not a closed object"):
+        load_preparation_receipt_document(receipt)
+
+    unsigned = _unsigned(_tool(tmp_path), tmp_path)
+    _write_receipt(receipt, unsigned)
+    value = json.loads(receipt.read_text(encoding="utf-8"))
+    value["timing"]["elapsed_ns"] = 149
+    receipt.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(G3PreparationError, match="identity mismatch"):
+        load_preparation_receipt_document(receipt)
 
 
 def test_receipt_rejects_identity_tamper_and_semantic_rehash(tmp_path: Path) -> None:
@@ -216,7 +247,7 @@ def test_capture_times_only_prepare_then_verifies_and_publishes(tmp_path: Path) 
     )
 
     assert events == ["clock", "prepare", "clock", "verify"]
-    assert calls == 2
+    assert calls == 3
     assert projection["elapsed_ns"] == 150
     verified = verify_preparation_receipt(receipt)
     assert verified.command_argv == (
@@ -305,3 +336,49 @@ def test_capture_preflights_no_overwrite_and_external_receipt(tmp_path: Path) ->
             prepare_tool=tool,
             run_tool=run_tool,
         )
+
+    with pytest.raises(G3PreparationError, match="asset output must be outside"):
+        capture_preparation_receipt(
+            checkout=ROOT,
+            source=tmp_path / "model.safetensors",
+            output=ROOT / "untracked-g3-assets-test",
+            receipt=tmp_path / "new-receipt.json",
+            prepare_tool=tool,
+            run_tool=run_tool,
+        )
+    with pytest.raises(G3PreparationError, match="receipt must be outside"):
+        capture_preparation_receipt(
+            checkout=ROOT,
+            source=tmp_path / "model.safetensors",
+            output=tmp_path / "other-assets",
+            receipt=ROOT / "untracked-g3-receipt-test.json",
+            prepare_tool=tool,
+            run_tool=run_tool,
+        )
+
+
+def test_postpublication_checkout_change_rolls_back_receipt(tmp_path: Path) -> None:
+    tool = _tool(tmp_path)
+    output = tmp_path / "assets"
+    receipt = tmp_path / "receipt.json"
+
+    def prepare_then_verify(arguments: Sequence[str]) -> None:
+        if "--source" in arguments:
+            output.mkdir()
+            (output / "inventory.json").write_text(
+                json.dumps(_inventory()), encoding="utf-8"
+            )
+
+    states = iter(((REVISION, False), (REVISION, False), ("2" * 40, False)))
+    with pytest.raises(G3PreparationError, match="receipt publication"):
+        capture_preparation_receipt(
+            checkout=ROOT,
+            source=tmp_path / "model.safetensors",
+            output=output,
+            receipt=receipt,
+            prepare_tool=tool,
+            clock=iter((1, 2)).__next__,
+            run_tool=prepare_then_verify,
+            checkout_state=lambda _checkout: next(states),
+        )
+    assert not receipt.exists()
