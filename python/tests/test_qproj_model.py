@@ -259,6 +259,7 @@ def test_exact_order_install_observability_guards_and_restore(
     installation.close()
     installation.close()
     assert installation.closed
+    assert installation.counters.installed_modules == 0
     assert installation.counters.restored_modules == 22
     assert installation.counters.live_adapters == 0
     assert tuple(model.state_dict()) == original_state_keys

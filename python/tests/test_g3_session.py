@@ -209,7 +209,7 @@ class _Installation:
             for layer in range(22)
         )
         return QProjModelCounters(
-            installed_modules=22,
+            installed_modules=0 if self._closed else 22,
             live_adapters=0 if self._closed else 22,
             restored_modules=22 if self._closed else 0,
             in_flight=0,
@@ -351,6 +351,30 @@ def _request() -> SessionRequest:
         session_output=_TEST_EXTERNAL / "decodeforge-test-session.json",
         process_start_ns=0,
     )
+
+
+@pytest.mark.parametrize("phase", ["installation", "cleanup"])
+def test_session_rejects_inconsistent_installed_module_counts(
+    monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    class InconsistentInstallation(_Installation):
+        @property
+        def counters(self) -> QProjModelCounters:
+            snapshot = super().counters
+            if phase == "installation" and not self.closed:
+                return replace(snapshot, installed_modules=21)
+            if phase == "cleanup" and self.closed:
+                return replace(snapshot, installed_modules=1)
+            return snapshot
+
+    monkeypatch.setitem(globals(), "_Installation", InconsistentInstallation)
+    expected = (
+        "transactional installation is not fully live and idle"
+        if phase == "installation"
+        else "adapter cleanup left installed query projections"
+    )
+    with pytest.raises(G3SessionError, match=expected):
+        run_session(_request(), dependencies=_Harness().dependencies())
 
 
 def test_fake_complete_session_is_fully_reconciled() -> None:
