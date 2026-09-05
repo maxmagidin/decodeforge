@@ -40,6 +40,20 @@ def _fake_uname(path: Path) -> Path:
     return script
 
 
+def _failing_preflight_uv(path: Path) -> Path:
+    script = path / "failing-uv"
+    script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if any('check_rust_toolchain.py' in argument for argument in sys.argv):\n"
+        "    print('preflight failure', file=sys.stderr)\n"
+        "    raise SystemExit(73)\n"
+        "raise SystemExit('unexpected uv invocation: ' + repr(sys.argv))\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return script
+
+
 def _make(root: Path, fake_uname: Path, input_origin: str, *arguments: str) -> None:
     environment = os.environ.copy()
     environment["MAKE_RECORDER"] = str(root / "records.jsonl")
@@ -222,3 +236,53 @@ def test_legacy_make_recipes_preserve_raw_path_arguments(
             "env": executable_records[0]["env"],
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("target", "inputs"),
+    [
+        (
+            "prepare-g3-assets",
+            {"WEIGHTS": "/tmp/model.safetensors", "OUTPUT": "/tmp/assets"},
+        ),
+        (
+            "prepare-g3-assets-timed",
+            {
+                "WEIGHTS": "/tmp/model.safetensors",
+                "OUTPUT": "/tmp/assets",
+                "RECEIPT": "/tmp/receipt.json",
+            },
+        ),
+        ("build-g3-bridge", {}),
+        ("test-g3-adapter-real", {"ASSETS": "/tmp/assets"}),
+    ],
+)
+def test_g3_release_targets_fail_before_cargo_on_toolchain_preflight_error(
+    tmp_path: Path, target: str, inputs: dict[str, str]
+) -> None:
+    """A failed Rust loader check must stop every release capture path."""
+    uv = _failing_preflight_uv(tmp_path)
+    cargo = _recorder(tmp_path, "fake-cargo")
+    environment = os.environ.copy()
+    environment["MAKE_RECORDER"] = str(tmp_path / "records.jsonl")
+    environment["PATH"] = f"{tmp_path}{os.pathsep}{environment['PATH']}"
+    arguments = [
+        "make",
+        "-s",
+        target,
+        f"UV={uv}",
+        f"CARGO={cargo}",
+        *(f"{key}={value}" for key, value in inputs.items()),
+    ]
+    result = subprocess.run(
+        arguments,
+        cwd=ROOT,
+        check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "preflight failure" in result.stderr
+    assert "Error 73" in result.stderr
+    assert not (tmp_path / "records.jsonl").exists()

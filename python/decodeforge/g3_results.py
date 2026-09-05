@@ -749,6 +749,24 @@ def _readme(sessions: list[JsonObject], analysis: JsonObject) -> bytes:
     lines.extend(
         [
             "",
+            "## Timing boundary and interpretation",
+            "",
+            "The measured generation paths use guarded, instrumented `q_proj` "
+            "adapters and are not isolated kernel timings. Hook instrumentation "
+            "clones projection inputs and outputs. The same-Q8 fallback also "
+            "clones and hashes its FP32 fallback weight on every call; those "
+            "integrity costs are included in the reported generation timings.",
+            "",
+            "`native_work_ns` is unavailable because the bridge exposes no "
+            "kernel-only timer. The recorded dispatch and generation timings "
+            "therefore include the guarded boundary and instrumentation. Offline "
+            "preparation and cold-start components are recorded separately and "
+            "are excluded from the warmed samples in the table above.",
+            "",
+            "Coverage is limited to the 22 TinyLlama `q_proj` adapters and their "
+            "cached single-token decode calls. This bundle does not establish a "
+            "blanket whole-model speedup or a comparison with stock PyTorch.",
+            "",
             "`analysis.json` retains the canonical session objects needed to ",
             "reconstruct and independently regenerate every bundle member.",
         ]

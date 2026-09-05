@@ -539,6 +539,23 @@ def test_inclusive_total_timing_contains_raw_steps() -> None:
     assert _semantic_path(session) == ["runs", 0, "timing"]
 
 
+def test_drift_rejects_integer_timing_beyond_float_range() -> None:
+    session = _accepted_session()
+    for run in session["runs"]:
+        if run["phase"] == "measured":
+            run["timing"]["total_ns"] = 10**1000
+    assert _semantic_path(session) == ["drift", "paths", 0]
+
+
+@pytest.mark.parametrize(
+    "field", ("first_window_median_ns", "last_window_median_ns", "ratio")
+)
+def test_drift_rejects_summary_integer_beyond_float_range(field: str) -> None:
+    session = _accepted_session()
+    session["drift"]["paths"][0][field] = 10**1000
+    assert _semantic_path(session) == ["drift", "paths", 0]
+
+
 def test_accepted_q_projection_timing_is_not_nullable() -> None:
     session = _accepted_session()
     session["runs"][0]["timing"]["q_projection_ns"] = None

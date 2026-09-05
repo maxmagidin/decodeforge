@@ -220,6 +220,7 @@ analysis.
 - [Design and technical specification](docs/DESIGN.md)
 - [Benchmark and experimental methodology](docs/BENCHMARKS.md)
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
+- [Delivery progress and remaining issues](docs/PROGRESS_2026_09_05.md)
 - [G0 evidence contract](docs/G0_EVIDENCE_V1.md)
 - [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
 - [ADR 0004: Strict output-vector NEON lowering](docs/decisions/0004-strict-output-vector-neon.md)

@@ -401,9 +401,11 @@ def test_g3_surfaces_transport_raw_public_inputs(
         cargo=True,
         uv=True,
     )
-    assert len(preparation) == 2
+    # The timed preparation now runs the Rust dylib loader preflight before
+    # building the helper and invoking the preparation wrapper.
+    assert len(preparation) == 3
     assert preparation[0]["cargo_target"] == cargo_target
-    preparation_argv = preparation[1]["argv"]
+    preparation_argv = preparation[2]["argv"]
     assert isinstance(preparation_argv, list)
     assert preparation_argv[preparation_argv.index("--source") + 1] == weights
     assert preparation_argv[preparation_argv.index("--output") + 1] == output
@@ -456,8 +458,10 @@ def test_g3_surfaces_transport_raw_public_inputs(
         uv=True,
         darwin_arm64=True,
     )
-    assert len(adapter) == 3
-    adapter_argv = adapter[2]["argv"]
+    # The adapter checkpoint preflights first, verifies assets, builds the
+    # bridge, and finally invokes the Python checkpoint.
+    assert len(adapter) == 4
+    adapter_argv = adapter[3]["argv"]
     assert isinstance(adapter_argv, list)
     assert adapter_argv[adapter_argv.index("--library") + 1] == (
         cargo_target + "/release/libdecodeforge_bridge.dylib"
@@ -609,6 +613,7 @@ def test_test_g3_dry_run_has_the_closed_focused_gate() -> None:
         "python/tests/test_g3_evidence.py",
         "python/tests/test_g3_preparation.py",
         "python/tests/test_g3_session.py",
+        "python/tests/test_g3_session_cli.py",
         "python/tests/test_g3_results.py",
     ]
     positions = [output.index(suite) for suite in expected_suites]

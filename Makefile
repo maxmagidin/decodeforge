@@ -163,13 +163,13 @@ verify-g1-result:
 	diff -u "$(G1_RESULT)/report.md" "$$output/report.md"; \
 	echo "verify-g1-result: ok"
 
-prepare-g3-assets:
+prepare-g3-assets: check-rust-toolchain
 	@test -n "$${WEIGHTS}" || { echo "prepare-g3-assets: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
 	@test -n "$${OUTPUT}" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj -- --source "$${WEIGHTS}" --output "$${OUTPUT}"
 
-prepare-g3-assets-timed:
+prepare-g3-assets-timed: check-rust-toolchain
 	@test -n "$${WEIGHTS}" || { echo "prepare-g3-assets-timed: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
 	@test -n "$${OUTPUT}" || { echo "prepare-g3-assets-timed: OUTPUT=<new asset directory> is required" >&2; exit 2; }
 	@test -n "$${RECEIPT}" || { echo "prepare-g3-assets-timed: RECEIPT=<new receipt JSON outside OUTPUT> is required" >&2; exit 2; }
@@ -196,9 +196,10 @@ test-g3:
 		python/tests/test_g3_evidence.py \
 		python/tests/test_g3_preparation.py \
 		python/tests/test_g3_session.py \
+		python/tests/test_g3_session_cli.py \
 		python/tests/test_g3_results.py
 
-test-g3-adapter-real: verify-g3-assets
+test-g3-adapter-real: check-rust-toolchain verify-g3-assets
 	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
 		echo "test-g3-adapter-real: requires an Apple-arm64 macOS host" >&2; exit 2; }
 	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
@@ -206,7 +207,7 @@ test-g3-adapter-real: verify-g3-assets
 		--library "$${CARGO_TARGET_DIR:-target}/release/libdecodeforge_bridge.dylib" \
 		--assets "$${ASSETS}" --spec "$${SPEC:-benchmarks/g3/spec.json}"
 
-build-g3-bridge:
+build-g3-bridge: check-rust-toolchain
 	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
 
 run-g3-session:
