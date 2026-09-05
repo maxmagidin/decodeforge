@@ -212,7 +212,10 @@ def test_make_runs_g1_session_without_cargo_launch_environment(
 
     assert "cargo build --quiet --release --locked" in result.stdout
     assert "cargo run" not in result.stdout
-    assert f'"{target_dir}/release/decodeforge-g1-bench" run-session' in result.stdout
+    assert (
+        '"${CARGO_TARGET_DIR:-target}/release/decodeforge-g1-bench" run-session'
+        in result.stdout
+    )
 
 
 def test_make_verify_g1_result_fails_closed_when_analyzer_fails() -> None:
