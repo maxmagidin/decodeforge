@@ -2,7 +2,8 @@ use super::*;
 use crate::PackManifestV1;
 use safetensors::tensor::TensorView;
 use safetensors::{Dtype, serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::{Seek, SeekFrom, Write};
 use tempfile::TempDir;
 
 const TENSOR_NAME: &str = "model.layers.0.self_attn.q_proj.weight";
@@ -335,6 +336,47 @@ fn source_must_be_regular_non_symlink_and_match_size_and_hash() {
     let error =
         prepare_q8_linear_asset_v1(&source_path, &output, &wrong_hash, &tensor_spec).unwrap_err();
     assert_eq!(error.code(), "DFE-ASSET-004");
+}
+
+#[test]
+fn source_mutation_and_truncation_during_snapshot_fail_closed() {
+    for truncate in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let source_path = directory.path().join("mutable.safetensors");
+        let source_bytes = vec![0x5a; 2 * 1024 * 1024 + 17];
+        fs::write(&source_path, &source_bytes).unwrap();
+        let spec = source_spec("mutable.safetensors", &source_bytes);
+        let mut changed = false;
+        let result = SnapshottedSource::open_with_progress_hook(&source_path, &spec, |copied| {
+            if changed {
+                return;
+            }
+            assert_eq!(copied, 1024 * 1024);
+            changed = true;
+            if truncate {
+                OpenOptions::new()
+                    .write(true)
+                    .open(&source_path)
+                    .unwrap()
+                    .set_len(copied + 7)
+                    .unwrap();
+            } else {
+                let mut writer = OpenOptions::new().write(true).open(&source_path).unwrap();
+                writer.seek(SeekFrom::Start(copied + 7)).unwrap();
+                writer
+                    .write_all(&[source_bytes[(copied + 7) as usize] ^ 1])
+                    .unwrap();
+                writer.flush().unwrap();
+            }
+        });
+        let error = match result {
+            Ok(_) => panic!("changed source unexpectedly produced a snapshot"),
+            Err(error) => error,
+        };
+        assert!(changed);
+        assert_eq!(error.code(), "DFE-ASSET-004");
+        assert!(error.summary().contains("changed"));
+    }
 }
 
 #[test]

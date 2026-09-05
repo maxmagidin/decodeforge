@@ -1,8 +1,10 @@
 //! Bounded preparation of model weights for the native Q8 runtime bridge.
 //!
 //! The G3.1 checkpoint prepares exactly 22 named rank-two BF16/F32 query
-//! projections from one pinned safetensors model. The source is memory mapped
-//! so a multi-gigabyte model is never copied into a second in-memory buffer.
+//! projections from one pinned safetensors model. The source is copied into an
+//! anonymous private file before parsing, so a multi-gigabyte model is never
+//! copied into a second in-memory buffer and later source mutation cannot fault
+//! or alter the bytes consumed by preparation.
 //! Each selected tensor flows through the frozen G0 quantizer, G1 OI4 packer,
 //! generated-module identity, and canonical same-Q8 dequantizer before the
 //! complete inventory is atomically published.
@@ -603,17 +605,8 @@ pub fn prepare_q8_linear_asset_v1(
     tensor_spec.verify()?;
     validate_output_target(output_directory)?;
 
-    let source = MappedSource::open(source_path, source_spec)?;
-    let actual_source_identity = sha256_identity(source.bytes());
-    if actual_source_identity != source_spec.source_identity {
-        return Err(invalid(
-            "DFE-ASSET-004",
-            format!(
-                "source SHA-256 mismatch: expected {}, got {actual_source_identity}.",
-                source_spec.source_identity
-            ),
-        ));
-    }
+    let source = SnapshottedSource::open(source_path, source_spec)?;
+    let actual_source_identity = source.content_identity().to_owned();
 
     validate_header_bound(source.bytes())?;
     let tensors = SafeTensors::deserialize(source.bytes()).map_err(|error| {
@@ -652,17 +645,8 @@ pub fn prepare_q_proj_inventory_v1(
     source_spec.verify()?;
     validate_q_proj_specs(tensor_specs)?;
     validate_output_target(output_directory)?;
-    let source = MappedSource::open(source_path, source_spec)?;
-    let actual_source_identity = sha256_identity(source.bytes());
-    if actual_source_identity != source_spec.source_identity {
-        return Err(invalid(
-            "DFE-ASSET-004",
-            format!(
-                "source SHA-256 mismatch: expected {}, got {actual_source_identity}.",
-                source_spec.source_identity
-            ),
-        ));
-    }
+    let source = SnapshottedSource::open(source_path, source_spec)?;
+    let actual_source_identity = source.content_identity().to_owned();
     validate_header_bound(source.bytes())?;
     let tensors = SafeTensors::deserialize(source.bytes()).map_err(|error| {
         invalid(
@@ -1379,14 +1363,32 @@ impl FileIdentity {
     }
 }
 
-struct MappedSource {
-    file: File,
+struct SnapshottedSource {
+    snapshot: File,
     map: Mmap,
     identity: FileIdentity,
+    content_identity: String,
 }
 
-impl MappedSource {
+impl SnapshottedSource {
     fn open(path: &Path, spec: &ModelSourceSpecV1) -> Result<Self> {
+        Self::open_inner(path, spec, |_| {})
+    }
+
+    #[cfg(test)]
+    fn open_with_progress_hook(
+        path: &Path,
+        spec: &ModelSourceSpecV1,
+        hook: impl FnMut(u64),
+    ) -> Result<Self> {
+        Self::open_inner(path, spec, hook)
+    }
+
+    fn open_inner(
+        path: &Path,
+        spec: &ModelSourceSpecV1,
+        mut progress_hook: impl FnMut(u64),
+    ) -> Result<Self> {
         let descriptor = open(
             path,
             OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
@@ -1398,7 +1400,7 @@ impl MappedSource {
                 format!("unable to securely open source {}: {error}", path.display()),
             )
         })?;
-        let file = File::from(descriptor);
+        let mut file = File::from(descriptor);
         flock(&file, FlockOperation::NonBlockingLockShared).map_err(|error| {
             invalid(
                 "DFE-ASSET-002",
@@ -1427,23 +1429,105 @@ impl MappedSource {
                 ),
             ));
         }
-        // SAFETY: the descriptor is a securely opened regular file, remains
-        // alive for the map lifetime, and is held under a non-blocking shared
-        // advisory lock. The full identity is rechecked after all reads. A
-        // non-cooperating process can still truncate a mapped file on Unix;
-        // callers must treat the pinned model file as immutable while this
-        // function runs. Avoiding that OS-level mmap limitation would require
-        // a second multi-gigabyte snapshot and is intentionally deferred.
-        let map = unsafe { MmapOptions::new().map(&file) }.map_err(|error| {
+        let mut snapshot = tempfile::tempfile().map_err(|error| {
             invalid(
                 "DFE-ASSET-002",
-                format!("unable to memory-map source {}: {error}", path.display()),
+                format!("unable to create private source snapshot: {error}"),
+            )
+        })?;
+        let mut hasher = Sha256::new();
+        let mut remaining = identity.length;
+        let mut copied = 0u64;
+        let mut buffer = vec![0u8; 1024 * 1024];
+        while remaining != 0 {
+            let requested = usize::try_from(remaining.min(buffer.len() as u64))
+                .expect("bounded read request fits usize");
+            let count = file.read(&mut buffer[..requested]).map_err(|error| {
+                invalid(
+                    "DFE-ASSET-004",
+                    format!("unable to snapshot pinned source: {error}"),
+                )
+            })?;
+            if count == 0 {
+                return Err(invalid(
+                    "DFE-ASSET-004",
+                    "source changed or ended while it was snapshotted.",
+                ));
+            }
+            snapshot.write_all(&buffer[..count]).map_err(|error| {
+                invalid(
+                    "DFE-ASSET-002",
+                    format!("unable to write private source snapshot: {error}"),
+                )
+            })?;
+            hasher.update(&buffer[..count]);
+            let count = count as u64;
+            copied += count;
+            remaining -= count;
+            progress_hook(copied);
+        }
+        let mut extra = [0u8; 1];
+        let has_extra = file.read(&mut extra).map_err(|error| {
+            invalid(
+                "DFE-ASSET-004",
+                format!("unable to finish pinned source snapshot: {error}"),
+            )
+        })? != 0;
+        let after = file.metadata().map_err(|error| {
+            invalid(
+                "DFE-ASSET-002",
+                format!("unable to recheck snapshotted source: {error}"),
+            )
+        })?;
+        if has_extra || FileIdentity::from_metadata(&after) != identity {
+            return Err(invalid(
+                "DFE-ASSET-004",
+                "source changed while it was snapshotted.",
+            ));
+        }
+        let content_identity = format!("sha256:{}", crate::hex_lower(&hasher.finalize()));
+        if content_identity != spec.source_identity {
+            return Err(invalid(
+                "DFE-ASSET-004",
+                format!(
+                    "source SHA-256 mismatch: expected {}, got {content_identity}.",
+                    spec.source_identity
+                ),
+            ));
+        }
+        snapshot.sync_all().map_err(|error| {
+            invalid(
+                "DFE-ASSET-002",
+                format!("unable to sync private source snapshot: {error}"),
+            )
+        })?;
+        let snapshot_metadata = snapshot.metadata().map_err(|error| {
+            invalid(
+                "DFE-ASSET-002",
+                format!("unable to inspect private source snapshot: {error}"),
+            )
+        })?;
+        let snapshot_identity = FileIdentity::from_metadata(&snapshot_metadata);
+        if snapshot_identity.length != identity.length {
+            return Err(invalid(
+                "DFE-ASSET-004",
+                "private source snapshot has the wrong byte extent.",
+            ));
+        }
+        // SAFETY: `snapshot` is an anonymous private regular file owned by this
+        // object. No path names it, its exact bytes are complete and synced,
+        // and the descriptor remains alive for the map lifetime.
+        let map = unsafe { MmapOptions::new().map(&snapshot) }.map_err(|error| {
+            invalid(
+                "DFE-ASSET-002",
+                format!("unable to memory-map private source snapshot: {error}"),
             )
         })?;
         let result = Self {
-            file,
+            snapshot,
             map,
-            identity,
+            identity: snapshot_identity,
+            content_identity,
         };
         result.verify_unchanged()?;
         Ok(result)
@@ -1453,11 +1537,15 @@ impl MappedSource {
         &self.map
     }
 
+    fn content_identity(&self) -> &str {
+        &self.content_identity
+    }
+
     fn verify_unchanged(&self) -> Result<()> {
-        let after = self.file.metadata().map_err(|error| {
+        let after = self.snapshot.metadata().map_err(|error| {
             invalid(
                 "DFE-ASSET-002",
-                format!("unable to recheck mapped source: {error}"),
+                format!("unable to recheck private source snapshot: {error}"),
             )
         })?;
         if FileIdentity::from_metadata(&after) != self.identity
@@ -1465,7 +1553,7 @@ impl MappedSource {
         {
             return Err(invalid(
                 "DFE-ASSET-004",
-                "source identity changed while it was mapped.",
+                "private source snapshot changed while it was mapped.",
             ));
         }
         Ok(())
