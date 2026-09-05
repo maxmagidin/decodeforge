@@ -44,6 +44,7 @@ export OUTPUT_DIR BUNDLE CASES PREPARED_WEIGHTS CHECKOUT
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
 G1_RESULT := results/g1/apple-m4-primary
+G3_RESULT := results/g3/apple-m4-primary
 
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
@@ -92,6 +93,7 @@ test: test-bridge-cdylib
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
 
 check: lint test verify-g1-result
+	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"
 
 check-pytorch-pin:
 	$(UV) run --frozen --extra pytorch-cpu python -c 'import platform, torch; assert torch.__version__.split("+")[0] == "2.13.0"; print(f"pytorch-pin: ok (torch={torch.__version__}, host={platform.system()}:{platform.machine()})")'

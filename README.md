@@ -282,13 +282,20 @@ behavior on Linux). The guarded eager PyTorch operator adds verified private
 library snapshots, exact tensor guards, observable fallback/error counters, and
 tested lifecycle ownership around that release boundary.
 
-G3.0–G3.3 are code-complete: the frozen experiment, deterministic 22-layer
-asset preparation, identity-bound owning adapter, and transactional all-layer
-installation have closed tests. Hardened preparation, session, analyzer, and
-bundle-verifier commands are ready for the formal capture. G3 remains in
-progress until three fresh independent sessions are accepted and their exact
-ten-file result bundle is verified and checked in; no model-performance claim
-is made before that evidence exists.
+G3 is complete under its frozen execution/correctness protocol. The checked-in
+[ten-file M4 result](results/g3/apple-m4-primary/README.md) retains three
+accepted fresh-process sessions from clean revision `ad15f5d`, with all 22
+query projections exercising native cached decode, exact token agreement,
+numerical checks and clean restoration. `make check` now independently
+regenerates and verifies this bundle as well as the G1 result.
+
+The pooled median total-generation times are 1.732 seconds for the guarded
+same-Q8 reference and 0.751 seconds for hybrid native execution. The reference
+includes per-call fallback-weight cloning and hashing; both paths include hook
+instrumentation. These are not isolated kernel timings or a stock-PyTorch
+comparison. The frozen prompt produced control-token text rather than a useful
+sentence, so a polished text demo remains follow-up work. See the
+[result interpretation and limitations](docs/G3_RESULT_2026_09_05.md).
 
 Reproduce the checked-in analysis with `make verify-g1-result`.
 
