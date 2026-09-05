@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -27,6 +28,27 @@ from decodeforge.qproj_adapter import (  # noqa: E402
 
 MODULE_ID = "sha256:" + "a" * 64
 PACK_ID = "sha256:" + "b" * 64
+
+
+def _call_bounded(callback: Callable[[], Any]) -> Any:
+    """Run a potentially reentrant callback without allowing a deadlock."""
+
+    outcomes: queue.Queue[tuple[bool, Any]] = queue.Queue()
+
+    def worker() -> None:
+        try:
+            outcomes.put((True, callback()))
+        except BaseException as error:
+            outcomes.put((False, error))
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout=1.0)
+    assert not thread.is_alive(), "reentrant adapter call deadlocked"
+    succeeded, value = outcomes.get_nowait()
+    if not succeeded:
+        raise cast(BaseException, value)
+    return value
 
 
 class FakeBinding:
@@ -277,6 +299,41 @@ def test_injected_native_error_is_hard_and_never_reruns_fallback(
         closed=False,
     )
     adapter.close()
+
+
+def test_close_from_admitted_native_callback_fails_fast(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter: QProjAdapter
+
+    def close_native(*_args: Any) -> Any:
+        adapter.close()
+        return pytest.fail("close unexpectedly returned")
+
+    adapter, binding, _weight_source = _adapter(registry, native=close_native)
+    with pytest.raises(QProjAdapterError, match="admitted forward"):
+        _call_bounded(lambda: adapter(torch.ones((1, 1, 8), dtype=torch.float32)))
+    assert adapter.counters.native_error == 1
+    assert adapter.counters.in_flight == 0
+    adapter.close()
+    assert binding.closed
+
+
+def test_recursive_native_forward_fails_fast(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter: QProjAdapter
+
+    def recursive_native(*args: Any) -> Any:
+        return adapter(args[0])
+
+    adapter, binding, _weight_source = _adapter(registry, native=recursive_native)
+    with pytest.raises(QProjAdapterError, match="recursive forward"):
+        _call_bounded(lambda: adapter(torch.ones((1, 1, 8), dtype=torch.float32)))
+    assert adapter.counters.native_error == 1
+    assert adapter.counters.in_flight == 0
+    adapter.close()
+    assert binding.closed
 
 
 def test_identity_shape_and_module_mismatches_close_new_binding(

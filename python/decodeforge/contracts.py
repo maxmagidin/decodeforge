@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 from referencing.exceptions import Unresolvable
 
+from decodeforge._json import reject_nonfinite_number
 from decodeforge.q8 import (
     Q8Error,
     Q8Weights,
@@ -82,6 +83,7 @@ def load_json(path: Path) -> JsonObject:
     value = json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=_object_without_duplicates,
+        parse_float=reject_nonfinite_number,
         parse_constant=lambda value: (_ for _ in ()).throw(
             ValueError(f"non-finite JSON value: {value}")
         ),

@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeAlias
 
+from decodeforge._json import reject_nonfinite_number
+
 JsonObject: TypeAlias = dict[str, Any]
+
 
 RUN_MANIFEST_NAME: Final = "run-manifest.json"
 BUNDLE_ID_PREFIX: Final = b"DecodeForge/run-bundle/v1\0"
@@ -329,6 +332,7 @@ def _decode_json_snapshot(
         value = json.loads(
             content.decode("utf-8"),
             object_pairs_hook=_object_without_duplicates,
+            parse_float=reject_nonfinite_number,
             parse_constant=lambda value: (_ for _ in ()).throw(
                 ValueError(f"non-finite JSON value: {value}")
             ),

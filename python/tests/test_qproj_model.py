@@ -341,7 +341,7 @@ def test_asset_mismatch_fails_before_model_mutation_or_handle_creation(
     )
 
 
-@pytest.mark.parametrize("failure", ["bias", "trainable", "shape"])
+@pytest.mark.parametrize("failure", ["bias", "trainable", "shape", "nonfinite"])
 def test_model_linear_contract_is_checked_before_creation(
     monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
@@ -353,6 +353,9 @@ def test_model_linear_contract_is_checked_before_creation(
         projection.bias = nn.Parameter(torch.zeros(1), requires_grad=False)
     elif failure == "trainable":
         projection.weight.requires_grad_(True)
+    elif failure == "nonfinite":
+        with torch.no_grad():
+            projection.weight.view(-1)[0] = float("nan")
     else:
         projection.in_features = 1024
 

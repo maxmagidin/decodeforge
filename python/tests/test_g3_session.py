@@ -459,6 +459,62 @@ def test_checkout_change_during_session_fails_closed() -> None:
         )
 
 
+def test_preparation_checkout_mismatch_fails_before_model_load_or_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dependencies = _Harness().dependencies()
+    calls: list[str] = []
+    original_verify_inputs = dependencies.verify_inputs
+
+    def verify_inputs(request: SessionRequest, spec: Any) -> VerifiedInputState:
+        calls.append("verify_inputs")
+        verified = original_verify_inputs(request, spec)
+        original_close = verified.close
+
+        def close() -> None:
+            calls.append("close")
+            original_close()
+
+        monkeypatch.setattr(verified, "close", close)
+        return verified
+
+    def configure_torch(_spec: Mapping[str, Any]) -> None:
+        calls.append("configure_torch")
+
+    def verify_preparation(*_args: Any) -> None:
+        calls.append("verify_preparation")
+
+    receipt = VerifiedPreparationReceipt(
+        checkout_revision="2" * 40,
+        command_argv=("decodeforge-prepare-qproj", "--offline"),
+        tool_executable_identity=_ident(900),
+        receipt_identity=_ident(700),
+        elapsed_ns=1,
+        asset_inventory_identity=TINYLLAMA_QPROJ_AGGREGATE_ID,
+    )
+
+    def load_model(_path: Path, _spec: Any) -> nn.Module:
+        calls.append("load_model")
+        return LlamaForCausalLM()
+
+    def install(*_args: Any) -> Any:
+        calls.append("install")
+        return None
+
+    dependencies = replace(
+        dependencies,
+        verify_inputs=verify_inputs,
+        load_preparation_receipt=lambda _path: receipt,
+        load_model=load_model,
+        install=install,
+        configure_torch=configure_torch,
+        verify_preparation_command=verify_preparation,
+    )
+    with pytest.raises(G3SessionError, match="preparation receipt checkout revision"):
+        run_session(_request(), dependencies=dependencies)
+    assert calls == ["verify_inputs", "close"]
+
+
 def test_result_publication_is_no_replace_and_rejects_symlink_parent(
     tmp_path: Path,
 ) -> None:
@@ -477,6 +533,20 @@ def test_result_publication_is_no_replace_and_rejects_symlink_parent(
     linked.symlink_to(real, target_is_directory=True)
     with pytest.raises(G3SessionError, match="without symlinks"):
         publish_new_json(linked / "session.json", {})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_result_publication_rejects_nonfinite_json_before_creating_output(
+    tmp_path: Path, value: float
+) -> None:
+    output = tmp_path / "session.json"
+    existing = tmp_path / "existing.txt"
+    existing.write_text("keep", encoding="utf-8")
+    with pytest.raises(ValueError, match="Out of range float values"):
+        publish_new_json(output, {"nested": {"value": value}})
+    assert not output.exists()
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["existing.txt"]
 
 
 def _write_receipt(path: Path, *, tool_name: str = "decodeforge-prepare-qproj") -> None:

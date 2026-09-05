@@ -71,6 +71,32 @@ def test_duplicate_json_key_is_rejected(tmp_path: Path) -> None:
     assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-008"]
 
 
+def test_nonfinite_numeric_token_is_rejected(tmp_path: Path) -> None:
+    document = tmp_path / "overflow.json"
+    document.write_text(
+        '{"schema_version":1,"code":"DFE-BUNDLE-001",'
+        '"severity":"error","component":"bundle",'
+        '"summary":"bad","context":{"size":1e999}}',
+        encoding="utf-8",
+    )
+    diagnostics = validate_path(document, "diagnostic")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-001"]
+
+
+def test_nonfinite_numeric_token_in_permissive_context_is_rejected(
+    tmp_path: Path,
+) -> None:
+    document = tmp_path / "context-overflow.json"
+    document.write_text(
+        '{"schema_version":1,"code":"DFE-BUNDLE-001",'
+        '"severity":"error","component":"bundle",'
+        '"summary":"bad","context":{"metadata":{"value":1e999}}}',
+        encoding="utf-8",
+    )
+    diagnostics = validate_path(document, "diagnostic")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-001"]
+
+
 def test_empty_foundation_bundle_has_exact_missing_artifacts() -> None:
     diagnostics = verify_bundle(BUNDLES / "foundation-empty")
     assert [item["code"] for item in diagnostics] == ["DFE-BUNDLE-001"] * 3

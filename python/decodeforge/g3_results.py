@@ -18,7 +18,10 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, TypeAlias, cast
 
+from decodeforge._json import reject_nonfinite_number
+
 JsonObject: TypeAlias = dict[str, Any]
+
 
 PROTOCOL_ID: Final = "g3-tinyllama-qproj-generation-v1"
 SESSION_FORMAT: Final = "decodeforge_g3_generation_session_v1"
@@ -104,6 +107,7 @@ def _parse_json(content: bytes, label: str) -> JsonObject:
         value = json.loads(
             content.decode("utf-8"),
             object_pairs_hook=_object_without_duplicates,
+            parse_float=reject_nonfinite_number,
             parse_constant=_reject_constant,
         )
     except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as error:

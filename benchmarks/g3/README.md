@@ -81,6 +81,17 @@ The recorded SHA-256 authenticates the exact bridge bytes; the external-target
 rebuild command is provenance and does not claim unrelated Cargo-home or
 tool-installation paths reproduce identical dylib bytes.
 
+## Timing interpretation boundary
+
+The guarded same-Q8 reference is a semantic baseline, not a pure matvec
+microbenchmark: each prepared call includes the binding's per-call full-weight
+clone/hash work before the linear operation. Both paths execute prefill and
+cached decode; the reference-only decode portion is the comparison that isolates
+the native cached-query path. Dispatch timings include guards and adapter
+hooks, while native inner `work_ns` is intentionally unmeasured. These are
+instrumented whole-model timings and must not be presented as a pure matvec or
+as a general PyTorch performance comparison.
+
 `session-template.json` is the closed runner/result envelope. It is
 intentionally marked `not_run` and contains no measured values or acceptance
 claim. A runner may populate its accepted or rejected evidence branch only

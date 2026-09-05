@@ -24,9 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeAlias, cast
 
+from decodeforge._json import reject_nonfinite_number
+
 JsonObject: TypeAlias = dict[str, Any]
 Diagnostic: TypeAlias = dict[str, Any]
 SessionInput: TypeAlias = Mapping[str, Any]
+
 
 PROTOCOL_ID: Final = "g1-prepared-call-paired-v1"
 REAL_CASE_ID: Final = "tinyllama-q-proj-2048x2048"
@@ -565,6 +568,7 @@ def _parse_canonical_ir(
         parsed = json.loads(
             value,
             object_pairs_hook=_no_duplicate_object,
+            parse_float=reject_nonfinite_number,
             parse_constant=_reject_json_constant,
         )
     except (TypeError, ValueError, json.JSONDecodeError, RecursionError):
@@ -2148,6 +2152,7 @@ def load_sessions(paths: Sequence[Path]) -> list[JsonObject]:
             value = json.loads(
                 data.decode("utf-8"),
                 object_pairs_hook=_no_duplicate_object,
+                parse_float=reject_nonfinite_number,
                 parse_constant=_reject_json_constant,
             )
             if not isinstance(value, dict):
