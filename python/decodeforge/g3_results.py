@@ -959,17 +959,20 @@ def verify_g3_result(bundle: Path) -> None:
 
 
 def _write_new_at(parent_fd: int, name: str, content: bytes) -> os.stat_result:
-    descriptor = os.open(
-        name,
-        os.O_WRONLY
-        | os.O_CREAT
-        | os.O_EXCL
-        | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_NOFOLLOW", 0),
-        0o600,
-        dir_fd=parent_fd,
-    )
+    descriptor = -1
+    created: os.stat_result | None = None
     try:
+        descriptor = os.open(
+            name,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=parent_fd,
+        )
+        created = os.fstat(descriptor)
         view = memoryview(content)
         while view:
             written = os.write(descriptor, view)
@@ -982,8 +985,20 @@ def _write_new_at(parent_fd: int, name: str, content: bytes) -> os.stat_result:
         if metadata.st_nlink != 1 or _file_identity(metadata) != _file_identity(named):
             raise G3ResultError("staged G3 member changed while written")
         return metadata
+    except BaseException:
+        if descriptor >= 0 and created is not None:
+            try:
+                held = os.fstat(descriptor)
+                named = _stat_at(parent_fd, name)
+                if _same_object(held, created) and _same_object(named, created):
+                    os.unlink(name, dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+            except OSError:
+                pass
+        raise
     finally:
-        os.close(descriptor)
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _fsync_directory_fd(descriptor: int) -> None:
@@ -1002,21 +1017,21 @@ def _new_staging(parent_fd: int, target_name: str) -> tuple[str, int, os.stat_re
             os.mkdir(name, 0o700, dir_fd=parent_fd)
         except FileExistsError:
             continue
-        created = _stat_at(parent_fd, name)
+        created: os.stat_result | None = None
         descriptor = -1
         try:
             descriptor = os.open(name, flags, dir_fd=parent_fd)
-            metadata = os.fstat(descriptor)
+            created = os.fstat(descriptor)
             named = _stat_at(parent_fd, name)
-            if not _same_object(metadata, created) or not _same_object(metadata, named):
+            if not _same_object(created, named):
                 raise G3ResultError("G3 staging directory changed while created")
-            return name, descriptor, metadata
+            return name, descriptor, created
         except BaseException:
             if descriptor >= 0:
                 os.close(descriptor)
             with suppress(OSError):
                 named = _stat_at(parent_fd, name)
-                if _same_object(named, created):
+                if created is not None and _same_object(named, created):
                     os.rmdir(name, dir_fd=parent_fd)
             raise
     raise G3ResultError("G3 staging directory could not be allocated")

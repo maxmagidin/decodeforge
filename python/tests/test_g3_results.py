@@ -443,10 +443,70 @@ def test_mid_write_failure_cleans_created_members_and_staging(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_staging_open_failure_removes_just_created_directory(
+def test_member_fsync_failure_removes_the_created_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    original_open = g3_results.os.open
+    original_fsync = os.fsync
+    calls = 0
+
+    def fail_first_sync(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("injected member sync failure")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_first_sync)
+    with pytest.raises(G3ResultError, match="publication failed"):
+        write_g3_bundle(_sessions(), _receipt(), tmp_path / "bundle")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_failed_member_write_preserves_a_replacement_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    original_write = os.write
+    swapped = False
+
+    def swap_after_write(descriptor: int, content: bytes | bytearray) -> int:
+        nonlocal swapped
+        written = original_write(descriptor, content)
+        if not swapped:
+            swapped = True
+            os.rename(
+                "member.txt",
+                "moved-owned-member.txt",
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+            replacement = os.open(
+                "member.txt",
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=parent_fd,
+            )
+            try:
+                original_write(replacement, b"replacement\n")
+            finally:
+                os.close(replacement)
+            raise OSError("injected member replacement")
+        return written
+
+    monkeypatch.setattr(os, "write", swap_after_write)
+    try:
+        with pytest.raises(OSError, match="injected member replacement"):
+            g3_results._write_new_at(parent_fd, "member.txt", b"owned content\n")
+    finally:
+        os.close(parent_fd)
+    assert (tmp_path / "member.txt").read_bytes() == b"replacement\n"
+    assert (tmp_path / "moved-owned-member.txt").read_bytes() == b"owned content\n"
+
+
+def test_staging_open_failure_preserves_unanchored_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_open = os.open
 
     def fail_staging_open(
         path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
@@ -459,9 +519,33 @@ def test_staging_open_failure_removes_just_created_directory(
             raise OSError("injected staging open failure")
         return original_open(path, flags, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(g3_results.os, "open", fail_staging_open)
+    monkeypatch.setattr(os, "open", fail_staging_open)
     with pytest.raises(G3ResultError, match="publication failed"):
         write_g3_bundle(_sessions(), _receipt(), tmp_path / "bundle")
+    staging = list(tmp_path.iterdir())
+    assert len(staging) == 1
+    assert staging[0].name.startswith(".bundle.staging-")
+    assert staging[0].is_dir()
+    assert list(staging[0].iterdir()) == []
+
+
+def test_staging_named_stat_failure_removes_anchored_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_stat = g3_results._stat_at
+    failed = False
+
+    def fail_first_staging_stat(parent_fd: int, name: str) -> os.stat_result:
+        nonlocal failed
+        if not failed and name.startswith(".bundle.staging-"):
+            failed = True
+            raise OSError("injected staging stat failure")
+        return original_stat(parent_fd, name)
+
+    monkeypatch.setattr(g3_results, "_stat_at", fail_first_staging_stat)
+    with pytest.raises(G3ResultError, match="publication failed"):
+        write_g3_bundle(_sessions(), _receipt(), tmp_path / "bundle")
+    assert failed
     assert list(tmp_path.iterdir()) == []
 
 
@@ -562,7 +646,7 @@ def test_parent_sync_failure_reports_installed_terminal_state(
 def test_descriptor_features_are_required(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(g3_results.os, "O_NOFOLLOW", 0)
+    monkeypatch.setattr(os, "O_NOFOLLOW", 0)
     with pytest.raises(G3ResultError, match="requires O_NOFOLLOW"):
         write_g3_bundle(_sessions(), _receipt(), tmp_path / "bundle")
 
@@ -614,7 +698,7 @@ def test_verifier_detects_member_name_swap(
     bundle, _ = _publish(tmp_path)
     replacement = tmp_path / "replacement"
     replacement.write_bytes(b"replacement")
-    original_read = g3_results.os.read
+    original_read = os.read
     swapped = False
 
     def swapping_read(descriptor: int, size: int) -> bytes:
@@ -622,10 +706,10 @@ def test_verifier_detects_member_name_swap(
         content = original_read(descriptor, size)
         if not swapped:
             swapped = True
-            g3_results.os.replace(replacement, bundle / "README.md")
+            os.replace(replacement, bundle / "README.md")
         return content
 
-    monkeypatch.setattr(g3_results.os, "read", swapping_read)
+    monkeypatch.setattr(os, "read", swapping_read)
     with pytest.raises(G3ResultError, match="changed while read"):
         verify_g3_result(bundle)
 
@@ -635,7 +719,7 @@ def test_verifier_detects_bundle_root_name_swap(
 ) -> None:
     bundle, _ = _publish(tmp_path)
     moved = tmp_path / "moved-bundle"
-    original_listdir = g3_results.os.listdir
+    original_listdir = os.listdir
     swapped = False
 
     def swapping_listdir(descriptor: int) -> list[str]:
@@ -647,7 +731,7 @@ def test_verifier_detects_bundle_root_name_swap(
             bundle.mkdir()
         return names
 
-    monkeypatch.setattr(g3_results.os, "listdir", swapping_listdir)
+    monkeypatch.setattr(os, "listdir", swapping_listdir)
     with pytest.raises(G3ResultError, match="inventory changed|root changed"):
         verify_g3_result(bundle)
 
@@ -659,7 +743,7 @@ def test_loader_detects_session_ancestor_swap(
     session_parent.mkdir()
     paths = _write_sessions(session_parent, _sessions())
     moved = tmp_path / "moved-sessions"
-    original_read = g3_results.os.read
+    original_read = os.read
     swapped = False
 
     def swapping_read(descriptor: int, size: int) -> bytes:
@@ -671,7 +755,7 @@ def test_loader_detects_session_ancestor_swap(
             session_parent.mkdir()
         return content
 
-    monkeypatch.setattr(g3_results.os, "read", swapping_read)
+    monkeypatch.setattr(os, "read", swapping_read)
     with pytest.raises(G3ResultError, match="ancestor changed"):
         load_g3_sessions(paths)
 
