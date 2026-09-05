@@ -397,10 +397,17 @@ def load_preparation_receipt_document(
     time when the stronger live executable rehash is required.
     """
 
-    value = _validate_receipt(
-        _json(_read_leaf(Path(path), _MAX_RECEIPT_BYTES, "receipt"), "receipt")
-    )
-    return deepcopy(value)
+    value = _json(_read_leaf(Path(path), _MAX_RECEIPT_BYTES, "receipt"), "receipt")
+    return validate_preparation_receipt_document(value)
+
+
+def validate_preparation_receipt_document(value: Mapping[str, Any]) -> JsonObject:
+    """Validate and detach one already parsed portable receipt document."""
+
+    if not isinstance(value, dict):
+        raise G3PreparationError("preparation receipt must be a JSON object")
+    detached = deepcopy(dict(value))
+    return _validate_receipt(detached)
 
 
 def load_preparation_receipt(path: str | os.PathLike[str]) -> JsonObject:

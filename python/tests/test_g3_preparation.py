@@ -16,6 +16,7 @@ from decodeforge.g3_preparation import (
     load_preparation_receipt,
     load_preparation_receipt_document,
     receipt_identity,
+    validate_preparation_receipt_document,
     verify_preparation_receipt,
 )
 
@@ -143,6 +144,29 @@ def test_portable_document_is_closed_identity_bound_and_deep_independent(
     receipt.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(G3PreparationError, match="identity mismatch"):
         load_preparation_receipt_document(receipt)
+
+
+def test_parsed_document_validator_detaches_and_rejects_tampering(
+    tmp_path: Path,
+) -> None:
+    tool = _tool(tmp_path)
+    unsigned = _unsigned(tool, tmp_path)
+    value = {**unsigned, "receipt_identity": receipt_identity(unsigned)}
+    validated = validate_preparation_receipt_document(value)
+    value["source"]["model_id"] = "mutated/after-validation"
+    assert validated["source"] == SOURCE
+
+    tampered_unsigned = _unsigned(tool, tmp_path)
+    tampered = {
+        **tampered_unsigned,
+        "receipt_identity": receipt_identity(tampered_unsigned),
+    }
+    tampered["timing"]["elapsed_ns"] = 149
+    with pytest.raises(G3PreparationError, match="identity mismatch"):
+        validate_preparation_receipt_document(tampered)
+
+    with pytest.raises(G3PreparationError, match="JSON object"):
+        validate_preparation_receipt_document([])  # type: ignore[arg-type]
 
 
 def test_receipt_rejects_identity_tamper_and_semantic_rehash(tmp_path: Path) -> None:
