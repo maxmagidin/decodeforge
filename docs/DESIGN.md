@@ -16,12 +16,16 @@ BCa gates. The checked-in sessions measured `3.95671x`, `3.96176x`, and
 `3.95648x` paired speedups; all three 95% paired-BCa lower bounds exceed
 `3.95x`, passing the predeclared G1 gate. This is a generated-kernel result at
 the complete prepared-call boundary, not an end-to-end model speedup. The
-normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md). The first G2 piece is
-also merged: `decodeforge-bridge` provides a bounded, panic-contained,
-versioned C ABI over verified generated modules and exact OI4 packs, with an
-external test through the actual release library. The guarded eager PyTorch
-operator is the remaining G2 deliverable; it is not yet claimed as merged on
-`main`.
+normative contract is [Q8_FORMAT_V1](Q8_FORMAT_V1.md). G2 is complete:
+`decodeforge-bridge` provides a bounded, panic-contained, versioned C ABI over
+verified generated modules and exact OI4 packs, and the guarded eager PyTorch
+operator exercises it through the actual release library with closed guard,
+fallback, error, and lifecycle tests. G3.0–G3.3 are code-complete, including
+deterministic 22-layer asset preparation, the identity-bound owning adapter,
+and transactional all-layer installation. The hardened generation runner and
+ten-file analyzer/verifier are ready, but the three formal G3.4 sessions and
+checked-in G3.5 evidence remain pending. No end-to-end model-performance claim
+is implied before that evidence exists.
 
 **Primary contribution:** A shape-specializing schedule compiler for frozen,
 weight-only Q8 LLM linear regions, with the required vertical slice on an Apple
@@ -80,7 +84,7 @@ Implementation advances through evidence gates rather than component count:
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree |
 | G1: M4 compiler/kernel — complete | One real TinyLlama q-projection flows through verified IR to generated scalar and ARM64 NEON; the bundle contains source, assembly, correctness, timings, and host metadata |
 | G2: native eager PyTorch boundary — complete | The hardened C ABI and guarded eager `q8_linear_v1` operator execute the release artifact with tested native, fallback, error, and lifecycle paths |
-| G3: 22-projection generation proof — in progress | The frozen experiment, 22 canonical assets, and owning one-layer adapter pass; transactional installation and paired prompt-to-text evidence remain |
+| G3: 22-projection generation proof — in progress | G3.0–G3.3 and the hardened session/bundle tooling are code-complete; three fresh accepted sessions and a verified checked-in ten-file bundle remain |
 | G4: evidence-selected extension | One measured extension—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, native small batch, or multicore—wins or yields an honest negative result |
 
 Work that belongs to a later gate is kept out of the critical path. In

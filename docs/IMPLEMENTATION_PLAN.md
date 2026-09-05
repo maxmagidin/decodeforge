@@ -31,11 +31,11 @@ delivery decision in
 ```text
 G0 Q8 semantics [complete]
     -> G1 typed lowering + OI4 pack + scalar/NEON codegen [complete]
-    -> G2 hardened C ABI [complete] + guarded eager PyTorch op [current]
-    -> G3 prepare 22 q_proj packs
-         -> prove one owning adapter
-         -> replace all 22 q_proj modules
-         -> pinned prompt-to-text correctness, coverage, and timing bundle
+    -> G2 hardened C ABI + guarded eager PyTorch op [complete]
+    -> G3 frozen experiment + 22 packs + owning adapters [code-complete]
+         -> replace all 22 q_proj modules transactionally [code-complete]
+         -> capture three pinned prompt-to-text sessions [pending]
+         -> verify and check in correctness/coverage/timing bundle [pending]
     -> G4 choose one extension from measured evidence
 ```
 
@@ -51,7 +51,7 @@ dependencies.
 | G0: semantics | complete | independent Python/Rust semantics, closed fixtures, and Apple M4 provenance bundle |
 | G1: compiler/kernel | complete | real `[2048,2048]` q-projection, generated scalar/NEON, audited dylibs, bit-exact corpus, three paired sessions |
 | G2: framework boundary | complete | hardened C ABI, guarded eager operator, lifecycle hardening, and real release-dylib checkpoint pass |
-| G3: model proof | in progress | frozen experiment, 22 canonical assets, and one-layer adapter pass; transactional installation and the prompt-to-text bundle remain |
+| G3: model proof | in progress | G3.0–G3.3 and hardened capture/bundle tooling are code-complete; three fresh accepted sessions and the verified checked-in ten-file bundle remain |
 | G4: extension | deferred | selected only from G3 bottleneck evidence |
 
 The three G1 Apple M4 sessions measured `3.95671x`, `3.96176x`, and
@@ -132,7 +132,7 @@ unsupported-host status path.
 make test-bridge-cdylib
 ```
 
-### G2.2 Guarded eager operator (current deliverable)
+### G2.2 Guarded eager operator (complete)
 
 Build a lazy Python integration with these boundaries:
 
@@ -194,7 +194,7 @@ make check
 G3 is the first recruiter-visible product proof. It must generate text, but the
 acceptance evidence is the controlled compiler boundary underneath the text.
 
-### G3.0 Freeze the experiment before implementation
+### G3.0 Freeze the experiment before implementation (code-complete)
 
 Record in a machine-readable spec:
 
@@ -213,7 +213,7 @@ Record in a machine-readable spec:
 
 Do not choose tolerances or timing exclusions after inspecting the final result.
 
-### G3.1 Prepare canonical assets for 22 `q_proj` weights
+### G3.1 Prepare canonical assets for 22 `q_proj` weights (code-complete)
 
 Implement one bounded preparation command that:
 
@@ -251,7 +251,7 @@ Checkpoint tests:
 - preparing the real checkpoint yields exactly 22 unique layer entries and no
   untracked model weights are copied into the repository.
 
-### G3.2 Prove one owning model adapter
+### G3.2 Prove one owning model adapter (code-complete)
 
 Create an `nn.Module` adapter only after the low-level eager binding is stable.
 The adapter must:
@@ -274,7 +274,7 @@ shape, noncontiguous, gradient-enabled, close, and injected-error cases. It
 compares native output with the canonical same-Q8 reference under the frozen
 operator policy before any model module is replaced.
 
-### G3.3 Replace all 22 modules transactionally
+### G3.3 Replace all 22 modules transactionally (code-complete)
 
 The model integration must discover and validate all target modules before
 mutating the model. It then installs one adapter at each exact layer path and
@@ -292,7 +292,7 @@ Acceptance invariants:
   is created;
 - repeated setup/teardown leaves no live bindings and no in-flight calls.
 
-### G3.4 Run the pinned generation checkpoint
+### G3.4 Run the pinned generation checkpoint (formal capture pending)
 
 Run two paths from the same tokenized prompt and same prepared Q8 assets:
 
@@ -320,7 +320,7 @@ Report cold and warmed paths; do not include offline packing in steady-state
 decode latency. The all-same-Q8 path is the semantic/performance baseline. The
 original FP32 model may be shown only as labeled quality/ecosystem context.
 
-### G3.5 Check in a closed result bundle
+### G3.5 Check in a closed result bundle (evidence pending)
 
 The bundle contains:
 
@@ -344,18 +344,76 @@ dynamic libraries stay out of Git; the bundle records hashes and exact rebuild
 commands. A verifier must reject modified, missing, extra, nonfinite, symlinked,
 or schema-invalid evidence and recompute all summary values from raw data.
 
-Planned acceptance command surface:
+Run the pre-evidence command surface from the frozen clean checkout root. Keep
+every model, tool, asset, library, receipt, session, and bundle path below one
+stable external root whose parent components are real directories rather than
+symlinks; source, tool, receipt, and library inputs must be single-link regular
+files. Every `run-g3-demo`/session replay path is at most 1024 ASCII
+characters and uses only letters, digits, `/._+-:@`; whitespace and shell/Make
+metacharacters are rejected before model loading. The preparation outputs and
+every session output must be new.
 
 ```sh
-make prepare-g3-assets WEIGHTS=/path/to/model.safetensors OUTPUT=/tmp/g3-assets
-make test-g3
-make run-g3-demo ASSETS=/tmp/g3-assets OUTPUT=/tmp/g3-session.json
-make verify-g3-result
-make check
+G3_WORK=/opt/homebrew/var/decodeforge-g3-evidence
+mkdir -p "$G3_WORK"
+chmod 700 "$G3_WORK"
+
+CARGO_TARGET_DIR="$G3_WORK/cargo-target" make prepare-g3-assets-timed \
+  WEIGHTS="$G3_WORK/model/model.safetensors" \
+  OUTPUT="$G3_WORK/assets" \
+  RECEIPT="$G3_WORK/preparation-receipt.json"
+CARGO_TARGET_DIR="$G3_WORK/cargo-target" make build-g3-bridge
+CARGO_TARGET_DIR="$G3_WORK/cargo-target" make test-g3
+
+G3_LIBRARY="$G3_WORK/cargo-target/release/libdecodeforge_bridge.dylib"
+G3_LIBRARY_SHA256="$(shasum -a 256 "$G3_LIBRARY" | awk '{print $1}')"
+
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-0 SESSION_INDEX=0 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-0.json"
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-1 SESSION_INDEX=1 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-1.json"
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-2 SESSION_INDEX=2 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-2.json"
+
+make analyze-g3 \
+  SESSION_1="$G3_WORK/session-0.json" \
+  SESSION_2="$G3_WORK/session-1.json" \
+  SESSION_3="$G3_WORK/session-2.json" \
+  RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT_DIR="$G3_WORK/result"
+make verify-g3-result BUNDLE="$G3_WORK/result"
 ```
 
-These target names describe the required final interface; they are not claimed
-to exist until their implementation lands.
+`run-g3-demo` is a transparent alias of the hardened `run-g3-session` target;
+it does not derive the session identity, index, library hash, receipt, or any
+path. Each call starts one fresh runner process. If a session rejects, stop and
+audit it rather than silently retrying the same formal capture set. The runner
+authenticates the exact bridge artifact and retains a shell-safe rebuild command
+whose external `CARGO_TARGET_DIR` is derived from the required
+`<target>/release/libdecodeforge_bridge.dylib` layout. The checkout revision
+supplies the rebuild command's working tree; no machine-local checkout path is
+serialized. The library SHA-256 authenticates the exact bytes used by the run;
+the rebuild command is provenance, not a promise that unrelated Cargo-home or
+tool-installation paths produce a byte-identical dynamic library. Keep this
+exact external target path fixed through the bridge build and all three session
+runs.
+
+These commands can create and verify a candidate bundle, but they do not make
+G3 complete. Default `make check` result verification and a canonical
+`G3_RESULT` path must not be added until the accepted ten-file bundle is checked
+in.
 
 ## G4 — Choose one extension from G3 evidence
 
@@ -403,5 +461,6 @@ verification. Those are the visible project proof.
 | autotuned | recorded candidate set, correctness gate, selection policy, reproducible winner, and break-even analysis from a future G4 bundle |
 
 Before G3 completes, the honest summary is: “Built and measured a Mac-first Q8
-linear compiler with generated scalar/ARM64 NEON kernels and a hardened native
-runtime boundary; PyTorch model integration is in progress.”
+linear compiler with generated scalar/ARM64 NEON kernels, a hardened native
+PyTorch boundary, and transactional integration across all 22 TinyLlama query
+projections; formal three-session generation evidence is pending.”

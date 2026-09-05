@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
+import subprocess
+import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -19,11 +22,13 @@ from decodeforge.g3_session import (
     SessionDependencies,
     SessionRequest,
     VerifiedInputState,
+    _bridge_rebuild_command,
     _checkout_evidence,
     _command_line,
     _load_verified_components,
     _normalized_architecture,
     _open_directory,
+    _session_rebuild_command,
     publish_new_json,
     require_external_session_output,
     run_session,
@@ -42,6 +47,7 @@ from decodeforge.qproj_model import (
 from torch import nn
 
 _SPEC = Path(__file__).parents[2] / "benchmarks/g3/spec.json"
+_TEST_EXTERNAL = Path(tempfile.gettempdir()).resolve()
 
 
 class _Clock:
@@ -265,6 +271,10 @@ class _Harness:
                         "size_bytes": 1,
                         "sha256": "0" * 64,
                     },
+                    "bridge_rebuild_command": (
+                        "env CARGO_TARGET_DIR=/opt/homebrew/var/"
+                        "decodeforge-g3-evidence/cargo-target make build-g3-bridge"
+                    ),
                 },
                 None,
                 Path("fake-bridge"),
@@ -330,11 +340,15 @@ def _request() -> SessionRequest:
         session_id="fake-session",
         session_index=0,
         spec_path=_SPEC,
-        model_directory=Path("unused-model"),
-        asset_directory=Path("unused-assets"),
-        bridge_library=Path("unused-library"),
+        model_directory=_TEST_EXTERNAL / "decodeforge-test-model",
+        asset_directory=_TEST_EXTERNAL / "decodeforge-test-assets",
+        bridge_library=Path(
+            "/opt/homebrew/var/decodeforge-g3-evidence/cargo-target/"
+            "release/libdecodeforge_bridge.dylib"
+        ),
         bridge_sha256="0" * 64,
-        preparation_receipt=Path("unused-receipt"),
+        preparation_receipt=_TEST_EXTERNAL / "decodeforge-test-receipt.json",
+        session_output=_TEST_EXTERNAL / "decodeforge-test-session.json",
         process_start_ns=0,
     )
 
@@ -365,6 +379,26 @@ def test_fake_complete_session_is_fully_reconciled() -> None:
         "in_flight": 0,
         "closed": True,
     }
+    commands = result["provenance"]["rebuild_commands"]
+    assert commands["build_bridge"] == (
+        "env CARGO_TARGET_DIR=/opt/homebrew/var/"
+        "decodeforge-g3-evidence/cargo-target make build-g3-bridge"
+    )
+    assert shlex.split(commands["run_session"]) == [
+        "make",
+        "run-g3-demo",
+        "SESSION_ID=fake-session",
+        "SESSION_INDEX=0",
+        f"MODEL_DIR={_TEST_EXTERNAL / 'decodeforge-test-model'}",
+        f"ASSETS={_TEST_EXTERNAL / 'decodeforge-test-assets'}",
+        (
+            "LIBRARY=/opt/homebrew/var/decodeforge-g3-evidence/cargo-target/"
+            "release/libdecodeforge_bridge.dylib"
+        ),
+        f"LIBRARY_SHA256={'0' * 64}",
+        f"PREPARATION_RECEIPT={_TEST_EXTERNAL / 'decodeforge-test-receipt.json'}",
+        f"OUTPUT={_TEST_EXTERNAL / 'decodeforge-test-session.json'}",
+    ]
 
 
 def test_prompt_identity_mismatch_fails_closed() -> None:
@@ -494,6 +528,188 @@ def _write_receipt(path: Path, *, tool_name: str = "decodeforge-prepare-qproj") 
 def test_darwin_arm64_uses_the_contract_architecture_name() -> None:
     assert _normalized_architecture("arm64") == "aarch64"
     assert _normalized_architecture("x86_64") == "x86_64"
+
+
+def test_bridge_rebuild_command_binds_exact_external_cargo_target(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "cargo-target"
+    (target / "release").mkdir(parents=True)
+    library = target / "release/libdecodeforge_bridge.dylib"
+    command = _bridge_rebuild_command(library, _SPEC)
+    assert shlex.split(command) == [
+        "env",
+        f"CARGO_TARGET_DIR={target}",
+        "make",
+        "build-g3-bridge",
+    ]
+
+
+@pytest.mark.parametrize(
+    "relative_library",
+    (
+        "debug/libdecodeforge_bridge.dylib",
+        "release/renamed.dylib",
+    ),
+)
+def test_bridge_rebuild_command_rejects_ambiguous_layouts(
+    tmp_path: Path, relative_library: str
+) -> None:
+    target = tmp_path / "cargo-target"
+    (target / Path(relative_library).parent).mkdir(parents=True)
+    with pytest.raises(G3SessionError, match="release layout"):
+        _bridge_rebuild_command(target / relative_library, _SPEC)
+
+
+def test_bridge_rebuild_command_rejects_target_inside_checkout(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    spec = checkout / "benchmarks/g3/spec.json"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("{}", encoding="utf-8")
+    target = checkout / "cargo-target"
+    (target / "release").mkdir(parents=True)
+    with pytest.raises(G3SessionError, match="outside"):
+        _bridge_rebuild_command(target / "release/libdecodeforge_bridge.dylib", spec)
+
+
+def test_session_rebuild_command_round_trips_through_make_dry_run() -> None:
+    request = replace(
+        _request(),
+        session_id="session.with-portable_id",
+        model_directory=Path("/opt/homebrew/var/model+tag@host:1"),
+        asset_directory=Path("/opt/homebrew/var/assets-tag_1"),
+        preparation_receipt=Path("/opt/homebrew/var/receipt.tag-1.json"),
+        session_output=Path("/opt/homebrew/var/output.tag-1.json"),
+    )
+    replay = shlex.split(_session_rebuild_command(request))
+    assert replay == [
+        "make",
+        "run-g3-demo",
+        "SESSION_ID=session.with-portable_id",
+        "SESSION_INDEX=0",
+        "MODEL_DIR=/opt/homebrew/var/model+tag@host:1",
+        "ASSETS=/opt/homebrew/var/assets-tag_1",
+        (
+            "LIBRARY=/opt/homebrew/var/decodeforge-g3-evidence/cargo-target/"
+            "release/libdecodeforge_bridge.dylib"
+        ),
+        f"LIBRARY_SHA256={'0' * 64}",
+        "PREPARATION_RECEIPT=/opt/homebrew/var/receipt.tag-1.json",
+        "OUTPUT=/opt/homebrew/var/output.tag-1.json",
+    ]
+    dry_run = subprocess.run(
+        [replay[0], "--no-print-directory", "--dry-run", *replay[1:]],
+        cwd=_SPEC.parents[2],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for expected in (
+        '--model-dir "${MODEL_DIR}"',
+        '--assets "${ASSETS}"',
+        '--library "${LIBRARY}"',
+        '--preparation-receipt "${PREPARATION_RECEIPT}"',
+        '--output "${OUTPUT}"',
+        '--spec "${SPEC:-benchmarks/g3/spec.json}"',
+    ):
+        assert expected in dry_run
+    for public_value in replay[4:]:
+        assert public_value.split("=", maxsplit=1)[1] not in dry_run
+
+
+@pytest.mark.parametrize(
+    "unsafe_leaf",
+    (
+        "model$cash",
+        "model`command`",
+        'model"quote',
+        "model\nnewline",
+        "model space",
+        "model\\escape",
+        "model#comment",
+        "model%pattern",
+    ),
+)
+def test_session_rejects_make_replay_metacharacters(unsafe_leaf: str) -> None:
+    with pytest.raises(G3SessionError, match="replay-safe"):
+        run_session(
+            replace(
+                _request(),
+                model_directory=Path("/opt/homebrew/var") / unsafe_leaf,
+            ),
+            dependencies=_Harness().dependencies(),
+        )
+
+
+def test_bridge_rebuild_command_rejects_make_expansion_in_target(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "cargo$(error-injected)"
+    (target / "release").mkdir(parents=True)
+    with pytest.raises(G3SessionError, match="replay-safe"):
+        _bridge_rebuild_command(target / "release/libdecodeforge_bridge.dylib", _SPEC)
+
+
+def test_session_rejects_overlong_replay_path() -> None:
+    with pytest.raises(G3SessionError, match="replay-safe"):
+        run_session(
+            replace(
+                _request(),
+                model_directory=Path("/opt") / ("a" * 1024),
+            ),
+            dependencies=_Harness().dependencies(),
+        )
+
+
+def test_session_rebuild_command_rejects_overlong_aggregate() -> None:
+    with pytest.raises(G3SessionError, match="exceeds its byte bound"):
+        _session_rebuild_command(
+            replace(
+                _request(),
+                model_directory=Path("/opt") / ("a" * 900),
+                asset_directory=Path("/opt") / ("b" * 900),
+                bridge_library=Path("/opt") / ("c" * 900),
+                preparation_receipt=Path("/opt") / ("d" * 900),
+                session_output=Path("/opt") / ("e" * 900),
+            )
+        )
+
+
+def test_session_rejects_noncanonical_spec_path(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    canonical = checkout / "benchmarks/g3/spec.json"
+    alternate = checkout / "alternate/g3/spec.json"
+    canonical.parent.mkdir(parents=True)
+    alternate.parent.mkdir(parents=True)
+    canonical.write_text("{}", encoding="utf-8")
+    alternate.write_text("{}", encoding="utf-8")
+    with pytest.raises(G3SessionError, match="canonical experiment spec"):
+        run_session(
+            replace(_request(), spec_path=alternate),
+            dependencies=_Harness().dependencies(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "path"),
+    (
+        ("model_directory", Path("relative-model")),
+        ("asset_directory", Path("/opt/homebrew/var/assets/../replacement")),
+        ("bridge_library", Path("relative-library")),
+        ("preparation_receipt", Path("relative-receipt")),
+        ("session_output", Path("relative-output")),
+    ),
+)
+def test_session_rejects_nonabsolute_or_unnormalized_replay_paths(
+    field: str, path: Path
+) -> None:
+    with pytest.raises(G3SessionError, match="absolute normalized"):
+        run_session(
+            replace(_request(), **cast(Any, {field: path})),
+            dependencies=_Harness().dependencies(),
+        )
 
 
 def test_empty_provenance_command_output_fails_closed() -> None:

@@ -7,9 +7,11 @@ matrix-vector products with frozen weights—into guarded ARM64 NEON kernels on
 an Apple M4. Its completed compiler path lowers a typed Q8 linear operation,
 packs weights into an output-interleaved layout, emits scalar and NEON C, asks
 Clang/LLVM to build the machine code, audits the artifact, and executes it
-through a versioned native ABI. The required next path exposes that artifact as
-a guarded eager PyTorch operator and uses it for all 22 TinyLlama query
-projections during cached single-token decode.
+through a versioned native ABI. The completed G2 boundary exposes that artifact
+as a guarded eager PyTorch operator, and the G3 implementation installs it for
+all 22 TinyLlama query projections during cached single-token decode. Formal
+three-session generation capture and its checked-in result bundle remain
+pending.
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and unsupported operations. Prompt prefill uses a reference
@@ -157,7 +159,7 @@ substituting an estimate.
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree | generated code |
 | G1: M4 compiler/kernel — complete | A real TinyLlama `M=1` query projection lowers to generated scalar and ARM64 NEON with retained source, disassembly, correctness, and timings | framework boundary |
 | G2: native eager PyTorch boundary — complete | The hardened versioned C ABI and guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, error, and lifecycle paths | model adapter |
-| G3: 22-projection generation proof — in progress | The experiment, 22 canonical assets, and owning one-layer adapter are complete; transactional all-layer installation and the paired prompt-to-text result remain | evidence-selected extension |
+| G3: 22-projection generation proof — in progress | G3.0–G3.3 and the hardened session/bundle tooling are code-complete; three fresh accepted sessions and the verified checked-in ten-file bundle remain | evidence-selected extension |
 | G4: evidence-selected extension | One measured next step—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, or multicore—wins or yields an honest negative result | — |
 
 Failure at a gate causes investigation or a scope cut; it does not unlock more
@@ -266,8 +268,8 @@ All three lower bounds exceed `1.0`, so the predeclared G1 speedup gate passes.
 This is a generated scalar-versus-NEON kernel result at the complete prepared
 call boundary, not an end-to-end model speedup.
 
-The first G2 piece is also merged. `decodeforge-bridge` exports the versioned
-six-function C ABI in
+G2 is also complete. `decodeforge-bridge` exports the versioned six-function C
+ABI in
 [`include/decodeforge/runtime_v1.h`](include/decodeforge/runtime_v1.h). It owns
 verified generated modules and exact aligned OI4 payloads behind opaque,
 process-local handles; enforces per-pack, aggregate-byte, and live-handle
@@ -275,8 +277,17 @@ limits; linearizes run/destroy; contains panics; and exposes bounded
 thread-local diagnostics. `make test-bridge-cdylib` builds the actual release
 library and verifies the frozen `N=255,K=2` fixture through that C boundary
 (bit-exact with real Torch buffers on Apple ARM64, explicit unsupported-host
-behavior on Linux). The guarded eager PyTorch operator is the remaining G2
-deliverable; it is not yet claimed as merged on `main`.
+behavior on Linux). The guarded eager PyTorch operator adds verified private
+library snapshots, exact tensor guards, observable fallback/error counters, and
+tested lifecycle ownership around that release boundary.
+
+G3.0–G3.3 are code-complete: the frozen experiment, deterministic 22-layer
+asset preparation, identity-bound owning adapter, and transactional all-layer
+installation have closed tests. Hardened preparation, session, analyzer, and
+bundle-verifier commands are ready for the formal capture. G3 remains in
+progress until three fresh independent sessions are accepted and their exact
+ten-file result bundle is verified and checked in; no model-performance claim
+is made before that evidence exists.
 
 Reproduce the checked-in analysis with `make verify-g1-result`.
 

@@ -15,10 +15,13 @@ Capture the required offline-preparation timing separately from generation:
 ```console
 G3_WORK="/opt/homebrew/var/decodeforge-g3-evidence"
 mkdir -p "$G3_WORK"
+chmod 700 "$G3_WORK"
 CARGO_TARGET_DIR="$G3_WORK/cargo-target" make prepare-g3-assets-timed \
   WEIGHTS="$G3_WORK/model/model.safetensors" \
   OUTPUT="$G3_WORK/assets" \
   RECEIPT="$G3_WORK/preparation-receipt.json"
+CARGO_TARGET_DIR="$G3_WORK/cargo-target" make build-g3-bridge
+CARGO_TARGET_DIR="$G3_WORK/cargo-target" make test-g3
 ```
 
 Both the asset and receipt outputs must be new and outside the clean source
@@ -37,6 +40,46 @@ model, and outputs below the stable, real (not symlinked)
 arguments are authenticated receipt evidence and are retained exactly; the
 analyzer never redacts or rewrites them. User-home and platform-private
 temporary paths would therefore fail the repository portability check.
+
+Hash the frozen bridge bytes, then launch the three formal sessions as three
+fresh processes from the same clean checkout revision. `run-g3-demo` is a
+transparent alias of `run-g3-session`; every security- and identity-relevant
+input remains explicit.
+
+```sh
+G3_LIBRARY="$G3_WORK/cargo-target/release/libdecodeforge_bridge.dylib"
+G3_LIBRARY_SHA256="$(shasum -a 256 "$G3_LIBRARY" | awk '{print $1}')"
+
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-0 SESSION_INDEX=0 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-0.json"
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-1 SESSION_INDEX=1 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-1.json"
+make run-g3-demo \
+  SESSION_ID=apple-m4-g3-2 SESSION_INDEX=2 \
+  MODEL_DIR="$G3_WORK/model" ASSETS="$G3_WORK/assets" \
+  LIBRARY="$G3_LIBRARY" LIBRARY_SHA256="$G3_LIBRARY_SHA256" \
+  PREPARATION_RECEIPT="$G3_WORK/preparation-receipt.json" \
+  OUTPUT="$G3_WORK/session-2.json"
+```
+
+All parent components must be real, non-symlink directories; the model,
+preparation tool, receipt, and bridge must be single-link regular files. Every
+`run-g3-demo`/session replay path must use at most 1024 ASCII letters, digits,
+or `/._+-:@`; whitespace and shell/Make metacharacters are rejected. Each
+session output must be new. A rejected formal session is audited rather than
+silently retried. Keep the exact external Cargo target unchanged across the
+build and all three runs.
+The recorded SHA-256 authenticates the exact bridge bytes; the external-target
+rebuild command is provenance and does not claim unrelated Cargo-home or
+tool-installation paths reproduce identical dylib bytes.
 
 `session-template.json` is the closed runner/result envelope. It is
 intentionally marked `not_run` and contains no measured values or acceptance

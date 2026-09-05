@@ -49,6 +49,9 @@ SPEC_SHA256: Final = "3d4a5d8662cc8d8b41814d2a72d614349afc8e93c78d587489b28c82f2
 PROTOCOL_ID: Final = "g3-tinyllama-qproj-generation-v1"
 TEXT_ROLE: Final = "demonstration_only_not_correctness_evidence"
 _IDENTITY_PREFIX: Final = "sha256:"
+_MAX_REPLAY_PATH_CHARS: Final = 1024
+_MAX_REPLAY_COMMAND_CHARS: Final = 4096
+_REPLAY_PATH_PUNCTUATION: Final = frozenset("/._+-:@")
 _BUNDLE_INVENTORY: Final = (
     {"path": "README.md", "role": "human_summary"},
     {"path": "analysis.json", "role": "derived_analysis"},
@@ -82,6 +85,7 @@ class SessionRequest:
     bridge_library: Path
     bridge_sha256: str
     preparation_receipt: Path
+    session_output: Path
     process_start_ns: int
 
 
@@ -347,6 +351,89 @@ def require_external_session_output(output: Path, spec_path: Path) -> None:
     candidate = output.parent.resolve(strict=True) / output.name
     if candidate.is_relative_to(repository):
         raise G3SessionError("session output must be outside the measured checkout")
+
+
+def _require_absolute_normalized_path(path: Path, label: str) -> None:
+    normalized = Path(os.path.normpath(os.fspath(path)))
+    if not path.is_absolute() or path != normalized or ".." in path.parts:
+        raise G3SessionError(f"{label} must be an absolute normalized path")
+    rendered = os.fspath(path)
+    if len(rendered) > _MAX_REPLAY_PATH_CHARS or any(
+        not (
+            character.isascii()
+            and (character.isalnum() or character in _REPLAY_PATH_PUNCTUATION)
+        )
+        for character in rendered
+    ):
+        raise G3SessionError(f"{label} must use the bounded replay-safe path grammar")
+
+
+def _bridge_rebuild_command(
+    library: Path,
+    spec_path: Path,
+) -> str:
+    """Bind the verified dylib layout to its exact external Cargo target."""
+
+    _require_absolute_normalized_path(library, "bridge library")
+    if (
+        library.name != "libdecodeforge_bridge.dylib"
+        or library.parent.name != "release"
+    ):
+        raise G3SessionError(
+            "bridge library must use the external Cargo target release layout"
+        )
+    target = library.parent.parent
+    try:
+        resolved_target = target.resolve(strict=True)
+    except OSError as error:
+        raise G3SessionError("bridge Cargo target does not exist") from error
+    if resolved_target != target:
+        raise G3SessionError("bridge Cargo target path is not canonical")
+    release_descriptor = _open_directory(library.parent)
+    os.close(release_descriptor)
+    repository = spec_path.resolve(strict=True).parents[2]
+    if resolved_target == repository or resolved_target.is_relative_to(repository):
+        raise G3SessionError(
+            "bridge Cargo target must be outside the measured checkout"
+        )
+    return shlex.join(
+        [
+            "env",
+            f"CARGO_TARGET_DIR={resolved_target}",
+            "make",
+            "build-g3-bridge",
+        ]
+    )
+
+
+def _session_rebuild_command(request: SessionRequest) -> str:
+    """Render the complete shell-safe public Make invocation for this session."""
+
+    for input_path, label in (
+        (request.model_directory, "model directory"),
+        (request.asset_directory, "asset directory"),
+        (request.bridge_library, "bridge library"),
+        (request.preparation_receipt, "preparation receipt"),
+        (request.session_output, "session output"),
+    ):
+        _require_absolute_normalized_path(input_path, label)
+    _identity(request.bridge_sha256, "bridge_sha256")
+    arguments = [
+        "make",
+        "run-g3-demo",
+        f"SESSION_ID={request.session_id}",
+        f"SESSION_INDEX={request.session_index}",
+        f"MODEL_DIR={request.model_directory}",
+        f"ASSETS={request.asset_directory}",
+        f"LIBRARY={request.bridge_library}",
+        f"LIBRARY_SHA256={request.bridge_sha256}",
+        f"PREPARATION_RECEIPT={request.preparation_receipt}",
+        f"OUTPUT={request.session_output}",
+    ]
+    command = shlex.join(arguments)
+    if len(command) > _MAX_REPLAY_COMMAND_CHARS:
+        raise G3SessionError("session rebuild command exceeds its byte bound")
+    return command
 
 
 def _stat_fingerprint(value: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -766,6 +853,9 @@ def _default_verify_inputs(
     snapshot_path: Path | None = None
     snapshot_identity: tuple[int, int] | None = None
     try:
+        bridge_rebuild_command = _bridge_rebuild_command(
+            request.bridge_library, request.spec_path
+        )
         model_fd = _open_directory(request.model_directory)
         temporary_root = Path(tempfile.gettempdir()).resolve(strict=True)
         snapshot_path = Path(
@@ -807,6 +897,7 @@ def _default_verify_inputs(
                     "size_bytes": bridge_metadata.st_size,
                     "sha256": bridge_sha,
                 },
+                "bridge_rebuild_command": bridge_rebuild_command,
                 "environment": environment,
             },
             model_directory_fd=snapshot_fd,
@@ -1548,6 +1639,22 @@ def run_session(
         raise G3SessionError("session_id must be bounded portable text")
     if request.session_index not in range(3):
         raise G3SessionError("session_index must be in the frozen range 0..2")
+    resolved_spec = request.spec_path.resolve(strict=True)
+    repository = resolved_spec.parents[2]
+    if resolved_spec != (repository / "benchmarks/g3/spec.json").resolve(strict=True):
+        raise G3SessionError("session must use the canonical experiment spec path")
+    for input_path, label in (
+        (request.model_directory, "model directory"),
+        (request.asset_directory, "asset directory"),
+        (request.bridge_library, "bridge library"),
+        (request.preparation_receipt, "preparation receipt"),
+        (request.session_output, "session output"),
+    ):
+        _require_absolute_normalized_path(input_path, label)
+        if input_path == repository or input_path.is_relative_to(repository):
+            raise G3SessionError(f"{label} must be outside the measured checkout")
+    run_rebuild_command = _session_rebuild_command(request)
+    require_external_session_output(request.session_output, request.spec_path)
     spec, spec_sha = _load_spec(request.spec_path)
     deps = default_dependencies() if dependencies is None else dependencies
     checkout_preflight = deps.checkout_evidence(request.spec_path)
@@ -1910,11 +2017,14 @@ def run_session(
             ),
             "asset_inventory_identity": assets_record["aggregate_identity"],
             "rebuild_commands": {
-                "build_bridge": "make build-g3-bridge",
+                "build_bridge": _string(
+                    verified.evidence.get("bridge_rebuild_command"),
+                    "bridge rebuild command",
+                ),
                 "prepare_assets": shlex.join(
                     _string(value, "preparation argument") for value in preparation_argv
                 ),
-                "run_session": shlex.join(sys.argv),
+                "run_session": run_rebuild_command,
             },
         },
         "environment": {

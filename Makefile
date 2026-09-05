@@ -2,13 +2,41 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
-	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session analyze-g3 verify-g3-result \
+	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session run-g3-demo analyze-g3 verify-g3-result \
 	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets
 
 UV := uv
 RUST_VERSION := 1.98.0
 PYTHON_VERSION := 3.12.14
 UV_VERSION := 0.12.5
+# Command-line variables are recursive by default. Capture public G3 inputs as
+# raw simple values before expansion; G3 recipes pass them through the shell
+# environment so Make cannot reinterpret embedded syntax.
+ifeq ($(origin CARGO_TARGET_DIR), undefined)
+unexport CARGO_TARGET_DIR
+else
+override CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+export CARGO_TARGET_DIR
+endif
+override WEIGHTS := $(value WEIGHTS)
+override OUTPUT := $(value OUTPUT)
+override RECEIPT := $(value RECEIPT)
+override ASSETS := $(value ASSETS)
+override SPEC := $(value SPEC)
+override SESSION_ID := $(value SESSION_ID)
+override SESSION_INDEX := $(value SESSION_INDEX)
+override MODEL_DIR := $(value MODEL_DIR)
+override LIBRARY := $(value LIBRARY)
+override LIBRARY_SHA256 := $(value LIBRARY_SHA256)
+override PREPARATION_RECEIPT := $(value PREPARATION_RECEIPT)
+override SESSION_1 := $(value SESSION_1)
+override SESSION_2 := $(value SESSION_2)
+override SESSION_3 := $(value SESSION_3)
+override OUTPUT_DIR := $(value OUTPUT_DIR)
+override BUNDLE := $(value BUNDLE)
+export WEIGHTS OUTPUT RECEIPT ASSETS SPEC SESSION_ID SESSION_INDEX MODEL_DIR
+export LIBRARY LIBRARY_SHA256 PREPARATION_RECEIPT SESSION_1 SESSION_2 SESSION_3
+export OUTPUT_DIR BUNDLE
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
 G1_BENCH := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-g1-bench
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
@@ -44,7 +72,7 @@ lint:
 	$(UV) lock --check
 	$(UV) run --frozen ruff format --check python scripts
 	$(UV) run --frozen ruff check python scripts
-	$(UV) run --frozen --extra g1-benchmark mypy
+	$(UV) run --frozen --extra g1-benchmark --extra g3-generation mypy
 	$(UV) run --frozen python scripts/check_workspace.py
 	$(UV) run --frozen python scripts/check_headers.py
 	$(UV) run --frozen python scripts/validate_schemas.py --all
@@ -53,7 +81,7 @@ test: test-bridge-cdylib
 	$(CARGO) build --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked
 	$(CARGO) test --workspace --all-features --locked --release
-	$(UV) run --frozen --extra g1-benchmark python -m pytest -q
+	$(UV) run --frozen --extra g1-benchmark --extra g3-generation python -m pytest -q
 	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
 	$(MAKE) rust-fixture-check
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
@@ -131,72 +159,82 @@ verify-g1-result:
 	echo "verify-g1-result: ok"
 
 prepare-g3-assets:
-	@test -n "$(WEIGHTS)" || { echo "prepare-g3-assets: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
-	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
+	@test -n "$${WEIGHTS}" || { echo "prepare-g3-assets: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
+	@test -n "$${OUTPUT}" || { echo "prepare-g3-assets: OUTPUT=<new asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
-		--bin decodeforge-prepare-qproj -- --source "$(WEIGHTS)" --output "$(OUTPUT)"
+		--bin decodeforge-prepare-qproj -- --source "$${WEIGHTS}" --output "$${OUTPUT}"
 
 prepare-g3-assets-timed:
-	@test -n "$(WEIGHTS)" || { echo "prepare-g3-assets-timed: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
-	@test -n "$(OUTPUT)" || { echo "prepare-g3-assets-timed: OUTPUT=<new asset directory> is required" >&2; exit 2; }
-	@test -n "$(RECEIPT)" || { echo "prepare-g3-assets-timed: RECEIPT=<new receipt JSON outside OUTPUT> is required" >&2; exit 2; }
+	@test -n "$${WEIGHTS}" || { echo "prepare-g3-assets-timed: WEIGHTS=<model.safetensors> is required" >&2; exit 2; }
+	@test -n "$${OUTPUT}" || { echo "prepare-g3-assets-timed: OUTPUT=<new asset directory> is required" >&2; exit 2; }
+	@test -n "$${RECEIPT}" || { echo "prepare-g3-assets-timed: RECEIPT=<new receipt JSON outside OUTPUT> is required" >&2; exit 2; }
 	$(CARGO) build --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj
 	$(UV) run --frozen python scripts/prepare_g3_assets_timed.py \
-		--checkout . --source "$(WEIGHTS)" --output "$(OUTPUT)" \
-		--receipt "$(RECEIPT)" --prepare-tool "$(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)/release/decodeforge-prepare-qproj"
+		--checkout . --source "$${WEIGHTS}" --output "$${OUTPUT}" \
+		--receipt "$${RECEIPT}" --prepare-tool "$${CARGO_TARGET_DIR:-target}/release/decodeforge-prepare-qproj"
 
 verify-g3-assets:
-	@test -n "$(ASSETS)" || { echo "verify-g3-assets: ASSETS=<prepared asset directory> is required" >&2; exit 2; }
+	@test -n "$${ASSETS}" || { echo "verify-g3-assets: ASSETS=<prepared asset directory> is required" >&2; exit 2; }
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
-		--bin decodeforge-prepare-qproj -- --verify "$(ASSETS)"
+		--bin decodeforge-prepare-qproj -- --verify "$${ASSETS}"
 
 test-g3:
-	$(UV) run --frozen --extra pytorch-cpu python -m pytest -q \
+	$(CARGO) test --locked -p decodeforge-compiler --lib model_assets::tests::
+	$(CARGO) test --locked -p decodeforge-compiler --bin decodeforge-prepare-qproj
+	$(UV) run --frozen python scripts/validate_schemas.py --all
+	$(UV) run --frozen --extra g3-generation python -m pytest -q \
+		python/tests/test_contracts.py \
 		python/tests/test_torch_bridge.py \
 		python/tests/test_qproj_adapter.py \
 		python/tests/test_qproj_model.py \
-		python/tests/test_g3_*.py
+		python/tests/test_g3_evidence.py \
+		python/tests/test_g3_preparation.py \
+		python/tests/test_g3_session.py \
+		python/tests/test_g3_results.py
 
 test-g3-adapter-real: verify-g3-assets
 	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
 		echo "test-g3-adapter-real: requires an Apple-arm64 macOS host" >&2; exit 2; }
 	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
 	$(UV) run --frozen --extra pytorch-cpu python scripts/check_qproj_adapter_real.py \
-		--library "$(BRIDGE_RELEASE_DIR)/libdecodeforge_bridge.dylib" \
-		--assets "$(ASSETS)" --spec "$${SPEC:-benchmarks/g3/spec.json}"
+		--library "$${CARGO_TARGET_DIR:-target}/release/libdecodeforge_bridge.dylib" \
+		--assets "$${ASSETS}" --spec "$${SPEC:-benchmarks/g3/spec.json}"
 
 build-g3-bridge:
 	$(CARGO) build --quiet --release --locked -p decodeforge-bridge
 
 run-g3-session:
-	@test -n "$(SESSION_ID)" || { echo "run-g3-session: SESSION_ID is required" >&2; exit 2; }
-	@test -n "$(SESSION_INDEX)" || { echo "run-g3-session: SESSION_INDEX is required" >&2; exit 2; }
-	@test -n "$(MODEL_DIR)" || { echo "run-g3-session: MODEL_DIR is required" >&2; exit 2; }
-	@test -n "$(ASSETS)" || { echo "run-g3-session: ASSETS is required" >&2; exit 2; }
-	@test -n "$(LIBRARY)" || { echo "run-g3-session: LIBRARY is required" >&2; exit 2; }
-	@test -n "$(LIBRARY_SHA256)" || { echo "run-g3-session: LIBRARY_SHA256 is required" >&2; exit 2; }
-	@test -n "$(PREPARATION_RECEIPT)" || { echo "run-g3-session: PREPARATION_RECEIPT is required" >&2; exit 2; }
-	@test -n "$(OUTPUT)" || { echo "run-g3-session: OUTPUT is required" >&2; exit 2; }
-	$(UV) run --frozen --extra pytorch-cpu python scripts/run_g3_session.py \
-		--session-id "$(SESSION_ID)" --session-index "$(SESSION_INDEX)" \
-		--model-dir "$(MODEL_DIR)" --assets "$(ASSETS)" \
-		--library "$(LIBRARY)" --library-sha256 "$(LIBRARY_SHA256)" \
-		--preparation-receipt "$(PREPARATION_RECEIPT)" --output "$(OUTPUT)"
+	@test -n "$${SESSION_ID}" || { echo "run-g3-session: SESSION_ID is required" >&2; exit 2; }
+	@test -n "$${SESSION_INDEX}" || { echo "run-g3-session: SESSION_INDEX is required" >&2; exit 2; }
+	@test -n "$${MODEL_DIR}" || { echo "run-g3-session: MODEL_DIR is required" >&2; exit 2; }
+	@test -n "$${ASSETS}" || { echo "run-g3-session: ASSETS is required" >&2; exit 2; }
+	@test -n "$${LIBRARY}" || { echo "run-g3-session: LIBRARY is required" >&2; exit 2; }
+	@test -n "$${LIBRARY_SHA256}" || { echo "run-g3-session: LIBRARY_SHA256 is required" >&2; exit 2; }
+	@test -n "$${PREPARATION_RECEIPT}" || { echo "run-g3-session: PREPARATION_RECEIPT is required" >&2; exit 2; }
+	@test -n "$${OUTPUT}" || { echo "run-g3-session: OUTPUT is required" >&2; exit 2; }
+	$(UV) run --frozen --extra g3-generation python scripts/run_g3_session.py \
+		--session-id "$${SESSION_ID}" --session-index "$${SESSION_INDEX}" \
+		--model-dir "$${MODEL_DIR}" --assets "$${ASSETS}" \
+		--library "$${LIBRARY}" --library-sha256 "$${LIBRARY_SHA256}" \
+		--preparation-receipt "$${PREPARATION_RECEIPT}" --output "$${OUTPUT}" \
+		--spec "$${SPEC:-benchmarks/g3/spec.json}"
+
+run-g3-demo: run-g3-session
 
 analyze-g3:
-	@test -n "$(SESSION_1)" -a -n "$(SESSION_2)" -a -n "$(SESSION_3)" || { \
+	@test -n "$${SESSION_1}" -a -n "$${SESSION_2}" -a -n "$${SESSION_3}" || { \
 		echo "analyze-g3: SESSION_1, SESSION_2, and SESSION_3 are required" >&2; exit 2; }
-	@test -n "$(RECEIPT)" || { echo "analyze-g3: RECEIPT=<preparation receipt JSON> is required" >&2; exit 2; }
-	@test -n "$(OUTPUT_DIR)" || { echo "analyze-g3: OUTPUT_DIR=<new directory> is required" >&2; exit 2; }
+	@test -n "$${RECEIPT}" || { echo "analyze-g3: RECEIPT=<preparation receipt JSON> is required" >&2; exit 2; }
+	@test -n "$${OUTPUT_DIR}" || { echo "analyze-g3: OUTPUT_DIR=<new directory> is required" >&2; exit 2; }
 	$(UV) run --frozen python scripts/analyze_g3_result.py \
-		--sessions "$(SESSION_1)" "$(SESSION_2)" "$(SESSION_3)" \
-		--preparation-receipt "$(RECEIPT)" \
-		--output-dir "$(OUTPUT_DIR)"
+		--sessions "$${SESSION_1}" "$${SESSION_2}" "$${SESSION_3}" \
+		--preparation-receipt "$${RECEIPT}" \
+		--output-dir "$${OUTPUT_DIR}"
 
 verify-g3-result:
-	@test -n "$(BUNDLE)" || { echo "verify-g3-result: BUNDLE=<result directory> is required" >&2; exit 2; }
-	$(UV) run --frozen python scripts/verify_g3_result.py --bundle "$(BUNDLE)"
+	@test -n "$${BUNDLE}" || { echo "verify-g3-result: BUNDLE=<result directory> is required" >&2; exit 2; }
+	$(UV) run --frozen python scripts/verify_g3_result.py --bundle "$${BUNDLE}"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all

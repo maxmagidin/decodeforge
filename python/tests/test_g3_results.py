@@ -335,6 +335,20 @@ def test_cross_session_invariants_are_closed(mutation: str, message: str) -> Non
         analyze_g3_sessions(sessions)
 
 
+def test_session_replay_commands_may_vary_but_build_command_must_not() -> None:
+    sessions = _sessions()
+    assert [session["session_index"] for session in analyze_g3_sessions(sessions)] == [
+        0,
+        1,
+        2,
+    ]
+    sessions[2]["provenance"]["rebuild_commands"]["build_bridge"] = (
+        "env CARGO_TARGET_DIR=/opt/other-target make build-g3-bridge"
+    )
+    with pytest.raises(G3ResultError, match="build"):
+        analyze_g3_sessions(sessions)
+
+
 def test_publish_refuses_overwrite_and_preserves_existing_target(
     tmp_path: Path,
 ) -> None:
