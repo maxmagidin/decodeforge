@@ -2,7 +2,7 @@
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
-	test-g3-adapter-real build-g3-bridge run-g3-session analyze-g3 verify-g3-result \
+	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session analyze-g3 verify-g3-result \
 	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets
 
 UV := uv
@@ -151,6 +151,13 @@ verify-g3-assets:
 	$(CARGO) run --quiet --release --locked -p decodeforge-compiler \
 		--bin decodeforge-prepare-qproj -- --verify "$(ASSETS)"
 
+test-g3:
+	$(UV) run --frozen --extra pytorch-cpu python -m pytest -q \
+		python/tests/test_torch_bridge.py \
+		python/tests/test_qproj_adapter.py \
+		python/tests/test_qproj_model.py \
+		python/tests/test_g3_*.py
+
 test-g3-adapter-real: verify-g3-assets
 	@test "$$(uname -s):$$(uname -m)" = "Darwin:arm64" || { \
 		echo "test-g3-adapter-real: requires an Apple-arm64 macOS host" >&2; exit 2; }
@@ -180,9 +187,11 @@ run-g3-session:
 analyze-g3:
 	@test -n "$(SESSION_1)" -a -n "$(SESSION_2)" -a -n "$(SESSION_3)" || { \
 		echo "analyze-g3: SESSION_1, SESSION_2, and SESSION_3 are required" >&2; exit 2; }
+	@test -n "$(RECEIPT)" || { echo "analyze-g3: RECEIPT=<preparation receipt JSON> is required" >&2; exit 2; }
 	@test -n "$(OUTPUT_DIR)" || { echo "analyze-g3: OUTPUT_DIR=<new directory> is required" >&2; exit 2; }
 	$(UV) run --frozen python scripts/analyze_g3_result.py \
 		--sessions "$(SESSION_1)" "$(SESSION_2)" "$(SESSION_3)" \
+		--preparation-receipt "$(RECEIPT)" \
 		--output-dir "$(OUTPUT_DIR)"
 
 verify-g3-result:

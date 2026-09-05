@@ -10,10 +10,11 @@ import io
 import json
 import os
 import platform
-import shutil
+import secrets
+import shlex
 import stat
-import tempfile
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, TypeAlias, cast
 
@@ -31,7 +32,6 @@ MAX_SESSION_BYTES: Final = 64 * 1024 * 1024
 MAX_BUNDLE_BYTES: Final = 192 * 1024 * 1024
 _DARWIN_RENAME_EXCL: Final = 0x00000004
 _LINUX_RENAME_NOREPLACE: Final = 1
-_AT_FDCWD: Final = -100
 
 _BUNDLE_INVENTORY: Final[tuple[tuple[str, str], ...]] = (
     ("README.md", "human_summary"),
@@ -124,24 +124,86 @@ def _file_identity(metadata: os.stat_result) -> tuple[int, int, int, int, int, i
     )
 
 
+def _same_object(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino, left.st_mode) == (
+        right.st_dev,
+        right.st_ino,
+        right.st_mode,
+    )
+
+
+def _require_descriptor_features() -> tuple[int, int]:
+    """Fail closed when the host cannot provide no-follow directory walks."""
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or directory == 0:
+        raise G3ResultError(
+            "secure G3 filesystem access requires O_NOFOLLOW and O_DIRECTORY"
+        )
+    return nofollow, directory
+
+
+def _open_parent_nofollow(path: Path) -> tuple[int, str, os.stat_result]:
+    """Open every existing parent component without following symlinks."""
+
+    if path.name in {"", ".", ".."} or ".." in path.parent.parts:
+        raise G3ResultError("path must have one explicit leaf without traversal")
+    nofollow, directory = _require_descriptor_features()
+    flags = os.O_RDONLY | directory | getattr(os, "O_CLOEXEC", 0) | nofollow
+    descriptor = os.open("/" if path.is_absolute() else ".", flags)
+    components = path.parent.parts[1:] if path.is_absolute() else path.parent.parts
+    try:
+        for component in components:
+            if component in {"", "."}:
+                continue
+            child = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor, path.name, os.fstat(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _parent_path_unchanged(path: Path, expected: os.stat_result) -> bool:
+    descriptor = -1
+    try:
+        descriptor, _, observed = _open_parent_nofollow(path)
+        return (observed.st_dev, observed.st_ino) == (expected.st_dev, expected.st_ino)
+    except (G3ResultError, OSError):
+        return False
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _stat_at(parent_fd: int, name: str) -> os.stat_result:
+    return os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+
+
 def _read_regular_path(path: Path, limit: int) -> tuple[bytes, tuple[int, int]]:
     """Read one bounded stable regular-file snapshot without following a symlink."""
 
+    parent_fd = -1
     descriptor = -1
     try:
-        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        parent_fd, name, parent_metadata = _open_parent_nofollow(path)
         flags = (
             os.O_RDONLY
             | getattr(os, "O_BINARY", 0)
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NONBLOCK", 0)
-            | nofollow
+            | getattr(os, "O_NOFOLLOW", 0)
         )
-        if nofollow == 0 and stat.S_ISLNK(os.lstat(path).st_mode):
-            raise G3ResultError("session inputs must be non-symlink regular files")
-        descriptor = os.open(path, flags)
+        descriptor = os.open(name, flags, dir_fd=parent_fd)
         initial = os.fstat(descriptor)
-        if not stat.S_ISREG(initial.st_mode):
+        named_initial = _stat_at(parent_fd, name)
+        if (
+            not stat.S_ISREG(initial.st_mode)
+            or initial.st_nlink != 1
+            or _file_identity(initial) != _file_identity(named_initial)
+        ):
             raise G3ResultError("session inputs must be non-symlink regular files")
         if initial.st_size > limit:
             raise G3ResultError(f"session input exceeds the {limit}-byte bound")
@@ -157,11 +219,13 @@ def _read_regular_path(path: Path, limit: int) -> tuple[bytes, tuple[int, int]]:
         if len(content) > limit:
             raise G3ResultError(f"session input exceeds the {limit}-byte bound")
         final = os.fstat(descriptor)
-        path_final = os.stat(path, follow_symlinks=False)
+        path_final = _stat_at(parent_fd, name)
         if _file_identity(initial) != _file_identity(final) or _file_identity(
             initial
         ) != _file_identity(path_final):
             raise G3ResultError("session input changed while it was read")
+        if not _parent_path_unchanged(path, parent_metadata):
+            raise G3ResultError("session input ancestor changed while it was read")
         return content, (initial.st_dev, initial.st_ino)
     except G3ResultError:
         raise
@@ -174,6 +238,8 @@ def _read_regular_path(path: Path, limit: int) -> tuple[bytes, tuple[int, int]]:
     finally:
         if descriptor >= 0:
             os.close(descriptor)
+        if parent_fd >= 0:
+            os.close(parent_fd)
 
 
 def load_g3_sessions(paths: Sequence[Path]) -> list[JsonObject]:
@@ -198,6 +264,72 @@ def _without_process_id(environment: Mapping[str, Any]) -> JsonObject:
     }
 
 
+def _invariant_provenance(provenance: Mapping[str, Any]) -> JsonObject:
+    commands = cast(JsonObject, provenance["rebuild_commands"])
+    return {
+        "checkout": provenance["checkout"],
+        "model": provenance["model"],
+        "bridge_library": provenance["bridge_library"],
+        "asset_inventory_identity": provenance["asset_inventory_identity"],
+        "rebuild_commands": {
+            "build_bridge": commands["build_bridge"],
+            "prepare_assets": commands["prepare_assets"],
+        },
+    }
+
+
+def _bind_preparation_receipt(
+    sessions: Sequence[JsonObject], receipt: Mapping[str, Any]
+) -> JsonObject:
+    """Validate and bind the portable full receipt to all session evidence."""
+
+    from decodeforge.g3_preparation import (
+        G3PreparationError,
+        validate_preparation_receipt_document,
+    )
+
+    try:
+        document = validate_preparation_receipt_document(receipt)
+    except G3PreparationError as error:
+        raise G3ResultError("preparation receipt is invalid") from error
+    checkout = cast(JsonObject, document["checkout"])
+    command = cast(JsonObject, document["command"])
+    source = cast(JsonObject, document["source"])
+    output = cast(JsonObject, document["output"])
+    timing = cast(JsonObject, document["timing"])
+    projection = {
+        "source": "separately_captured_prepare_command",
+        "receipt_identity": document["receipt_identity"],
+        "elapsed_ns": timing["elapsed_ns"],
+        "asset_inventory_identity": output["asset_inventory_identity"],
+    }
+    prepare_command = shlex.join(cast(list[str], command["argv"]))
+    for session in sessions:
+        assets = cast(JsonObject, session["assets"])
+        provenance = cast(JsonObject, session["provenance"])
+        rebuild = cast(JsonObject, provenance["rebuild_commands"])
+        bound_output = {
+            "asset_inventory_identity": assets["aggregate_identity"],
+            "layer_count": assets["layer_count"],
+            "total_packed_bytes": assets["total_packed_bytes"],
+            "total_fallback_bytes": assets["total_fallback_bytes"],
+        }
+        if (
+            session["offline_preparation"] != projection
+            or provenance["checkout"] != checkout
+            or provenance["model"] != source
+            or assets["source"] != source
+            or bound_output != output
+            or provenance["asset_inventory_identity"]
+            != output["asset_inventory_identity"]
+            or rebuild["prepare_assets"] != prepare_command
+        ):
+            raise G3ResultError(
+                "preparation receipt does not bind exactly to every G3 session"
+            )
+    return document
+
+
 def analyze_g3_sessions(sessions: Sequence[JsonObject]) -> list[JsonObject]:
     """Validate and normalize the three independent accepted G3 sessions."""
 
@@ -205,8 +337,9 @@ def analyze_g3_sessions(sessions: Sequence[JsonObject]) -> list[JsonObject]:
 
     if len(sessions) != SESSION_COUNT:
         raise G3ResultError("G3 analysis requires exactly three sessions")
-    normalized = sorted(sessions, key=lambda item: item.get("session_index", -1))
-    for index, session in enumerate(normalized):
+    for index, session in enumerate(sessions):
+        if not isinstance(session, dict):
+            raise G3ResultError(f"session {index} must be one JSON object")
         diagnostics = validate_data(session, "g3-generation-session")
         if diagnostics:
             raise G3ResultError(
@@ -219,6 +352,7 @@ def analyze_g3_sessions(sessions: Sequence[JsonObject]) -> list[JsonObject]:
             "rejection_reasons": [],
         }:
             raise G3ResultError("all analyzed G3 sessions must be accepted")
+    normalized = sorted(sessions, key=lambda item: cast(int, item["session_index"]))
     if [session["session_index"] for session in normalized] != [0, 1, 2]:
         raise G3ResultError("G3 session_index values must be exactly 0, 1, and 2")
     session_ids = [cast(str, session["session_id"]) for session in normalized]
@@ -239,7 +373,6 @@ def analyze_g3_sessions(sessions: Sequence[JsonObject]) -> list[JsonObject]:
         "experiment_spec",
         "bundle_inventory",
         "prompt",
-        "provenance",
         "assets",
         "offline_preparation",
     )
@@ -253,6 +386,13 @@ def analyze_g3_sessions(sessions: Sequence[JsonObject]) -> list[JsonObject]:
         ):
             raise G3ResultError(
                 "G3 sessions must share one environment apart from process ID"
+            )
+        if _invariant_provenance(cast(JsonObject, session["provenance"])) != (
+            _invariant_provenance(cast(JsonObject, first["provenance"]))
+        ):
+            raise G3ResultError(
+                "G3 sessions must share checkout, model, bridge, asset, build, "
+                "and preparation provenance"
             )
     return normalized
 
@@ -270,7 +410,9 @@ def _median_fraction(values: Sequence[int]) -> JsonObject:
     }
 
 
-def _analysis_document(sessions: list[JsonObject]) -> JsonObject:
+def _analysis_document(
+    sessions: list[JsonObject], preparation_receipt: JsonObject
+) -> JsonObject:
     timing_summary = []
     for path in ("same_q8_reference", "hybrid_native"):
         samples = [
@@ -293,6 +435,7 @@ def _analysis_document(sessions: list[JsonObject]) -> JsonObject:
         "format": ANALYSIS_FORMAT,
         "protocol_id": PROTOCOL_ID,
         "canonical_identity_algorithm": CANONICAL_IDENTITY_ALGORITHM,
+        "preparation_receipt": preparation_receipt,
         "sessions": sessions,
         "summary": {
             "accepted_session_count": len(sessions),
@@ -644,11 +787,14 @@ def _manifest_document(
     return manifest
 
 
-def build_g3_bundle(sessions: Sequence[JsonObject]) -> dict[str, bytes]:
+def build_g3_bundle(
+    sessions: Sequence[JsonObject], preparation_receipt: Mapping[str, Any]
+) -> dict[str, bytes]:
     """Return all ten deterministic bundle members from validated raw sessions."""
 
     normalized = analyze_g3_sessions(sessions)
-    analysis = _analysis_document(normalized)
+    receipt = _bind_preparation_receipt(normalized, preparation_receipt)
+    analysis = _analysis_document(normalized, receipt)
     contents = {
         "README.md": _readme(normalized, analysis),
         "analysis.json": canonical_json_bytes(analysis),
@@ -674,73 +820,98 @@ def build_g3_bundle(sessions: Sequence[JsonObject]) -> dict[str, bytes]:
     return contents
 
 
+def _read_bundle_fd(root_fd: int) -> dict[str, bytes]:
+    """Snapshot a bundle through one already anchored directory descriptor."""
+
+    initial_root = os.fstat(root_fd)
+    names = set(os.listdir(root_fd))
+    if names != _BUNDLE_NAMES:
+        missing = sorted(_BUNDLE_NAMES - names)
+        extra = sorted(names - _BUNDLE_NAMES)
+        raise G3ResultError(
+            f"G3 bundle inventory mismatch (missing={missing}, extra={extra})"
+        )
+    contents: dict[str, bytes] = {}
+    total = 0
+    for name, _ in _BUNDLE_INVENTORY:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+        try:
+            before = os.fstat(descriptor)
+            named_before = _stat_at(root_fd, name)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or _file_identity(before) != _file_identity(named_before)
+            ):
+                raise G3ResultError(
+                    f"G3 member {name} is not a singly linked regular file"
+                )
+            limit = _FILE_LIMITS[name]
+            if before.st_size > limit:
+                raise G3ResultError(f"G3 member {name} exceeds its size bound")
+            chunks: list[bytes] = []
+            remaining = limit + 1
+            while remaining:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            content = b"".join(chunks)
+            after = os.fstat(descriptor)
+            named_after = _stat_at(root_fd, name)
+            if (
+                len(content) > limit
+                or _file_identity(before) != _file_identity(after)
+                or _file_identity(before) != _file_identity(named_after)
+            ):
+                raise G3ResultError(f"G3 member {name} changed while read")
+            contents[name] = content
+            total += len(content)
+            if total > MAX_BUNDLE_BYTES:
+                raise G3ResultError("G3 bundle exceeds its aggregate size bound")
+        finally:
+            os.close(descriptor)
+    if set(os.listdir(root_fd)) != names or _file_identity(
+        os.fstat(root_fd)
+    ) != _file_identity(initial_root):
+        raise G3ResultError("G3 bundle inventory changed while read")
+    return contents
+
+
 def _read_bundle(bundle: Path) -> dict[str, bytes]:
+    parent_fd = -1
     root_fd = -1
     try:
-        initial_path = os.lstat(bundle)
-        if not stat.S_ISDIR(initial_path.st_mode):
-            raise G3ResultError("G3 bundle root must be a non-symlink directory")
+        parent_fd, name, parent_metadata = _open_parent_nofollow(bundle)
         root_fd = os.open(
-            bundle,
+            name,
             os.O_RDONLY
             | getattr(os, "O_DIRECTORY", 0)
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_fd,
         )
         initial_root = os.fstat(root_fd)
-        names = set(os.listdir(root_fd))
-        if names != _BUNDLE_NAMES:
-            missing = sorted(_BUNDLE_NAMES - names)
-            extra = sorted(names - _BUNDLE_NAMES)
-            raise G3ResultError(
-                f"G3 bundle inventory mismatch (missing={missing}, extra={extra})"
-            )
-        contents: dict[str, bytes] = {}
-        total = 0
-        for name, _ in _BUNDLE_INVENTORY:
-            descriptor = os.open(
-                name,
-                os.O_RDONLY
-                | getattr(os, "O_BINARY", 0)
-                | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_NONBLOCK", 0)
-                | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=root_fd,
-            )
-            try:
-                before = os.fstat(descriptor)
-                if not stat.S_ISREG(before.st_mode):
-                    raise G3ResultError(f"G3 member {name} is not a regular file")
-                limit = _FILE_LIMITS[name]
-                if before.st_size > limit:
-                    raise G3ResultError(f"G3 member {name} exceeds its size bound")
-                chunks: list[bytes] = []
-                remaining = limit + 1
-                while remaining:
-                    chunk = os.read(descriptor, min(64 * 1024, remaining))
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    remaining -= len(chunk)
-                content = b"".join(chunks)
-                after = os.fstat(descriptor)
-                if len(content) > limit or _file_identity(before) != _file_identity(
-                    after
-                ):
-                    raise G3ResultError(f"G3 member {name} changed while read")
-                contents[name] = content
-                total += len(content)
-                if total > MAX_BUNDLE_BYTES:
-                    raise G3ResultError("G3 bundle exceeds its aggregate size bound")
-            finally:
-                os.close(descriptor)
-        if set(os.listdir(root_fd)) != names or _file_identity(
-            os.fstat(root_fd)
-        ) != _file_identity(initial_root):
-            raise G3ResultError("G3 bundle inventory changed while read")
-        final_path = os.stat(bundle, follow_symlinks=False)
-        if _file_identity(initial_path) != _file_identity(final_path):
+        named_root = _stat_at(parent_fd, name)
+        if not stat.S_ISDIR(initial_root.st_mode) or _file_identity(
+            initial_root
+        ) != _file_identity(named_root):
+            raise G3ResultError("G3 bundle root must be a non-symlink directory")
+        contents = _read_bundle_fd(root_fd)
+        final_root = _stat_at(parent_fd, name)
+        if _file_identity(initial_root) != _file_identity(final_root):
             raise G3ResultError("G3 bundle root changed while read")
+        if not _parent_path_unchanged(bundle, parent_metadata):
+            raise G3ResultError("G3 bundle ancestor changed while read")
         return contents
     except G3ResultError:
         raise
@@ -749,18 +920,18 @@ def _read_bundle(bundle: Path) -> dict[str, bytes]:
     finally:
         if root_fd >= 0:
             os.close(root_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
 
 
-def verify_g3_result(bundle: Path) -> None:
-    """Verify one closed bundle and independently regenerate every member."""
-
-    contents = _read_bundle(bundle)
+def _verify_contents(contents: Mapping[str, bytes]) -> None:
     analysis = _parse_json(contents["analysis.json"], "analysis.json")
     if set(analysis) != {
         "schema_version",
         "format",
         "protocol_id",
         "canonical_identity_algorithm",
+        "preparation_receipt",
         "sessions",
         "summary",
     }:
@@ -774,38 +945,106 @@ def verify_g3_result(bundle: Path) -> None:
     ):
         raise G3ResultError("analysis.json has the wrong closed contract identity")
     sessions = cast(list[JsonObject], analysis["sessions"])
-    expected = build_g3_bundle(sessions)
+    receipt = cast(JsonObject, analysis["preparation_receipt"])
+    expected = build_g3_bundle(sessions, receipt)
     for name, _ in _BUNDLE_INVENTORY:
         if contents[name] != expected[name]:
             raise G3ResultError(f"G3 member {name} does not recompute exactly")
 
 
-def _write_new(path: Path, content: bytes) -> None:
-    with path.open("xb") as output:
-        output.write(content)
-        output.flush()
-        os.fsync(output.fileno())
+def verify_g3_result(bundle: Path) -> None:
+    """Verify one closed bundle and independently regenerate every member."""
+
+    _verify_contents(_read_bundle(bundle))
 
 
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+def _write_new_at(parent_fd: int, name: str, content: bytes) -> os.stat_result:
+    descriptor = os.open(
+        name,
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+        dir_fd=parent_fd,
+    )
     try:
+        view = memoryview(content)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError(errno.EIO, "short write")
+            view = view[written:]
         os.fsync(descriptor)
+        metadata = os.fstat(descriptor)
+        named = _stat_at(parent_fd, name)
+        if metadata.st_nlink != 1 or _file_identity(metadata) != _file_identity(named):
+            raise G3ResultError("staged G3 member changed while written")
+        return metadata
     finally:
         os.close(descriptor)
 
 
-def _install_no_overwrite(staging: Path, target: Path) -> None:
+def _fsync_directory_fd(descriptor: int) -> None:
+    try:
+        os.fsync(descriptor)
+    except OSError as error:
+        raise G3ResultError("G3 output directory could not be synchronized") from error
+
+
+def _new_staging(parent_fd: int, target_name: str) -> tuple[str, int, os.stat_result]:
+    nofollow, directory = _require_descriptor_features()
+    flags = os.O_RDONLY | directory | getattr(os, "O_CLOEXEC", 0) | nofollow
+    for _ in range(128):
+        name = f".{target_name}.staging-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+        except FileExistsError:
+            continue
+        created = _stat_at(parent_fd, name)
+        descriptor = -1
+        try:
+            descriptor = os.open(name, flags, dir_fd=parent_fd)
+            metadata = os.fstat(descriptor)
+            named = _stat_at(parent_fd, name)
+            if not _same_object(metadata, created) or not _same_object(metadata, named):
+                raise G3ResultError("G3 staging directory changed while created")
+            return name, descriptor, metadata
+        except BaseException:
+            if descriptor >= 0:
+                os.close(descriptor)
+            with suppress(OSError):
+                named = _stat_at(parent_fd, name)
+                if _same_object(named, created):
+                    os.rmdir(name, dir_fd=parent_fd)
+            raise
+    raise G3ResultError("G3 staging directory could not be allocated")
+
+
+def _install_no_overwrite(parent_fd: int, staging: str, target: str) -> None:
     system = platform.system()
     libc = ctypes.CDLL(None, use_errno=True)
     if system == "Darwin":
         try:
-            rename = libc.renamex_np
+            rename = libc.renameatx_np
         except AttributeError as error:
             raise G3ResultError("atomic no-overwrite rename is unavailable") from error
-        rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rename.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
         rename.restype = ctypes.c_int
-        result = rename(os.fsencode(staging), os.fsencode(target), _DARWIN_RENAME_EXCL)
+        result = rename(
+            parent_fd,
+            os.fsencode(staging),
+            parent_fd,
+            os.fsencode(target),
+            _DARWIN_RENAME_EXCL,
+        )
     elif system == "Linux":
         try:
             rename = libc.renameat2
@@ -820,9 +1059,9 @@ def _install_no_overwrite(staging: Path, target: Path) -> None:
         )
         rename.restype = ctypes.c_int
         result = rename(
-            _AT_FDCWD,
+            parent_fd,
             os.fsencode(staging),
-            _AT_FDCWD,
+            parent_fd,
             os.fsencode(target),
             _LINUX_RENAME_NOREPLACE,
         )
@@ -836,41 +1075,141 @@ def _install_no_overwrite(staging: Path, target: Path) -> None:
     raise G3ResultError("G3 bundle could not be atomically installed")
 
 
-def write_g3_bundle(sessions: Sequence[JsonObject], output: Path) -> None:
+def _cleanup_staging(
+    parent_fd: int,
+    staging_name: str,
+    staging_fd: int,
+    staging_metadata: os.stat_result,
+    members: Mapping[str, os.stat_result],
+) -> bool:
+    """Remove only the still-anchored staging objects created by this call."""
+
+    try:
+        named_staging = _stat_at(parent_fd, staging_name)
+        if not _same_object(named_staging, staging_metadata):
+            return False
+        for name, expected in members.items():
+            observed = _stat_at(staging_fd, name)
+            if not _same_object(observed, expected):
+                return False
+        for name in members:
+            os.unlink(name, dir_fd=staging_fd)
+        if os.listdir(staging_fd):
+            return False
+        os.rmdir(staging_name, dir_fd=parent_fd)
+        return True
+    except OSError:
+        return False
+
+
+def write_g3_bundle(
+    sessions: Sequence[JsonObject], preparation_receipt: Mapping[str, Any], output: Path
+) -> None:
     """Durably stage, self-verify, and atomically install one new G3 bundle."""
 
-    if output.name in {"", ".", ".."}:
-        raise G3ResultError("G3 output must name an explicit directory")
+    contents = build_g3_bundle(sessions, preparation_receipt)
+    parent_fd = -1
+    staging_fd = -1
+    staging_name = ""
+    staging_metadata: os.stat_result | None = None
+    members: dict[str, os.stat_result] = {}
+    installed_name: str | None = None
+    published = False
     try:
-        parent = output.parent.resolve(strict=True)
-    except (OSError, RuntimeError) as error:
-        raise G3ResultError("G3 output parent is unavailable") from error
-    if not parent.is_dir():
-        raise G3ResultError("G3 output parent is unavailable")
-    target = parent / output.name
-    if target.exists() or target.is_symlink():
-        raise G3ResultError("G3 output target already exists")
-    contents = build_g3_bundle(sessions)
-    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=parent))
-    installed = False
-    try:
+        parent_fd, target_name, parent_metadata = _open_parent_nofollow(output)
+        try:
+            _stat_at(parent_fd, target_name)
+        except FileNotFoundError:
+            pass
+        else:
+            raise G3ResultError("G3 output target already exists")
+        staging_name, staging_fd, staging_metadata = _new_staging(
+            parent_fd, target_name
+        )
         for name, _ in _BUNDLE_INVENTORY:
-            _write_new(staging / name, contents[name])
-        _fsync_directory(staging)
-        verify_g3_result(staging)
-        _install_no_overwrite(staging, target)
-        installed = True
-        _fsync_directory(parent)
+            members[name] = _write_new_at(staging_fd, name, contents[name])
+        _fsync_directory_fd(staging_fd)
+        staging_metadata = os.fstat(staging_fd)
+        _verify_contents(_read_bundle_fd(staging_fd))
+        if not _parent_path_unchanged(output, parent_metadata):
+            raise G3ResultError("G3 output parent changed during publication")
+        _install_no_overwrite(parent_fd, staging_name, target_name)
+        installed_name = target_name
+        installed_metadata = _stat_at(parent_fd, target_name)
+        if not _same_object(installed_metadata, staging_metadata):
+            raise G3ResultError("installed G3 bundle does not match staging")
+        _verify_contents(_read_bundle_fd(staging_fd))
+        try:
+            _fsync_directory_fd(parent_fd)
+        except G3ResultError as error:
+            raise G3ResultError(
+                "G3 bundle was installed but its parent sync failed"
+            ) from error
+        if not _parent_path_unchanged(output, parent_metadata):
+            raise G3ResultError(
+                "G3 bundle was installed in an anchored directory whose visible "
+                "parent path changed"
+            )
+        published = True
     except G3ResultError:
         raise
     except OSError as error:
         raise G3ResultError("G3 bundle publication failed") from error
     finally:
-        if not installed:
-            shutil.rmtree(staging, ignore_errors=True)
+        if (
+            not published
+            and parent_fd >= 0
+            and staging_fd >= 0
+            and staging_metadata is not None
+        ):
+            cleaned = _cleanup_staging(
+                parent_fd,
+                installed_name or staging_name,
+                staging_fd,
+                staging_metadata,
+                members,
+            )
+            if cleaned:
+                with suppress(OSError):
+                    os.fsync(parent_fd)
+        if staging_fd >= 0:
+            os.close(staging_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
 
 
-def analyze_and_write_g3_result(paths: Sequence[Path], output: Path) -> None:
+def analyze_and_write_g3_result(
+    paths: Sequence[Path], preparation_receipt: Path, output: Path
+) -> None:
     """Load three session paths and publish their closed result bundle."""
 
-    write_g3_bundle(load_g3_sessions(paths), output)
+    from decodeforge.g3_preparation import (
+        G3PreparationError,
+        load_preparation_receipt_document,
+        verify_preparation_receipt,
+    )
+
+    try:
+        verified = verify_preparation_receipt(preparation_receipt)
+        document = load_preparation_receipt_document(preparation_receipt)
+    except G3PreparationError as error:
+        raise G3ResultError("preparation receipt could not be verified") from error
+    tool = cast(JsonObject, document["tool"])
+    checkout = cast(JsonObject, document["checkout"])
+    command = cast(JsonObject, document["command"])
+    if (
+        verified.session_projection()
+        != {
+            "source": "separately_captured_prepare_command",
+            "receipt_identity": document["receipt_identity"],
+            "elapsed_ns": cast(JsonObject, document["timing"])["elapsed_ns"],
+            "asset_inventory_identity": cast(JsonObject, document["output"])[
+                "asset_inventory_identity"
+            ],
+        }
+        or verified.checkout_revision != checkout["revision"]
+        or verified.command_argv != tuple(cast(list[str], command["argv"]))
+        or verified.tool_executable_identity != tool["executable_identity"]
+    ):
+        raise G3ResultError("preparation receipt changed while it was verified")
+    write_g3_bundle(load_g3_sessions(paths), document, output)

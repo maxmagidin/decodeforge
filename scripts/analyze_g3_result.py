@@ -19,6 +19,7 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         metavar=("SESSION_1", "SESSION_2", "SESSION_3"),
     )
+    parser.add_argument("--preparation-receipt", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     return parser
 
@@ -26,7 +27,11 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
-        analyze_and_write_g3_result(arguments.sessions, arguments.output_dir)
+        analyze_and_write_g3_result(
+            arguments.sessions,
+            arguments.preparation_receipt,
+            arguments.output_dir,
+        )
     except G3ResultError as error:
         print(f"g3-analysis: error: {error}", file=sys.stderr)
         return 2
