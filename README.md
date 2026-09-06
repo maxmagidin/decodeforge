@@ -9,9 +9,10 @@ packs weights into an output-interleaved layout, emits scalar and NEON C, asks
 Clang/LLVM to build the machine code, audits the artifact, and executes it
 through a versioned native ABI. The completed G2 boundary exposes that artifact
 as a guarded eager PyTorch operator, and the G3 implementation installs it for
-all 22 TinyLlama query projections during cached single-token decode. Formal
-three-session generation capture and its checked-in result bundle remain
-pending.
+all 22 TinyLlama query projections during cached single-token decode. Three
+accepted model sessions and their independently verified result bundle complete
+the frozen G3 technical gate. A useful chat-formatted presentation demo remains
+separate from that accepted evidence.
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and unsupported operations. Prompt prefill uses a reference
@@ -159,7 +160,7 @@ substituting an estimate.
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree | generated code |
 | G1: M4 compiler/kernel — complete | A real TinyLlama `M=1` query projection lowers to generated scalar and ARM64 NEON with retained source, disassembly, correctness, and timings | framework boundary |
 | G2: native eager PyTorch boundary — complete | The hardened versioned C ABI and guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, error, and lifecycle paths | model adapter |
-| G3: 22-projection generation proof — in progress | G3.0–G3.3 and the hardened session/bundle tooling are code-complete; three fresh accepted sessions and the verified checked-in ten-file bundle remain | evidence-selected extension |
+| G3: 22-projection generation proof — complete under the frozen protocol | Three accepted fresh-process sessions and the verified ten-file bundle establish all-22 native coverage, numerical/token agreement, and clean restoration; text quality is a separate presentation limitation | evidence-selected extension |
 | G4: evidence-selected extension | One measured next step—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, or multicore—wins or yields an honest negative result | — |
 
 Failure at a gate causes investigation or a scope cut; it does not unlock more

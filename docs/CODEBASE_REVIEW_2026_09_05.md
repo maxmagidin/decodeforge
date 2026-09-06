@@ -1,5 +1,10 @@
 # DecodeForge codebase review — 2026-09-05
 
+Historical snapshot of revision `cf5f970`. Subsequent work closed the frozen G3
+gate; see [current progress](PROGRESS_2026_09_05.md) and the
+[accepted model result](G3_RESULT_2026_09_05.md). The findings below are preserved
+as the original review, not a statement of current branch status.
+
 DecodeForge has a working Mac-first kernel compiler and eager PyTorch bridge.
 The highest-value next milestone is the formal G3 model-generation evidence,
 followed by an optimization chosen from that evidence. More compiler surface
