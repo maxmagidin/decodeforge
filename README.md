@@ -2,6 +2,10 @@
 
 **A shape-specializing compiler for quantized LLM linear layers on commodity CPUs.**
 
+DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
+Third-party dependencies, model artifacts, and separately attributed material
+retain their own licenses.
+
 DecodeForge compiles the dominant operation in autoregressive LLM decode—large
 matrix-vector products with frozen weights—into guarded ARM64 NEON kernels on
 an Apple M4. Its completed compiler path lowers a typed Q8 linear operation,

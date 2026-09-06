@@ -2,6 +2,7 @@
 name = "decodeforge"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 publish = false
 description = "DecodeForge command-line interface."
 build = "build.rs"

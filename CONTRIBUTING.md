@@ -45,5 +45,9 @@ needed to reproduce published claims. Do not commit model checkpoints, scratch
 benchmark output, secrets, hostnames, usernames, serial numbers, or absolute
 developer paths.
 
-The repository does not yet declare a license. Contributors must not infer or
-add one without an explicit maintainer decision.
+## License
+
+DecodeForge's original code is licensed under [Apache 2.0](LICENSE), selected
+explicitly by the maintainer. Contributions are governed by its contribution
+terms. Preserve existing third-party copyright, attribution, and license notices;
+dependencies and model artifacts retain their own licenses.
