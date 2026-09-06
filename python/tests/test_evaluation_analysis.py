@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -202,3 +204,42 @@ def test_summary_rejects_incomplete_or_tampered_evidence(
         correctness["source"]["git_dirty"] = True
     with pytest.raises(ValueError, match=message):
         analyze.summarize(correctness, performance, spec, digest)
+
+
+def test_cli_verifies_summary_without_writing_and_rejects_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    correctness, performance, spec, _ = _fixture()
+    spec_text = json.dumps(spec)
+    digest = hashlib.sha256(spec_text.encode()).hexdigest()
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(spec_text)
+    paths = [
+        tmp_path / "correctness.json",
+        *[tmp_path / f"perf-{i}.json" for i in range(3)],
+    ]
+    for path, data in zip(paths, [correctness, *performance], strict=True):
+        data["spec_sha256"] = digest
+        path.write_text(json.dumps(data))
+    summary_path = tmp_path / "summary.json"
+    base = [
+        "analyze_evaluation.py",
+        "--correctness",
+        str(paths[0]),
+        "--performance",
+        *[str(path) for path in paths[1:]],
+        "--spec",
+        str(spec_path),
+    ]
+    monkeypatch.setattr(sys, "argv", [*base, "--output", str(summary_path)])
+    assert analyze.main() == 0
+    original = summary_path.read_bytes()
+    monkeypatch.setattr(sys, "argv", [*base, "--verify-summary", str(summary_path)])
+    assert analyze.main() == 0
+    assert summary_path.read_bytes() == original
+    summary = json.loads(original)
+    summary["correctness"]["cases"] = 999
+    summary_path.write_text(json.dumps(summary))
+    with pytest.raises(SystemExit) as caught:
+        analyze.main()
+    assert caught.value.code == 2

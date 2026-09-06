@@ -254,7 +254,9 @@ def main() -> int:
     parser.add_argument("--correctness", type=Path, required=True)
     parser.add_argument("--performance", type=Path, nargs=3, required=True)
     parser.add_argument("--spec", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    publication = parser.add_mutually_exclusive_group(required=True)
+    publication.add_argument("--output", type=Path)
+    publication.add_argument("--verify-summary", type=Path)
     args = parser.parse_args()
     try:
         spec_bytes = args.spec.read_bytes()
@@ -264,12 +266,21 @@ def main() -> int:
             json.loads(spec_bytes),
             hashlib.sha256(spec_bytes).hexdigest(),
         )
-        with args.output.open("x", encoding="utf-8") as stream:
-            json.dump(summary, stream, indent=2, sort_keys=True, allow_nan=False)
-            stream.write("\n")
+        if args.verify_summary is not None:
+            _require(
+                summary == json.loads(args.verify_summary.read_text()),
+                "retained summary differs from recomputed observations",
+            )
+        else:
+            with args.output.open("x", encoding="utf-8") as stream:
+                json.dump(summary, stream, indent=2, sort_keys=True, allow_nan=False)
+                stream.write("\n")
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
-    print(json.dumps(summary, indent=2, sort_keys=True, allow_nan=False))
+    if args.verify_summary is not None:
+        print("evaluation-summary-verification: ok")
+    else:
+        print(json.dumps(summary, indent=2, sort_keys=True, allow_nan=False))
     return 0
 
 
