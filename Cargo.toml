@@ -7,3 +7,6 @@ members = [
     "compiler/decodeforge-cli",
     "compiler/decodeforge-bridge",
 ]
+
+[workspace.package]
+license = "Apache-2.0"
