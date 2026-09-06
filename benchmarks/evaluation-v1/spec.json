@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "format": "decodeforge_evaluation_v1",
+  "protocol_id": "tinyllama-qproj-evaluation-v1",
+  "status": "predeclared",
+  "model": {
+    "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "revision": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+    "local_files_only": true,
+    "provenance": "benchmarks/g3/spec.json"
+  },
+  "inputs": {
+    "encoding": "UTF-8",
+    "chat_template": {
+      "messages": "[{\"role\":\"user\",\"content\":prompt}]",
+      "add_generation_prompt": true,
+      "tokenize": true,
+      "max_input_tokens": 512,
+      "natural_eos_only": true
+    }
+  },
+  "cases": [
+    {"id":"short-01-16","category":"short","prompt":"What is a compiler? Answer in one concise sentence.","reference_text":"A compiler translates source code into executable machine code.","max_new_tokens":16},
+    {"id":"short-02-32","category":"short","prompt":"Name the largest planet in our solar system and give one fact.","reference_text":"Jupiter is the largest planet and is a gas giant.","max_new_tokens":32},
+    {"id":"short-03-64","category":"short","prompt":"Why does ice float on liquid water? Give a brief explanation.","reference_text":"Ice floats because its crystal structure makes it less dense than liquid water.","max_new_tokens":64},
+    {"id":"short-04-16","category":"short","prompt":"Compute 17 times 6 and show the arithmetic.","reference_text":"17 times 6 equals 102.","max_new_tokens":16},
+    {"id":"short-05-32","category":"short","prompt":"What does the HTTP status code 404 usually mean?","reference_text":"HTTP 404 means that the requested resource was not found.","max_new_tokens":32},
+    {"id":"short-06-64","category":"short","prompt":"Give one reason that regular backups are useful for a laptop owner.","reference_text":"Backups let an owner recover files after accidental deletion, hardware failure, or corruption.","max_new_tokens":64},
+    {"id":"short-07-16","category":"short","prompt":"Define a variable in programming using plain language.","reference_text":"A variable is a named location used to store a value that can change.","max_new_tokens":16},
+    {"id":"short-08-32","category":"short","prompt":"Which gas do plants take in during photosynthesis?","reference_text":"Plants take in carbon dioxide during photosynthesis.","max_new_tokens":32},
+    {"id":"short-09-64","category":"short","prompt":"State the main purpose of a checksum in one or two sentences.","reference_text":"A checksum is a compact value used to detect accidental changes in data.","max_new_tokens":64},
+    {"id":"short-10-64","category":"short","prompt":"What is the next prime number after 11?","reference_text":"The next prime number after 11 is 13.","max_new_tokens":64},
+    {"id":"medium-01-16","category":"medium","prompt":"Explain in two or three sentences how a hash table usually finds a value from a key, and mention one collision strategy.","reference_text":"A hash table hashes a key to choose a bucket and then searches entries in that bucket. Collisions can be handled by chaining multiple entries or by probing other slots.","max_new_tokens":16},
+    {"id":"medium-02-32","category":"medium","prompt":"Give a practical three-step checklist for investigating a program that suddenly uses too much memory.","reference_text":"Measure memory over time, identify the largest allocations, and inspect retained references or caches. Reproduce the growth with a small workload before changing code.","max_new_tokens":32},
+    {"id":"medium-03-64","category":"medium","prompt":"Summarize why separating a compiler's parsing and optimization phases can make the implementation easier to maintain.","reference_text":"Separate phases give each component a clear responsibility and an explicit intermediate representation. That boundary makes tests, diagnostics, and later optimization changes easier to manage.","max_new_tokens":64},
+    {"id":"medium-04-16","category":"medium","prompt":"Describe the difference between a process and a thread, including one resource they share or do not share.","reference_text":"A process has its own address space, while threads run inside a process and share its memory. Threads are lighter to start but require synchronization for shared state.","max_new_tokens":16},
+    {"id":"medium-05-32","category":"medium","prompt":"Why can a database index speed up a lookup, and what is one cost of maintaining an index?","reference_text":"An index organizes selected columns so the database can find rows without scanning the whole table. Inserts and updates cost more because each relevant index must also be maintained.","max_new_tokens":32},
+    {"id":"medium-06-64","category":"medium","prompt":"Explain how a unit test differs from an integration test and give a suitable example of each.","reference_text":"A unit test isolates one function or component with controlled dependencies, such as testing a parser on one string. An integration test exercises connected components, such as a service writing and reading a real database.","max_new_tokens":64},
+    {"id":"medium-07-16","category":"medium","prompt":"Give two concise reasons to validate configuration at program startup rather than after serving requests.","reference_text":"Startup validation fails early and gives a clear diagnostic before partial work begins. It also prevents requests from repeatedly encountering the same invalid setting.","max_new_tokens":16},
+    {"id":"medium-08-32","category":"medium","prompt":"What problem does a queue solve between a producer and a consumer, and what trade-off does buffering introduce?","reference_text":"A queue decouples producer and consumer rates by holding work temporarily. Buffering smooths short bursts but consumes memory and can increase waiting time when the consumer falls behind.","max_new_tokens":32},
+    {"id":"medium-09-64","category":"medium","prompt":"Describe a simple way to make an API retry safe when a client may repeat the same request after a timeout.","reference_text":"Give each logical request an idempotency key and store the result associated with that key. A repeated request returns the stored result instead of applying the side effect twice.","max_new_tokens":64},
+    {"id":"medium-10-32","category":"medium","prompt":"Explain why measuring a program before and after an optimization requires keeping the workload and environment consistent.","reference_text":"A changed workload or environment can alter timing independently of the optimization. Keeping them fixed makes the observed difference more attributable to the code change.","max_new_tokens":32},
+    {"id":"long-01-16","category":"long","prompt":"A small team is designing a command-line backup tool for laptops. The tool should copy changed files, preserve metadata, tolerate an interrupted run, and avoid deleting the only copy of a file. Describe a safe high-level design, including how it can resume and how it should report failures. Discuss the manifest, temporary files, verification, retention, and recovery order so another engineer could turn the design into a review checklist. Include enough detail to distinguish an atomic publication from a partially copied destination and to explain what happens after a crash during verification. Consider permissions, symbolic links, excluded paths, disk-full errors, and a dry-run mode; state which records are durable before the command declares success and which old snapshot remains available during recovery.","reference_text":"Use a manifest of source paths, sizes, timestamps, and hashes, and copy changed files to a temporary destination before an atomic rename. Keep prior snapshots until verification succeeds, resume from the manifest after interruption, and report each failed path with a final summary.","max_new_tokens":16},
+    {"id":"long-02-32","category":"long","prompt":"A service receives events from several producers and must process each event at least once even when workers crash. Explain a compact design using durable storage, acknowledgements, retries, and idempotent consumers, and state what duplicate processing means for correctness. Include the order of operations around an acknowledgement, how a restart discovers unfinished work, and one way to make a side effect repeatable. Also describe what evidence should be retained when an event fails repeatedly and how operators can distinguish delayed work from a lost event. Discuss bounded retry backoff, a dead-letter queue, producer flow control, event ordering when it matters, and metrics for backlog age and duplicate rate; identify the point at which an operator may safely replay an event.","reference_text":"Persist events before acknowledging producers, retry unacknowledged deliveries, and record a consumer's completed event IDs durably. At-least-once delivery can create duplicates, so handlers must make repeated processing harmless or transactional.","max_new_tokens":32},
+    {"id":"long-03-64","category":"long","prompt":"Compare breadth-first search and depth-first search for traversing a graph. Explain how their frontier differs, name one problem for which each is a natural choice, and mention the memory trade-off on a wide graph. Then outline how a visited set prevents repeated work, what changes when edges have weights, and why the usual shortest-path guarantee depends on those weights. Include a small discussion of disconnected graphs, cycles, and how a priority queue changes the traversal when nonnegative edge costs matter. Relate the discussion to adjacency lists versus matrices, recursive stack limits, deterministic neighbor ordering, and reconstruction of a path from predecessor links; make clear which claims apply only to unweighted graphs and which require nonnegative costs.","reference_text":"Breadth-first search uses a queue and explores by distance, making it natural for shortest unweighted paths. Depth-first search uses a stack or recursion and suits reachability or backtracking; on a wide graph, breadth-first search can use more memory.","max_new_tokens":64},
+    {"id":"long-04-16","category":"long","prompt":"A command-line compiler sometimes emits a wrong result only when optimization is enabled. Propose a disciplined debugging sequence that preserves a small reproducer, compares intermediate representations, checks whether the issue is in analysis or code generation, and records the eventual regression test. Explain why each stage narrows the search. Include how to compare optimized and unoptimized artifacts, how to capture the first divergent intermediate value, and how to avoid changing several suspected causes before the test is stable. Also consider target architecture, debug information, undefined behavior, nondeterministic passes, and the distinction between a wrong diagnostic and a wrong executable; specify which logs and compiler flags should be retained so a later engineer can repeat the investigation exactly.","reference_text":"Reduce the input while preserving the wrong output, then compare intermediate representations before and after each optimization. Inspect the first mismatch, classify it as analysis or code generation, and add the reduced case as a regression test.","max_new_tokens":16},
+    {"id":"long-05-32","category":"long","prompt":"A web service must roll out a schema change while old and new application versions run together. Describe an expand-and-contract migration plan with backward-compatible reads and writes, observation of old clients, a safe backfill, and a rollback point. Mention why removing the old field too early is dangerous and what evidence permits the final cleanup. Explain how to monitor mixed-version traffic, validate row counts and semantics, and stop the rollout if the new representation disagrees with the old one. Include a feature flag, a pause between writes and reads, checks for null and default semantics, a plan for replicas and delayed migrations, and an explicit decision about whether rollback means reverting code, data, or both.","reference_text":"Add the new field while old code still works, write both representations, backfill and verify existing rows, then switch readers after observing old clients. Remove the old field only after rollback is no longer needed.","max_new_tokens":32},
+    {"id":"long-06-64","category":"long","prompt":"You are reviewing a numerical kernel that quantizes weights into blocks and uses a native fast path only for particular shapes and strides. Explain how to design a trustworthy test matrix covering supported calls, guard misses, malformed metadata, nonfinite output, and comparison with a same-quantization fallback. Distinguish functional acceptance from timing, and say which setup work must stay outside a steady-state timer. Include identity checks for packed weights, tests at tile boundaries, deliberate unsupported layouts, cleanup of live handles, and a report that makes an apparent speedup auditable. Add zero and mixed-sign vectors, alignment boundaries, concurrent close attempts, status-code handling, finite-output scans, and a record of the exact compiler, CPU feature set, and thread policy; explain why fallback correctness is not evidence of native execution.","reference_text":"Test supported shapes and strides against a canonical same-Q8 result, then exercise every guard miss and malformed identity with safe fallback or rejection. Validate finite outputs and counters before timing; keep packing, loading, allocation, and evidence comparisons outside the steady-state boundary.","max_new_tokens":64},
+    {"id":"long-07-16","category":"long","prompt":"A team wants to claim that a native implementation is faster than a reference implementation. List the minimum evidence needed for a fair comparison, including identical inputs, warmup, repeated samples, timing boundaries, and reporting of setup costs. Explain why a single favorable run is not enough. Add how to control thread counts, preserve raw observations, pair the paths in each process, and state what conclusion is unavailable when only one physical host can be measured. Discuss process startup, resident memory, scheduler noise, compiler flags, input allocation, instrumentation, and the difference between a full guarded operator boundary and a kernel-only microbenchmark; require a report that lets another engineer recompute every summary.","reference_text":"Use identical inputs and artifacts, warm both paths, repeat measurements, and define boundaries that exclude or report setup consistently. A single run cannot distinguish a real improvement from startup cost, noise, or an accidental workload difference.","max_new_tokens":16},
+    {"id":"long-08-32","category":"long","prompt":"An application stores user documents locally and syncs them to a remote service that may be offline for hours. Design a conflict-aware synchronization outline with local durability, version metadata, retries, resumable transfers, and a user-visible conflict policy. Include what should happen when the same document changes independently on two devices and how the system avoids silently losing either version. Discuss temporary files, integrity checks, deletion tombstones, clock skew, and a recovery path when a device reconnects with stale metadata. Include authentication failure, quota exhaustion, cancellation during upload, encrypted local staging, server-side version retention, and a clear distinction between a user-requested deletion and a device that merely has not checked in recently.","reference_text":"Store durable versions with a change identifier, retry resumable uploads and downloads, and retain both divergent versions when concurrent edits conflict. Ask the user or apply a documented merge policy rather than silently overwriting one version.","max_new_tokens":32},
+    {"id":"long-09-64","category":"long","prompt":"Explain how to evaluate a language-model implementation after replacing one matrix-multiplication path with a quantized native operator. Cover artifact identity, shape and dtype guards, numerical output checks, generation token parity, teacher-forced scoring on a fixed sequence, lifecycle cleanup, and practical latency measurements. Separate what establishes correctness from what merely provides context about quality or speed. Include same-prefix comparisons, natural EOS behavior, all-layer dispatch counters, fresh-process startup, resident memory, warmup, paired samples, and the reason instrumentation must not be confused with production throughput. Also describe deterministic chat-template rendering, original FP32 contextual output, finite NLL handling, cap variation, rejection of silent fallback, per-process raw samples, and why a fixed synthetic probe cannot support a general capability score.","reference_text":"Pin the model and packed-weight identities, validate shape and dtype guards, compare finite operator outputs and greedy token IDs, and check installation cleanup. Use fixed teacher-forced sequences for descriptive NLL and argmax agreement, and report paired warmed timings with setup separate; correctness and context are distinct claims.","max_new_tokens":64},
+    {"id":"long-10-16","category":"long","prompt":"A production service needs a clear incident report after a failed deployment. Specify the important factual sections: impact, timeline, triggering change, detection, mitigation, root cause, contributing conditions, and follow-up actions. Explain why the report should preserve uncertainty and distinguish observed evidence from a hypothesis. Include how to link logs and deploy identities, record customer-visible effects, assign owners and due dates, and state which questions remain open without blaming an individual before the evidence is complete. Add a concise executive summary, affected versions and regions, rollback decision, alert quality, customer communication, evidence retention, and a later review date; distinguish an immediate containment action from a long-term corrective action and record when each is verified.","reference_text":"Record impact, a timestamped timeline, the triggering change, detection, mitigation, root cause, contributing conditions, and owners for follow-up actions. Mark hypotheses as uncertain so later evidence can correct them without rewriting observed facts.","max_new_tokens":16}
+  ],
+  "output_cap_balance": {"16": 10, "32": 10, "64": 10},
+  "generation": {
+    "device": "cpu",
+    "model_compute_dtype": "float32",
+    "eval_mode": true,
+    "torch_inference_mode": true,
+    "decoding": "greedy",
+    "do_sample": false,
+    "num_beams": 1,
+    "use_cache": true,
+    "min_new_tokens": 0,
+    "stop_policy": "natural_eos_or_max_new_tokens",
+    "stop_after_sentence": false,
+    "seed": 0,
+    "torch_num_threads": 1,
+    "torch_num_interop_threads": 1
+  },
+  "correctness": {
+    "all_22_dispatch_lifecycle": {
+      "ordered_layer_path_pattern": "model.layers.{layer}.self_attn.q_proj",
+      "layer_indices": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+      "initial": {"installed_modules":22,"restored_modules":0,"live_adapters":22,"in_flight":0,"all_layers_open":true},
+      "per_case": {"require_all_22_layers":true,"same_q8_reference":"every q_proj forward uses same-Q8 fallback","hybrid_native":"prefill uses fallback; every eligible cached M=1 decode uses native","native_error":0,"fallback_error":0,"predispatch_error":0,"rejected_closed":0,"in_flight_after_generation":0,"require_at_least_two_generated_tokens_for_cached_coverage":true},
+      "close": {"installed_modules":0,"restored_modules":22,"live_adapters":0,"in_flight":0,"original_modules_restored":true,"second_close_is_idempotent":true}
+    },
+    "same_q8_native": {
+      "paths": ["same_q8_reference","hybrid_native"],
+      "input_token_ids_identical": true,
+      "same_prefix_required": true,
+      "finite_logits_required": true,
+      "logit_comparison": {"comparison":"elementwise_abs_diff_le_atol_plus_rtol_abs_reference","absolute_tolerance":0.001,"relative_tolerance":0.001,"scope":"same-prefix logits at every prefill and cached decode step"},
+      "retention":"retain per-step finite/max-error/tolerance metrics and token IDs; full-vocabulary logits are transient and not retained",
+      "exact_generated_token_id_match": true,
+      "exact_full_sequence_token_id_match": true,
+      "text_is_diagnostic_only": true
+    },
+    "original_fp32_contextual_baseline": {
+      "path":"fp32",
+      "purpose":"contextual baseline only; not a pass/fail quality score",
+      "run_each_case":true,
+      "same_chat_template_and_generation_settings":true,
+      "report":["prompt_token_count","generated_token_ids","generated_token_count","stop_reason","decoded_text"],
+      "no_quality_score":true
+    },
+    "teacher_forced_probe": {
+      "run_paths":["fp32","same_q8_reference"],
+      "sequence_source":"fixed_reference_text",
+      "sequence":"chat-template input IDs followed by tokenized reference_text; do not append EOS",
+      "require_prompt_and_reference_tokens":true,
+      "compare_on_identical_target_sequence":true,
+      "report":["target_token_ids","per_token_nll","mean_nll","argmax_token_ids","argmax_agreement_with_original_fp32"],
+      "finite_required":true,
+      "no_invented_quality_score":true,
+      "interpretation":"descriptive quantization sensitivity; no arbitrary NLL threshold or quality grade"
+    }
+  },
+  "performance_case_ids": ["short-01-16","medium-02-32","long-03-64"],
+  "performance": {
+    "fresh_processes":3,
+    "second_physical_host":"unavailable; same-host clean-checkout replication only",
+    "warmup_complete_generations_per_path_per_case":1,
+    "measured_generations_per_path_per_case":3,
+    "paths":["fp32","same_q8_reference","hybrid_native"],
+    "timing": {
+      "clock":"time.perf_counter_ns",
+      "startup":"sum of model preparation and runtime/installation components, excluding intervening evaluation runs; CLI timestamp precedes evaluation-module imports but follows interpreter/stdlib startup; direct API timestamp starts at model preparation",
+      "prefill":"immediately before one fixed chat-template input forward without past_key_values through model return; outer finite-logit validation is excluded from this prefill interval",
+      "decode":"one cached M=1 forward plus greedy next-token selection, recorded per generated token",
+      "total_generation":"prefill start through final token selection before text decoding, including outer output validation",
+      "rss":"operating-system process lifetime peak resident set size, sampled after cleanup; includes interpreter/import memory",
+      "setup_excluded_from_warmed_generation":true,
+      "text_decode_excluded_from_timed_regions":true
+    },
+    "production_guards": {
+      "enabled":true,
+      "include":["identity-bound asset checks","shape/dtype/device/stride checks","native eligibility checks","status decoding","finite-output checks"],
+      "overhead":"included_in_timed_production_dispatch_and_not_isolated",
+      "guard_bypass_comparison":false,
+      "hooks_inside_timer":false,
+      "weight_comparison_inside_timer":false,
+      "fallback_clone_or_hash_work":"included when performed by the production fallback and disclosed; not removed to improve the number"
+    },
+    "reporting":{"retain_raw_samples":true,"summary":["median","min","max","per-process values"],"startup_and_rss_separate_from_generation":true,"no_speedup_claim_without_paired_path_samples":true,"no_cross_host_claim":true}
+  },
+  "reproducibility": {
+    "offline_only":true,
+    "clean_checkout_required":true,
+    "record":["git_revision","model_and_tokenizer_file_hashes","Q8_inventory_identity","bridge_hash_and_abi","python_torch_transformers_versions","host_os_architecture","thread_settings","environment_variables","case_token_ids","rendered_chat_template_hash","command_line"],
+    "rerun_policy":"three fresh processes from the same clean checkout and pinned local artifacts; retain rejected attempts and do not silently retry a failed case",
+    "result_is_not_g3":true
+  }
+}
