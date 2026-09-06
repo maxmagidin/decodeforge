@@ -43,6 +43,11 @@ jobs:
           test "$actual" = "$EXPECTED_HOST"
       - name: Install pinned toolchains and dependencies
         run: make setup
+      - name: Repair pinned macOS loader layout and verify preflight
+        if: runner.os == 'macOS'
+        run: |
+          make repair-rust-toolchain-apply
+          make check-rust-toolchain
       - name: Run foundation checks
         run: make check
       - name: Verify checked-in G0 evidence
@@ -55,4 +60,5 @@ jobs:
           UV_OFFLINE: "true"
         run: |
           make setup
+          make check-rust-toolchain
           make check

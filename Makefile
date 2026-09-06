@@ -1,6 +1,6 @@
 .PHONY: setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
-	check-rust-toolchain \
+	check-rust-toolchain repair-rust-toolchain repair-rust-toolchain-apply \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
 	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session run-g3-demo analyze-g3 verify-g3-result \
@@ -66,6 +66,14 @@ setup:
 
 check-rust-toolchain:
 	$(UV) run --frozen python scripts/check_rust_toolchain.py --rust-version "$(RUST_VERSION)"
+
+# Inspection is the default. The apply target is an explicit opt-in to a
+# narrowly guarded layout repair; ordinary setup does not modify that layout.
+repair-rust-toolchain:
+	$(UV) run --frozen python scripts/repair_rust_toolchain.py --rust-version "$(RUST_VERSION)"
+
+repair-rust-toolchain-apply:
+	$(UV) run --frozen python scripts/repair_rust_toolchain.py --rust-version "$(RUST_VERSION)" --apply
 
 format:
 	$(CARGO) fmt --all

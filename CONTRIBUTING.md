@@ -38,6 +38,22 @@ CARGO_NET_OFFLINE=true UV_OFFLINE=true make check
 PyTorch command only verifies that the pinned CPU wheel imports; it does not
 claim framework integration.
 
+## Fresh macOS Rust loader readiness
+
+Before a real G3 capture, run `make check-rust-toolchain`. The pinned Rust macOS
+distribution can omit the library link expected by `rust-objcopy`, producing
+`@rpath/libLLVM.dylib` loader errors. Successful Rust compilation alone does not
+prove this preflight passed; stripping failures may only be warnings.
+
+`make repair-rust-toolchain` inspects the pinned installation without changing
+it. If it identifies the known missing link, explicitly opt in with
+`make repair-rust-toolchain-apply`. The repair only creates the guarded missing
+link to that same toolchain's LLVM library; it refuses unexpected existing
+entries and reruns the normal loader check. No `DYLD_*` workaround, compiler pin
+change, or stripping bypass is applied. Ordinary `make setup` does not perform
+this repair. Hosted macOS CI opts in explicitly on its disposable runner, then
+runs the strict preflight before the foundation tests and again offline.
+
 ## Results and generated data
 
 Commit small correctness fixtures, generated source, assembly, and raw samples
