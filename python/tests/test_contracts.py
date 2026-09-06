@@ -71,6 +71,32 @@ def test_duplicate_json_key_is_rejected(tmp_path: Path) -> None:
     assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-008"]
 
 
+def test_nonfinite_numeric_token_is_rejected(tmp_path: Path) -> None:
+    document = tmp_path / "overflow.json"
+    document.write_text(
+        '{"schema_version":1,"code":"DFE-BUNDLE-001",'
+        '"severity":"error","component":"bundle",'
+        '"summary":"bad","context":{"size":1e999}}',
+        encoding="utf-8",
+    )
+    diagnostics = validate_path(document, "diagnostic")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-001"]
+
+
+def test_nonfinite_numeric_token_in_permissive_context_is_rejected(
+    tmp_path: Path,
+) -> None:
+    document = tmp_path / "context-overflow.json"
+    document.write_text(
+        '{"schema_version":1,"code":"DFE-BUNDLE-001",'
+        '"severity":"error","component":"bundle",'
+        '"summary":"bad","context":{"metadata":{"value":1e999}}}',
+        encoding="utf-8",
+    )
+    diagnostics = validate_path(document, "diagnostic")
+    assert [item["code"] for item in diagnostics] == ["DFE-SCHEMA-001"]
+
+
 def test_empty_foundation_bundle_has_exact_missing_artifacts() -> None:
     diagnostics = verify_bundle(BUNDLES / "foundation-empty")
     assert [item["code"] for item in diagnostics] == ["DFE-BUNDLE-001"] * 3
@@ -345,6 +371,16 @@ def test_g3_make_recipes_never_render_raw_public_inputs(tmp_path: Path) -> None:
 def test_g3_surfaces_transport_raw_public_inputs(
     tmp_path: Path,
 ) -> None:
+    def assert_rust_preflight(invocations: list[dict[str, object]]) -> None:
+        assert invocations[0]["argv"] == [
+            "run",
+            "--frozen",
+            "python",
+            "scripts/check_rust_toolchain.py",
+            "--rust-version",
+            "1.98.0",
+        ]
+
     sentinel = tmp_path / "executed-make-layer"
     backtick = chr(96)
     cargo_target = "/opt/decodeforge/cargo$(error CARGO_AUDIT)"
@@ -356,9 +392,11 @@ def test_g3_surfaces_transport_raw_public_inputs(
         "prepare-g3-assets",
         [f"WEIGHTS={weights}", f"OUTPUT={output}"],
         cargo=True,
+        uv=True,
     )
-    assert len(basic_preparation) == 1
-    basic_argv = basic_preparation[0]["argv"]
+    assert len(basic_preparation) == 2
+    assert_rust_preflight(basic_preparation)
+    basic_argv = basic_preparation[1]["argv"]
     assert isinstance(basic_argv, list)
     assert basic_argv[basic_argv.index("--source") + 1] == weights
     assert basic_argv[basic_argv.index("--output") + 1] == output
@@ -375,9 +413,12 @@ def test_g3_surfaces_transport_raw_public_inputs(
         cargo=True,
         uv=True,
     )
-    assert len(preparation) == 2
+    # The timed preparation now runs the Rust dylib loader preflight before
+    # building the helper and invoking the preparation wrapper.
+    assert len(preparation) == 3
+    assert_rust_preflight(preparation)
     assert preparation[0]["cargo_target"] == cargo_target
-    preparation_argv = preparation[1]["argv"]
+    preparation_argv = preparation[2]["argv"]
     assert isinstance(preparation_argv, list)
     assert preparation_argv[preparation_argv.index("--source") + 1] == weights
     assert preparation_argv[preparation_argv.index("--output") + 1] == output
@@ -405,17 +446,21 @@ def test_g3_surfaces_transport_raw_public_inputs(
         "build-g3-bridge",
         [],
         cargo=True,
+        uv=True,
     )
-    assert len(default_build) == 1
-    assert default_build[0]["cargo_target"] is None
+    assert len(default_build) == 2
+    assert_rust_preflight(default_build)
+    assert default_build[1]["cargo_target"] is None
     targeted_build = _capture_make_invocations(
         tmp_path,
         "build-g3-bridge",
         [f"CARGO_TARGET_DIR={cargo_target}"],
         cargo=True,
+        uv=True,
     )
-    assert len(targeted_build) == 1
-    assert targeted_build[0]["cargo_target"] == cargo_target
+    assert len(targeted_build) == 2
+    assert_rust_preflight(targeted_build)
+    assert targeted_build[1]["cargo_target"] == cargo_target
 
     spec = "/opt/decodeforge/spec$(error SPEC_AUDIT)\nline.json"
     adapter = _capture_make_invocations(
@@ -430,8 +475,11 @@ def test_g3_surfaces_transport_raw_public_inputs(
         uv=True,
         darwin_arm64=True,
     )
-    assert len(adapter) == 3
-    adapter_argv = adapter[2]["argv"]
+    # The adapter checkpoint preflights first, verifies assets, builds the
+    # bridge, and finally invokes the Python checkpoint.
+    assert len(adapter) == 4
+    assert_rust_preflight(adapter)
+    adapter_argv = adapter[3]["argv"]
     assert isinstance(adapter_argv, list)
     assert adapter_argv[adapter_argv.index("--library") + 1] == (
         cargo_target + "/release/libdecodeforge_bridge.dylib"
@@ -583,6 +631,7 @@ def test_test_g3_dry_run_has_the_closed_focused_gate() -> None:
         "python/tests/test_g3_evidence.py",
         "python/tests/test_g3_preparation.py",
         "python/tests/test_g3_session.py",
+        "python/tests/test_g3_session_cli.py",
         "python/tests/test_g3_results.py",
     ]
     positions = [output.index(suite) for suite in expected_suites]

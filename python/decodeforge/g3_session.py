@@ -291,7 +291,9 @@ def publish_new_json(path: Path, value: object) -> None:
     temporary_exists = False
     linked_identity: tuple[int, int] | None = None
     try:
-        encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        encoded = (
+            json.dumps(value, allow_nan=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
         descriptor = os.open(
             temporary_name,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
@@ -1663,6 +1665,10 @@ def run_session(
         preparation_receipt = deps.load_preparation_receipt(request.preparation_receipt)
         offline_preparation = preparation_receipt.session_projection()
         preparation_checkout = preparation_receipt.checkout_revision
+        if checkout_preflight.get("revision") != preparation_checkout:
+            raise G3SessionError(
+                "preparation receipt checkout revision differs from session checkout"
+            )
         preparation_argv = preparation_receipt.command_argv
         preparation_executable_identity = preparation_receipt.tool_executable_identity
         deps.verify_preparation_command(
@@ -1735,9 +1741,12 @@ def run_session(
         ):
             raise G3SessionError("preparation receipt does not match installed assets")
         install_end = deps.clock_ns()
+        installed_counters = installation.counters
         if (
-            installation.counters.live_adapters != 22
-            or installation.counters.in_flight != 0
+            installed_counters.installed_modules != 22
+            or installed_counters.restored_modules != 0
+            or installed_counters.live_adapters != 22
+            or installed_counters.in_flight != 0
         ):
             raise G3SessionError(
                 "transactional installation is not fully live and idle"
@@ -1976,6 +1985,8 @@ def run_session(
             }
         )
     final_counters = installation.counters
+    if final_counters.installed_modules != 0:
+        raise G3SessionError("adapter cleanup left installed query projections")
     checkout_final = deps.checkout_evidence(request.spec_path)
     if checkout_preflight != checkout_final:
         raise G3SessionError("checkout changed during the generation session")
@@ -2076,7 +2087,9 @@ def run_session(
         "reconciliation": {
             "post_run_native_validation_counters": validation_counters,
             "installation": {
-                "installed_modules": final_counters.installed_modules,
+                # The evidence records how many modules were installed before
+                # generation; the live counter is correctly zero after close.
+                "installed_modules": installed_counters.installed_modules,
                 "restored_modules": final_counters.restored_modules,
                 "live_adapters": final_counters.live_adapters,
                 "in_flight": final_counters.in_flight,

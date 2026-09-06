@@ -939,6 +939,8 @@ def _validate_model(model: nn.Module) -> list[tuple[nn.Module, str, nn.Linear]]:
             or linear.weight.dtype is not torch.float32
         ):
             raise QProjModelError(f"{path} must be CPU FP32")
+        if not bool(torch.isfinite(linear.weight).all().item()):
+            raise QProjModelError(f"{path} weight must contain only finite values")
         if linear.training:
             raise QProjModelError(f"{path} must be in evaluation mode")
         targets.append((parent, child_name, linear))

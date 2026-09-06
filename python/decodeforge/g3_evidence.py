@@ -808,16 +808,31 @@ def _validate_drift(
             )
             for repetition in range(10)
         ]
-        first = float(statistics.median(values[:3]))
-        last = float(statistics.median(values[-3:]))
-        ratio = last / first
+        try:
+            first = float(statistics.median(values[:3]))
+            last = float(statistics.median(values[-3:]))
+            ratio = last / first
+        except (OverflowError, ZeroDivisionError):
+            return _diagnostic(
+                ["drift", "paths", path_index],
+                "drift timing values must fit finite floating-point arithmetic",
+            )
         record = records[path_index]
         passed = lower <= ratio <= upper
+        try:
+            recorded_values_match = (
+                math.isclose(record["first_window_median_ns"], first)
+                and math.isclose(record["last_window_median_ns"], last)
+                and math.isclose(record["ratio"], ratio)
+            )
+        except OverflowError:
+            return _diagnostic(
+                ["drift", "paths", path_index],
+                "drift summary values must fit finite floating-point arithmetic",
+            )
         if (
             record["path"] != path
-            or not math.isclose(record["first_window_median_ns"], first)
-            or not math.isclose(record["last_window_median_ns"], last)
-            or not math.isclose(record["ratio"], ratio)
+            or not recorded_values_match
             or record["pass"] != passed
         ):
             return _diagnostic(

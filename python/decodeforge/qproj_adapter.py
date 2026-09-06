@@ -495,6 +495,10 @@ class QProjAdapter(nn.Module):
     def _begin_forward(self) -> QProjExecutionMode:
         thread_id = threading.get_ident()
         with self._lifecycle:
+            if thread_id in self._forward_threads:
+                raise QProjAdapterError(
+                    "q-projection adapter does not support recursive forward calls"
+                )
             while self._transitioning:
                 self._lifecycle.wait()
             if self._closing or self._closed or self._close_failed:
@@ -585,7 +589,12 @@ class QProjAdapter(nn.Module):
 
     def close(self) -> None:
         binding_id: int | None
+        thread_id = threading.get_ident()
         with self._lifecycle:
+            if thread_id in self._forward_threads:
+                raise QProjAdapterError(
+                    "cannot close q-projection adapter from an admitted forward call"
+                )
             while self._closing or self._transitioning:
                 self._lifecycle.wait()
             if self._closed:

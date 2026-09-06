@@ -21,7 +21,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeAlias, cast
 
+from decodeforge._json import reject_nonfinite_number
+
 JsonObject: TypeAlias = dict[str, Any]
+
 
 RECEIPT_FORMAT: Final = "decodeforge_g3_offline_preparation_receipt_v1"
 PROTOCOL_ID: Final = "g3-tinyllama-qproj-generation-v1"
@@ -200,6 +203,7 @@ def _json(raw: bytes, label: str) -> JsonObject:
         value = json.loads(
             raw,
             object_pairs_hook=closed_object,
+            parse_float=reject_nonfinite_number,
             parse_constant=lambda constant: (_ for _ in ()).throw(
                 ValueError(f"nonfinite JSON constant {constant}")
             ),

@@ -179,6 +179,18 @@ def test_bundle_round_trip_is_lossless_and_closed(tmp_path: Path) -> None:
     )
 
 
+def test_readme_qualifies_the_measured_boundary(tmp_path: Path) -> None:
+    bundle, _ = _publish(tmp_path)
+    readme = (bundle / "README.md").read_text(encoding="utf-8")
+    assert "measured generation paths use guarded, instrumented `q_proj`" in readme
+    assert "clones and hashes its FP32 fallback weight on every call" in readme
+    assert "`native_work_ns` is unavailable" in readme
+    assert "Offline preparation and cold-start components" in readme
+    assert "limited to the 22 TinyLlama `q_proj` adapters" in readme
+    assert "does not establish a blanket whole-model speedup" in readme
+    assert "comparison with stock PyTorch" in readme
+
+
 def test_bundle_bytes_are_stable_for_input_order() -> None:
     receipt = _receipt()
     sessions = _sessions(receipt)

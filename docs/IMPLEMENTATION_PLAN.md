@@ -34,8 +34,8 @@ G0 Q8 semantics [complete]
     -> G2 hardened C ABI + guarded eager PyTorch op [complete]
     -> G3 frozen experiment + 22 packs + owning adapters [code-complete]
          -> replace all 22 q_proj modules transactionally [code-complete]
-         -> capture three pinned prompt-to-text sessions [pending]
-         -> verify and check in correctness/coverage/timing bundle [pending]
+         -> capture three pinned prompt-to-text sessions [complete]
+         -> verify and check in correctness/coverage/timing bundle [complete]
     -> G4 choose one extension from measured evidence
 ```
 
@@ -51,7 +51,7 @@ dependencies.
 | G0: semantics | complete | independent Python/Rust semantics, closed fixtures, and Apple M4 provenance bundle |
 | G1: compiler/kernel | complete | real `[2048,2048]` q-projection, generated scalar/NEON, audited dylibs, bit-exact corpus, three paired sessions |
 | G2: framework boundary | complete | hardened C ABI, guarded eager operator, lifecycle hardening, and real release-dylib checkpoint pass |
-| G3: model proof | in progress | G3.0–G3.3 and hardened capture/bundle tooling are code-complete; three fresh accepted sessions and the verified checked-in ten-file bundle remain |
+| G3: model proof | complete | three accepted clean-source processes, all-22 native decode coverage, exact token agreement and verified ten-file bundle; generated control-token text limits the presentation demo |
 | G4: extension | deferred | selected only from G3 bottleneck evidence |
 
 The three G1 Apple M4 sessions measured `3.95671x`, `3.96176x`, and
@@ -292,7 +292,7 @@ Acceptance invariants:
   is created;
 - repeated setup/teardown leaves no live bindings and no in-flight calls.
 
-### G3.4 Run the pinned generation checkpoint (formal capture pending)
+### G3.4 Run the pinned generation checkpoint (complete)
 
 Run two paths from the same tokenized prompt and same prepared Q8 assets:
 
@@ -320,7 +320,7 @@ Report cold and warmed paths; do not include offline packing in steady-state
 decode latency. The all-same-Q8 path is the semantic/performance baseline. The
 original FP32 model may be shown only as labeled quality/ecosystem context.
 
-### G3.5 Check in a closed result bundle (evidence pending)
+### G3.5 Check in a closed result bundle (complete)
 
 The bundle contains:
 
@@ -410,10 +410,11 @@ tool-installation paths produce a byte-identical dynamic library. Keep this
 exact external target path fixed through the bridge build and all three session
 runs.
 
-These commands can create and verify a candidate bundle, but they do not make
-G3 complete. Default `make check` result verification and a canonical
-`G3_RESULT` path must not be added until the accepted ten-file bundle is checked
-in.
+The accepted ten-file bundle is checked in at `results/g3/apple-m4-primary`.
+Default `make check` now verifies that canonical `G3_RESULT` in addition to G1.
+The [result interpretation](G3_RESULT_2026_09_05.md) records exact measurement
+boundaries and the control-token output limitation. Future captures must still
+pass their own frozen acceptance checks; command completion alone is not proof.
 
 ## G4 — Choose one extension from G3 evidence
 
@@ -460,7 +461,8 @@ verification. Those are the visible project proof.
 | improved end-to-end generation by `X%` | G3 raw model timings and uncertainty support that exact claim; G1 cannot substitute |
 | autotuned | recorded candidate set, correctness gate, selection policy, reproducible winner, and break-even analysis from a future G4 bundle |
 
-Before G3 completes, the honest summary is: “Built and measured a Mac-first Q8
-linear compiler with generated scalar/ARM64 NEON kernels, a hardened native
-PyTorch boundary, and transactional integration across all 22 TinyLlama query
-projections; formal three-session generation evidence is pending.”
+The evidence supports: “Built and measured a Mac-first Q8 linear compiler with
+generated scalar/ARM64 NEON kernels and a hardened eager PyTorch boundary;
+verified native execution across all 22 TinyLlama query projections in three
+independent generation sessions.” A polished text demo and broader performance
+claims require separate evidence; the accepted output contains control tokens.

@@ -9,9 +9,11 @@ packs weights into an output-interleaved layout, emits scalar and NEON C, asks
 Clang/LLVM to build the machine code, audits the artifact, and executes it
 through a versioned native ABI. The completed G2 boundary exposes that artifact
 as a guarded eager PyTorch operator, and the G3 implementation installs it for
-all 22 TinyLlama query projections during cached single-token decode. Formal
-three-session generation capture and its checked-in result bundle remain
-pending.
+all 22 TinyLlama query projections during cached single-token decode. Three
+accepted model sessions and their independently verified result bundle complete
+the frozen G3 technical gate. A separate chat-formatted presentation demo now
+produces useful text with identical reference/native tokens; it does not replace
+that accepted evidence.
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and unsupported operations. Prompt prefill uses a reference
@@ -159,7 +161,7 @@ substituting an estimate.
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree | generated code |
 | G1: M4 compiler/kernel — complete | A real TinyLlama `M=1` query projection lowers to generated scalar and ARM64 NEON with retained source, disassembly, correctness, and timings | framework boundary |
 | G2: native eager PyTorch boundary — complete | The hardened versioned C ABI and guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, error, and lifecycle paths | model adapter |
-| G3: 22-projection generation proof — in progress | G3.0–G3.3 and the hardened session/bundle tooling are code-complete; three fresh accepted sessions and the verified checked-in ten-file bundle remain | evidence-selected extension |
+| G3: 22-projection generation proof — complete under the frozen protocol | Three accepted fresh-process sessions and the verified ten-file bundle establish all-22 native coverage, numerical/token agreement, and clean restoration; text quality is a separate presentation limitation | evidence-selected extension |
 | G4: evidence-selected extension | One measured next step—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, or multicore—wins or yields an honest negative result | — |
 
 Failure at a gate causes investigation or a scope cut; it does not unlock more
@@ -220,6 +222,7 @@ analysis.
 - [Design and technical specification](docs/DESIGN.md)
 - [Benchmark and experimental methodology](docs/BENCHMARKS.md)
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
+- [Delivery progress and remaining issues](docs/PROGRESS_2026_09_05.md)
 - [G0 evidence contract](docs/G0_EVIDENCE_V1.md)
 - [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
 - [ADR 0004: Strict output-vector NEON lowering](docs/decisions/0004-strict-output-vector-neon.md)
@@ -281,13 +284,22 @@ behavior on Linux). The guarded eager PyTorch operator adds verified private
 library snapshots, exact tensor guards, observable fallback/error counters, and
 tested lifecycle ownership around that release boundary.
 
-G3.0–G3.3 are code-complete: the frozen experiment, deterministic 22-layer
-asset preparation, identity-bound owning adapter, and transactional all-layer
-installation have closed tests. Hardened preparation, session, analyzer, and
-bundle-verifier commands are ready for the formal capture. G3 remains in
-progress until three fresh independent sessions are accepted and their exact
-ten-file result bundle is verified and checked in; no model-performance claim
-is made before that evidence exists.
+G3 is complete under its frozen execution/correctness protocol. The checked-in
+[ten-file M4 result](results/g3/apple-m4-primary/README.md) retains three
+accepted fresh-process sessions from clean revision `ad15f5d`, with all 22
+query projections exercising native cached decode, exact token agreement,
+numerical checks and clean restoration. `make check` now independently
+regenerates and verifies this bundle as well as the G1 result.
+
+The pooled median total-generation times are 1.732 seconds for the guarded
+same-Q8 reference and 0.751 seconds for hybrid native execution. The reference
+includes per-call fallback-weight cloning and hashing; both paths include hook
+instrumentation. These are not isolated kernel timings or a stock-PyTorch
+comparison. The frozen prompt produced control-token text rather than a useful
+sentence. A separate [chat-template presentation demo](docs/PRESENTATION_DEMO.md)
+now produces a meaningful answer with identical tokens, all-22 native coverage,
+and clean restoration; it gives two sentences rather than the requested one.
+See the [original result interpretation](docs/G3_RESULT_2026_09_05.md).
 
 Reproduce the checked-in analysis with `make verify-g1-result`.
 

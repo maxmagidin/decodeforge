@@ -8,9 +8,11 @@ import time
 PROCESS_START_NS = time.perf_counter_ns()
 
 import argparse  # noqa: E402
+import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from decodeforge.g3_session import (  # noqa: E402
+    G3SessionError,
     SessionRequest,
     publish_new_json,
     run_session,
@@ -29,21 +31,25 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--spec", type=Path, default=Path("benchmarks/g3/spec.json"))
     arguments = parser.parse_args()
-    result = run_session(
-        SessionRequest(
-            session_id=arguments.session_id,
-            session_index=arguments.session_index,
-            spec_path=arguments.spec,
-            model_directory=arguments.model_dir,
-            asset_directory=arguments.assets,
-            bridge_library=arguments.library,
-            bridge_sha256=arguments.library_sha256,
-            preparation_receipt=arguments.preparation_receipt,
-            session_output=arguments.output,
-            process_start_ns=PROCESS_START_NS,
+    try:
+        result = run_session(
+            SessionRequest(
+                session_id=arguments.session_id,
+                session_index=arguments.session_index,
+                spec_path=arguments.spec,
+                model_directory=arguments.model_dir,
+                asset_directory=arguments.assets,
+                bridge_library=arguments.library,
+                bridge_sha256=arguments.library_sha256,
+                preparation_receipt=arguments.preparation_receipt,
+                session_output=arguments.output,
+                process_start_ns=PROCESS_START_NS,
+            )
         )
-    )
-    publish_new_json(arguments.output, result)
+        publish_new_json(arguments.output, result)
+    except G3SessionError as error:
+        print(f"g3-session: error: {error}", file=sys.stderr)
+        return 2
     print(f"g3-session: accepted {arguments.session_id} -> {arguments.output}")
     return 0
 
