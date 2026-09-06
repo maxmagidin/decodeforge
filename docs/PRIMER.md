@@ -1,5 +1,11 @@
 # DecodeForge: a reader's primer
 
+Read this as a guided tour: [the system](#how-the-pieces-fit-together),
+[the findings](#what-did-the-benchmarks-show),
+[the experimental method](#experimental-method-step-by-step),
+[the testing strategy](#testing-the-system-and-the-measurement-code), and
+[reproduction](#what-can-a-visitor-run).
+
 ## The project in one paragraph
 
 DecodeForge is a small compiler that generates specialized CPU code for part of
@@ -63,6 +69,14 @@ native execution. Installation is transactional: an unsuccessful installation
 must not leave a partially modified model. Closing the adapters restores the
 original PyTorch modules and releases native resources.
 
+Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/src/ir.rs)
+→ [weight packing](../compiler/decodeforge-compiler/src/pack.rs)
+→ [lowering](../compiler/decodeforge-compiler/src/lower.rs)
+→ [NEON code generation](../compiler/decodeforge-compiler/src/codegen/neon_c.rs)
+→ [artifact audit](../compiler/decodeforge-compiler/src/native/audit.rs)
+→ [native bridge](../compiler/decodeforge-bridge/src/lib.rs)
+→ [PyTorch model adapters](../python/decodeforge/qproj_model.py).
+
 ## Four terms worth knowing
 
 | Term | Meaning here |
@@ -119,6 +133,225 @@ These are correctness and integration findings, not a broad capability score.
 A separate sentence-formatted presentation demo is not a benchmark or proof
 of improved instruction following. Clean-checkout evaluation succeeded on the
 same M4; another physical Mac remains untested.
+
+## Experimental method, step by step
+
+The method separates three questions: **did compilation preserve the
+computation, what changed because of quantization, and how fast is the
+resulting implementation?** Each comparison has its own baseline and rules.
+
+### 1. Fix the experiment before inspecting outputs
+
+The broader evaluation uses a committed specification: 30 unique, original
+synthetic prompts, ten in each input-length class, with output caps of 16,
+32, and 64 occurring ten times each. Three performance cases are named in
+advance, not chosen because they produced favorable timings. These are
+sensitivity probes, not a representative sample of real user tasks or an
+external benchmark dataset.
+
+The runner requires the supplied specification to byte-match the committed
+copy. It pins the model artifacts, uses a clean source revision, and records
+model/tokenizer, Q8 pack, and native-library identities. CPU FP32 execution,
+one Torch thread, one inter-op thread, seed 0, the local chat template, and
+greedy decoding keep these choices fixed. A seed alone would not establish
+reproducibility; the artifact and execution settings matter too.
+
+Read: [fixed cases and settings](../benchmarks/evaluation-v1/spec.json),
+[input protocol](EVALUATION_V1.md#frozen-inputs-and-decoding), and
+[specification tests](../python/tests/test_evaluation_spec.py).
+
+### 2. Choose controls that isolate different causes
+
+| Comparison | What stays fixed | What changes | Question answered |
+| --- | --- | --- | --- |
+| Generated scalar vs generated NEON | Q8 projection, inputs, prepared-call boundary | Generated execution schedule | Does vectorization improve this kernel boundary? |
+| Same-Q8 reference vs hybrid native | Quantized weight identities, prompts, greedy settings | Query-projection execution path | Does native execution preserve model behavior? |
+| Original FP32 vs same-Q8 reference | Prompts or fixed teacher-forced tokens | Query-projection weight representation and reference path | How sensitive is this probe to quantization? |
+| Original FP32 vs hybrid native timing | Named prompt/cap and measurement boundaries | Combined quantization, adapters, and generated execution | How does the integrated implementation compare in practice? |
+
+The final row is a practical comparison, not a controlled estimate of the
+compiler's isolated contribution. Likewise, the guarded Q8 fallback includes
+production work that original FP32 does not perform. Keeping both baselines
+visible prevents attributing all differences to machine-code quality.
+
+Read: [numerical comparison policy](BENCHMARKS.md#numeric-policy),
+[reference/native paths](../python/decodeforge/qproj_adapter.py), and
+[model observations](../results/evaluation/apple-m4-v1/README.md#practical-performance).
+
+### 3. Require numerical agreement and observable execution
+
+During correctness capture, compare model logits at every shared input
+prefix. Every compared value must be finite and satisfy the predeclared rule:
+
+```text
+abs(native - reference) <= 0.001 + 0.001 * abs(reference)
+```
+
+That is an elementwise absolute-plus-relative tolerance, not an average error
+that could hide one bad output. Exact generated token-ID equality is a
+separate requirement. If tokens diverge, the runner does not compare unrelated
+continuations and call them equivalent. Matching rendered strings is not
+enough, and matching tokens cannot excuse a failed logit check.
+
+Per-layer counters independently establish execution: all 22 layers must
+show the expected prefill/reference and cached/native calls without errors.
+Installation and cleanup checks verify module ownership and restoration.
+An early EOS that prevents any cached decode is retained as a coverage
+failure, not suppressed to force a pass.
+
+Read: [correctness and lifecycle rules](EVALUATION_V1.md#correctness-and-lifecycle),
+[generation/comparison code](../python/decodeforge/evaluation.py),
+[cached-loop tests](../python/tests/test_evaluation.py), and
+[installation/rollback tests](../python/tests/test_qproj_model.py).
+
+### 4. Measure quantization sensitivity on identical target sequences
+
+Free-running generations can diverge and then receive different future
+inputs. The separate teacher-forced probe avoids that confound: both FP32
+and same-Q8 receive the same fixed token sequence, including the same previous
+target tokens at each prediction position. No extra EOS is appended. The
+project-authored reference text is a fixed stimulus, not a ground-truth answer.
+
+For each target token, negative log-likelihood (NLL) is
+`-ln(probability assigned to that target token)`. Lower NLL means more
+probability assigned to these particular fixed targets, not necessarily
+better answers. The analyzer sums per-token NLL and divides by the total
+number of target tokens; it does not give short and long prompts equal weight
+by averaging their averages. Argmax agreement separately asks whether the
+two paths prefer the same next token.
+
+Across 1,034 target tokens, mean NLL was **3.4827915980 FP32** and
+**3.4825643588 Q8**, a difference of **−0.0002272392 nats/token**. This tiny
+descriptive difference is not evidence of a general quality improvement.
+Teacher forcing uses a multi-token forward and therefore tests the same-Q8
+fallback, not native cached decode; step 3 tests the native path separately.
+
+Read: [fixed-sequence protocol](EVALUATION_V1.md#original-fp32-context-and-fixed-sequence-probe),
+[metric implementation](../python/decodeforge/evaluation_metrics.py), and
+[known-answer metric tests](../python/tests/test_evaluation_metrics.py).
+
+### 5. Benchmark the kernel with paired trials and a declared decision rule
+
+G1 uses **40 paired rounds per process**, balanced between 20 scalar-first
+and 20 NEON-first orders. Each backend warms for at least 16 calls and 500 ms;
+calibration increases repetitions until a batch reaches at least 25 ms.
+There are three fresh processes, yielding 120 pairs and 240 raw observations.
+The measured boundary includes the native call, output sentinel fill, status
+decoding, and finite-output scan; it excludes packing, compilation, loading,
+and allocation.
+
+The speedup estimator is the exponentiated median of paired log latency
+ratios. A deterministic 10,000-resample paired BCa (bias-corrected and
+accelerated bootstrap) produces a 95% interval for each session. The declared
+claim rule requires **all three lower confidence bounds to exceed 1.0**.
+All three passed. The pooled result is descriptive; it does not replace this
+per-session rule or turn repeated measurements into independent machines.
+
+A session is rejected if the geometric center of paired backend latencies
+drifts by more than 10% between the first and last ten pairs. That detects
+timing drift; it is not a direct measurement or elimination of thermal effects.
+The protocol rejects a compromised session rather than deleting individual
+inconvenient samples.
+
+Read: [frozen G1 specification](../benchmarks/g1/spec.json),
+[timing method](BENCHMARKS.md#timing-protocol),
+[analyzer](../scripts/analyze_g1_benchmark.py), and
+[retained report and intervals](../results/g1/apple-m4-primary/report.md).
+
+### 6. Measure model performance separately from correctness capture
+
+The broader model evaluation deliberately uses a smaller descriptive design:
+**3 processes × 3 fixed cases × 3 paths × 3 measured repetitions = 81
+generations**, plus one warmup per process/case/path, or 27 warmups.
+Correctness-comparison hooks and teacher-forced scoring are outside performance
+timers. Production guards, finite-output checks, and the fallback's own
+clone/hash work remain included and disclosed.
+
+Raw nanosecond samples support per-process median/min/max summaries of prefill,
+cached decode, and total generation. Setup components and process-lifetime
+peak RSS are reported separately. The README chart shows the minimum and
+maximum of the **three process medians**, not a confidence interval. The 81
+generations are not 81 independent process samples.
+
+FP32 runs first, before adapter installation; the two Q8 paths reverse order
+in the middle process. This is only partial order balancing. No concurrent
+builds or other evaluation processes are permitted during capture, but order,
+cache, scheduling, and thermal effects are not eliminated. The slow native
+short-prompt observation in process 2 is retained. No model-level confidence
+interval or statistically significant FP32 speedup is claimed, and the G1
+bootstrap/drift protocol must not be implied to apply to this separate study.
+
+Read: [timing inclusions and exclusions](EVALUATION_V1.md#practical-performance-protocol),
+[raw process 0](../results/evaluation/apple-m4-v1/performance-0.json),
+[process 1](../results/evaluation/apple-m4-v1/performance-1.json),
+[process 2](../results/evaluation/apple-m4-v1/performance-2.json), and
+[recomputed summary](../results/evaluation/apple-m4-v1/summary.json).
+
+### 7. Preserve evidence and make rejection behavior testable
+
+The broader runner refuses a dirty or unidentified producer, altered
+specification, invalid model outputs, and existing output paths. Acceptance
+requires consistent identities, exact native/reference tokens, numerical
+checks, all-layer counters, clean teardown, and complete timing samples.
+Rejected attempts and their reasons remain separate from accepted summaries;
+a failure must not become a success-looking JSON report.
+
+The analyzer checks the retained records and recomputes token-weighted metrics
+and timing summaries. This gives a reader an inexpensive audit path. It is
+not independent model re-execution: full-vocabulary logits were transient,
+so the summary verifier cannot reconstruct them from saved error metrics.
+Clean source and hashes make the evidence traceable, not externally certified
+or immune to every measurement error.
+
+Read: [acceptance policy](EVALUATION_V1.md#result-acceptance-and-retention),
+[raw correctness capture](../results/evaluation/apple-m4-v1/correctness-v1.json),
+[summary analyzer](../scripts/analyze_evaluation.py),
+[runner rejection tests](../python/tests/test_evaluation_rejections.py), and
+[tampered-evidence tests](../python/tests/test_evaluation_analysis.py).
+
+## Testing the system and the measurement code
+
+The tests form layers of evidence. Small fixtures check precise failure modes;
+compiled-library integration checks cross the real native boundary; model
+captures test the combined system. None substitutes for the others.
+
+| Layer | Strategy and examples | Inspect the tests |
+| --- | --- | --- |
+| Q8 semantics | Python/Rust fixture parity; rounding, zero blocks, boundaries, and numerical comparison behavior | [Q8 tests](../python/tests/test_q8.py), [IEEE cases](../python/tests/test_q8_ieee.py), [fixture parity](../python/tests/test_fixtures.py) |
+| Compiler and native artifacts | Verify lowering/packing contracts and generated artifacts, including vector/tail behavior | [Compiler tests and implementation](../compiler/decodeforge-compiler/src/lib.rs), [asset validation tests](../compiler/decodeforge-compiler/src/model_assets/tests.rs) |
+| Actual FFI integration | Execute the release shared library using real tensor buffers; check ABI behavior, not only mocks | [Release-library check](../scripts/check_bridge_cdylib.py), [PyTorch bridge tests](../python/tests/test_torch_bridge.py) |
+| Model lifecycle | Detect missing/swapped assets, partial-install failures, incorrect dispatch, and repeated teardown | [Adapter tests](../python/tests/test_qproj_adapter.py), [all-layer tests](../python/tests/test_qproj_model.py) |
+| Measurement mathematics | Known NLL for uniform logits; target-vs-argmax distinction; exact tolerance boundary; NaN/Inf and shape rejection | [Metric tests](../python/tests/test_evaluation_metrics.py) |
+| Experiment control | Reject altered specs; verify cache/EOS behavior; ensure one timing sample per cached forward | [Specification tests](../python/tests/test_evaluation_spec.py), [runner tests](../python/tests/test_evaluation.py) |
+| Evidence integrity | Mutate tokens, digests, counters, session count, and source cleanliness; require rejection | [Analyzer tests](../python/tests/test_evaluation_analysis.py), [CLI failure tests](../python/tests/test_evaluation_rejections.py) |
+
+Linux x86-64 and macOS ARM64 CI exercise their supported checks, including
+offline operation. Linux CI is not evidence of an implemented AVX2 backend,
+and macOS CI is not a second-host TinyLlama evaluation. See the
+[workflow](../.github/workflows/ci.yml) and [aggregate commands](../Makefile)
+for what actually runs. Unit tests use small fixtures and test doubles where
+appropriate; only the retained model captures support the model-level claims.
+
+## Limits and threats to validity
+
+- **External validity:** one physical M4, one model, 22 query projections,
+  and 30 synthetic prompts do not establish results on other machines,
+  models, workloads, or all-model quantization.
+- **Measurement attribution:** guards and fallback overhead remain. FP32 runs
+  first, caches are reused, and only three process clusters are observed.
+  The model timings are descriptive, not a causal estimate of compiler-only
+  acceleration or a cold-storage startup benchmark.
+- **Quality measurement:** exact tokens and small logit differences establish
+  implementation agreement on the probe, not helpfulness. Most generations
+  hit their cap, and fixed reference texts are not task-answer labels.
+- **Reproducibility:** a clean same-host checkout and retained analyses were
+  verified. New model execution on another physical host is still needed for
+  a cross-host claim.
+
+These limits define the next experiments: reproduce on another compatible
+Mac, expand externally meaningful task-quality coverage, and profile the
+guarded boundary/prefill costs before proposing a new optimization. They are
+future work, not results silently included in the completed scope.
 
 ## What can a visitor run?
 

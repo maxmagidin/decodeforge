@@ -91,6 +91,27 @@ limitations. Recompute and verify the retained analyses without running the mode
 make verify-g1-result verify-evaluation-result
 ```
 
+### How the results were tested
+
+The evaluation separates compiler correctness, quantization sensitivity, and
+performance instead of treating one speedup number as proof of all three.
+
+| Experiment | Controls and measurement strategy | Acceptance / interpretation |
+| --- | --- | --- |
+| G1 generated kernel | Same Q8 projection and prepared-call boundary; 40 balanced scalar/NEON pairs per process, 3 processes; warmup and calibrated batches | 10,000-resample paired BCa 95% intervals; every session's lower bound must exceed 1.0; reject sessions exceeding the declared 10% timing-drift limit |
+| Broader native correctness | 30 fixed prompts; pinned artifacts, greedy decoding, identical Q8 weights; compare logits at shared prefixes and exact token IDs | Finite logits within elementwise `0.001 + 0.001 * abs(reference)` tolerance, exact tokens, all-22 dispatch counters, and clean restoration |
+| Quantization sensitivity | FP32 vs same-Q8 on identical teacher-forced reference sequences; token-weighted NLL and next-token argmax agreement | Descriptive numerical sensitivity, not a task-quality score or claimed improvement |
+| Broader model performance | Separate timers without correctness-comparison hooks; 3 fresh processes, 3 fixed cases, 3 paths, 1 warmup + 3 measured repetitions each | Per-process medians and their observed ranges; **no confidence interval** or general FP32 speedup claim; production guards remain included |
+
+The runner and analyzer also have rejection tests for non-finite values,
+changed specifications, token divergence, missing sessions, tampered counters,
+and dirty source. Rejected runs are not silently converted into accepted
+evidence. Model captures, compiled-library checks, and unit tests serve
+different purposes; CI success alone does not establish model performance.
+
+Follow the [step-by-step experimental method](docs/PRIMER.md#experimental-method-step-by-step)
+for linked protocols, code, tests, raw observations, and threats to validity.
+
 ## Why this scope
 
 The original all-in-one engine concept packages several independent systems
