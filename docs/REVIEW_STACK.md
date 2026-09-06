@@ -25,10 +25,19 @@ the presentation model run used clean source `662d137`. The other listed
 split heads were checked from isolated or clean worktrees. #40 also carries
 documentation-only handoff updates after the tested source head.
 
-At this handoff, #33, #34 and #35 had green hosted checks and were ready;
+At the first handoff, #33, #34 and #35 had green hosted checks and were ready;
 #36 and #38–#40 remained draft while hosted jobs ran. The actual hosted macOS
 repair/preflight step passed for `1a662b9`; the full workflow had not yet
 completed. This snapshot does not replace the live checks on each PR.
+
+During the subsequent evaluation pass, all hosted checks on the open #32–#40
+stack completed successfully. Hosted logs confirmed an actual missing-link
+repair followed by successful normal and offline preflight. The separate
+`evaluation/v1` branch contains the checked evaluation harness at `535540e`;
+`evaluation/v1-results` retains its observations and adds default summary
+verification. Integrate these follow-ups only after #40. See the
+[evaluation result](../results/evaluation/apple-m4-v1/README.md) for scope and
+limitations; no main merge or #33 merge has been performed.
 
 ## Why one proposed boundary was consolidated
 

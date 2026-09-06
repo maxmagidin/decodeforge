@@ -4,7 +4,7 @@
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
 	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session run-g3-demo analyze-g3 verify-g3-result \
-	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets
+	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets verify-evaluation-result
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -102,6 +102,16 @@ test: test-bridge-cdylib
 
 check: lint test verify-g1-result
 	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"
+	$(MAKE) verify-evaluation-result
+
+verify-evaluation-result:
+	$(UV) run --frozen python scripts/analyze_evaluation.py \
+		--correctness results/evaluation/apple-m4-v1/correctness-v1.json \
+		--performance results/evaluation/apple-m4-v1/performance-0.json \
+			results/evaluation/apple-m4-v1/performance-1.json \
+			results/evaluation/apple-m4-v1/performance-2.json \
+		--spec benchmarks/evaluation-v1/spec.json \
+		--verify-summary results/evaluation/apple-m4-v1/summary.json
 
 check-pytorch-pin:
 	$(UV) run --frozen --extra pytorch-cpu python -c 'import platform, torch; assert torch.__version__.split("+")[0] == "2.13.0"; print(f"pytorch-pin: ok (torch={torch.__version__}, host={platform.system()}:{platform.machine()})")'

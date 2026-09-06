@@ -5,6 +5,10 @@ broader TinyLlama query-projection evaluation. It is deliberately separate
 from the frozen G3 experiment and does not change or replace
 `benchmarks/g3/spec.json` or `results/g3/apple-m4-primary`.
 
+The [first M4 capture and its limitations](../results/evaluation/apple-m4-v1/README.md)
+are retained separately. `make verify-evaluation-result` recomputes and checks
+the summary without executing a model; `make check` includes that verification.
+
 The evaluation answers four narrower questions:
 
 1. Does the all-22 adapter installation, dispatch split, and teardown remain

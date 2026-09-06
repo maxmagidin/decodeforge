@@ -305,6 +305,14 @@ now produces a meaningful answer with identical tokens, all-22 native coverage,
 and clean restoration; it gives two sentences rather than the requested one.
 See the [original result interpretation](docs/G3_RESULT_2026_09_05.md).
 
+A separate [30-prompt M4 evaluation](results/evaluation/apple-m4-v1/README.md)
+passed native/reference correctness and preserved all 30 greedy FP32 sequences
+on its synthetic corpus. Three fresh performance processes show an advantage
+over the guarded same-Q8 fallback, but not a consistent advantage over original
+FP32. Most generations reached their token cap, and a second physical Mac is
+still untested. Run `make verify-evaluation-result` to check the retained
+observations and summary; this verification is included in `make check`.
+
 Reproduce the checked-in analysis with `make verify-g1-result`.
 
 Run the closed G1 path with explicit artifacts and session IDs:

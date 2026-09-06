@@ -1,0 +1,749 @@
+{
+  "correctness": {
+    "cases": 30,
+    "compared_generation_steps": 1070,
+    "max_logit_abs_error": 1.71661376953125e-05,
+    "native_reference_exact": 30,
+    "stop_reasons": {
+      "eos": 1,
+      "max_new_tokens": 29
+    }
+  },
+  "format": "decodeforge_evaluation_summary_v1",
+  "g3_evidence": false,
+  "limits": [
+    "one physical host",
+    "production guards and fallback clone/hash included",
+    "FP32 output lengths can differ; total latency is not equal-token speedup",
+    "three process clusters; no confidence interval or general engine claim"
+  ],
+  "performance_by_session_case_path": [
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 14.825846958160668,
+        "median": 11.607290161945933,
+        "min": 8.401912972415222
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 1.91740875,
+        "median": 1.422550208,
+        "min": 1.207352958
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 194.474625,
+        "median": 131.074083,
+        "min": 129.309416
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 14.787080837803547,
+        "median": 14.740040952747114,
+        "min": 14.66664784772785
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 1.309554792,
+        "median": 1.30393575,
+        "min": 1.299733334
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 288.657584,
+        "median": 285.829125,
+        "min": 281.169792
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 4.743981048190411,
+        "median": 4.703880651394033,
+        "min": 4.680512137257099
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 3.484525125,
+        "median": 3.467946459,
+        "min": 3.442869166
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 280.041333,
+        "median": 278.82825,
+        "min": 278.057042
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 15.227374799469535,
+        "median": 14.784156663622014,
+        "min": 14.741139627490137
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.29134175,
+        "median": 2.278055709,
+        "min": 2.208304875
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 193.115083,
+        "median": 173.578709,
+        "min": 171.226625
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 14.353898046535647,
+        "median": 14.174826998351278,
+        "min": 12.753782472476008
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.768004834,
+        "median": 2.516357208,
+        "min": 2.510250167
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 355.422917,
+        "median": 336.039084,
+        "min": 321.914542
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 4.362630093963635,
+        "median": 4.273437605167706,
+        "min": 4.008611119960048
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 8.066022208,
+        "median": 7.580478292,
+        "min": 7.428940708
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 331.383833,
+        "median": 324.974875,
+        "min": 322.069833
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 14.168876738555811,
+        "median": 13.742831394755685,
+        "min": 13.668061249040104
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 5.035836958,
+        "median": 5.031737791,
+        "min": 4.874267958
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 441.05225,
+        "median": 421.713167,
+        "min": 419.985125
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 12.957101953863722,
+        "median": 10.85260179190099,
+        "min": 10.034858586830332
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 6.971802,
+        "median": 6.478952,
+        "min": 5.57796925
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 702.151292,
+        "median": 684.250334,
+        "min": 658.725583
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 4.384251672540811,
+        "median": 4.37219356030541,
+        "min": 4.225846571019127
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 15.504380167,
+        "median": 15.15503025,
+        "min": 15.018125375
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 736.374375,
+        "median": 642.266667,
+        "min": 585.94575
+      },
+      "session_index": 0
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 14.963234062034685,
+        "median": 14.829907163733175,
+        "min": 13.414405037028247
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 1.279429042,
+        "median": 1.175162834,
+        "min": 1.1311835
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 162.452167,
+        "median": 160.217583,
+        "min": 127.775583
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 14.740170083972833,
+        "median": 14.698332035926263,
+        "min": 14.484827203857407
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 1.314228375,
+        "median": 1.300990292,
+        "min": 1.298523834
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 279.976417,
+        "median": 279.4215,
+        "min": 277.816708
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 4.554386547626597,
+        "median": 3.8369042427399482,
+        "min": 3.6136090337469864
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 4.426935125,
+        "median": 4.192692125,
+        "min": 3.607894833
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 313.405083,
+        "median": 282.013708,
+        "min": 275.004292
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 15.050398190618214,
+        "median": 14.794997712576425,
+        "min": 14.619974963924834
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.2914315,
+        "median": 2.268357292,
+        "min": 2.233921708
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 172.671625,
+        "median": 171.748084,
+        "min": 169.665375
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 14.477009574095218,
+        "median": 14.19201053551868,
+        "min": 14.062124892818485
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.535855542,
+        "median": 2.507759417,
+        "min": 2.464041
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 330.094834,
+        "median": 322.15875,
+        "min": 321.358375
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 4.5065203885502925,
+        "median": 4.348502682259697,
+        "min": 3.8245140632451435
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 8.46541275,
+        "median": 7.466070958,
+        "min": 7.218264625
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 358.539125,
+        "median": 337.989542,
+        "min": 335.962333
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 13.73184515340612,
+        "median": 13.273924785923745,
+        "min": 12.754629694466601
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 5.38074825,
+        "median": 5.189452208,
+        "min": 5.038454375
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 444.010125,
+        "median": 437.150333,
+        "min": 435.001
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 13.70329959815161,
+        "median": 13.232905161262137,
+        "min": 13.191602711918378
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 5.354607542,
+        "median": 5.335822709,
+        "min": 5.1787815
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 575.404542,
+        "median": 572.6805,
+        "min": 568.897459
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 4.526108735713735,
+        "median": 4.473589127117673,
+        "min": 4.368624272890397
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 15.030187166,
+        "median": 14.671827667,
+        "min": 14.523651
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 599.065416,
+        "median": 594.84075,
+        "min": 580.55475
+      },
+      "session_index": 1
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 15.508007446436514,
+        "median": 15.46509866072586,
+        "min": 14.567757064610237
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 1.164321791,
+        "median": 1.101682375,
+        "min": 1.098784625
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 133.652916,
+        "median": 133.646125,
+        "min": 127.937417
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 12.144030632102867,
+        "median": 11.28918687023765,
+        "min": 2.3473418463771853
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 6.692085416,
+        "median": 2.542179166,
+        "min": 2.043570125
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 1303.844833,
+        "median": 713.973833,
+        "min": 300.850666
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "short-01-16",
+      "decode_tokens_per_second": {
+        "max": 4.723991234990767,
+        "median": 4.677058347389832,
+        "min": 4.6506273080960625
+      },
+      "generated_token_counts": [
+        16,
+        16,
+        16
+      ],
+      "generation_seconds": {
+        "max": 3.509745583,
+        "median": 3.496872292,
+        "min": 3.452702917
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 288.808167,
+        "median": 283.274,
+        "min": 276.547083
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 15.17605169695575,
+        "median": 14.858148112062375,
+        "min": 11.362846004388075
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.906610833,
+        "median": 2.263842166,
+        "min": 2.220335291
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 176.612291,
+        "median": 176.376458,
+        "min": 176.087708
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 14.573124692013169,
+        "median": 14.285715918367533,
+        "min": 12.26136826691341
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 2.85816825,
+        "median": 2.50208975,
+        "min": 2.470989
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 342.387333,
+        "median": 330.862625,
+        "min": 328.627
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "medium-02-32",
+      "decode_tokens_per_second": {
+        "max": 4.545108166226676,
+        "median": 4.525793473334983,
+        "min": 4.415336560675831
+      },
+      "generated_token_counts": [
+        32,
+        32,
+        32
+      ],
+      "generation_seconds": {
+        "max": 7.342128959,
+        "median": 7.170597375,
+        "min": 7.161974833
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 340.275583,
+        "median": 319.939667,
+        "min": 319.621667
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 13.889460466520719,
+        "median": 12.22826751298928,
+        "min": 12.132927386433643
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 5.6640195,
+        "median": 5.588512667,
+        "min": 5.033454166
+      },
+      "path": "fp32",
+      "prefill_ms": {
+        "max": 490.648666,
+        "median": 461.424916,
+        "min": 430.0875
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 13.297608378296031,
+        "median": 12.65224904904004,
+        "min": 12.60124721852445
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 5.619949375,
+        "median": 5.5706795,
+        "min": 5.353896
+      },
+      "path": "hybrid_native",
+      "prefill_ms": {
+        "max": 610.999833,
+        "median": 605.641084,
+        "min": 584.605958
+      },
+      "session_index": 2
+    },
+    {
+      "case_id": "long-03-64",
+      "decode_tokens_per_second": {
+        "max": 4.495026762110043,
+        "median": 4.437121198622994,
+        "min": 4.150422671593878
+      },
+      "generated_token_counts": [
+        64,
+        64,
+        64
+      ],
+      "generation_seconds": {
+        "max": 15.760011916,
+        "median": 14.784772167,
+        "min": 14.637483667
+      },
+      "path": "same_q8_reference",
+      "prefill_ms": {
+        "max": 612.573125,
+        "median": 580.383042,
+        "min": 572.0085
+      },
+      "session_index": 2
+    }
+  ],
+  "quantization_sensitivity": {
+    "argmax_agreement_with_fp32": 0.9970986460348162,
+    "exact_greedy_sequences_with_fp32": 30,
+    "fp32_mean_nll": 3.482791598012632,
+    "interpretation": "synthetic fixed-continuation sensitivity, not broad task accuracy",
+    "q8_minus_fp32_mean_nll": -0.00022723921294875993,
+    "reference_tokens": 1034,
+    "same_q8_mean_nll": 3.4825643587996833
+  },
+  "setup_and_memory_by_session": [
+    {
+      "session_index": 0,
+      "timing": {
+        "model_and_tokenizer_load_ns": 2779953125,
+        "model_preparation_ns": 5344250583,
+        "peak_rss_bytes": 5154750464,
+        "process_to_model_load_ns": 4315146167,
+        "runtime_and_install_ns": 10958418958,
+        "setup_components_ns": 16302669541,
+        "timing_scope_note": "CLI starts after interpreter/stdlib startup but before evaluation-module imports; direct API calls start at model preparation. External toolchain preflight is excluded. Setup components exclude intervening FP32 runs."
+      }
+    },
+    {
+      "session_index": 1,
+      "timing": {
+        "model_and_tokenizer_load_ns": 2627802875,
+        "model_preparation_ns": 5522663166,
+        "peak_rss_bytes": 5061443584,
+        "process_to_model_load_ns": 4231718750,
+        "runtime_and_install_ns": 10893081000,
+        "setup_components_ns": 16415744166,
+        "timing_scope_note": "CLI starts after interpreter/stdlib startup but before evaluation-module imports; direct API calls start at model preparation. External toolchain preflight is excluded. Setup components exclude intervening FP32 runs."
+      }
+    },
+    {
+      "session_index": 2,
+      "timing": {
+        "model_and_tokenizer_load_ns": 2441914459,
+        "model_preparation_ns": 4976427000,
+        "peak_rss_bytes": 4965466112,
+        "process_to_model_load_ns": 3979177584,
+        "runtime_and_install_ns": 11651418583,
+        "setup_components_ns": 16627845583,
+        "timing_scope_note": "CLI starts after interpreter/stdlib startup but before evaluation-module imports; direct API calls start at model preparation. External toolchain preflight is excluded. Setup components exclude intervening FP32 runs."
+      }
+    }
+  ],
+  "source": {
+    "git_dirty": false,
+    "git_revision": "535540ee2e76d5965639af786d4401623865bc0c"
+  },
+  "spec_sha256": "a3e530d5475a2b596663639b39fa2a598f0b964d05c99f7f6732920664867859"
+}
