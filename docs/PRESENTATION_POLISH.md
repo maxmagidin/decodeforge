@@ -48,6 +48,7 @@ After explicit approval, run from the active checkout and retain the complete
 log and external JSON result:
 
 ```sh
+set -o pipefail
 UV_OFFLINE=true uv run --frozen --extra g3-generation \
   python scripts/run_presentation_demo.py \
   --model-dir /opt/homebrew/var/decodeforge-g3-evidence/model \
@@ -60,3 +61,24 @@ UV_OFFLINE=true uv run --frozen --extra g3-generation \
   2>&1 | tee .lavish/presentation-polish-v1.log
 ```
 
+## Observed result: presentation acceptance failed
+
+Exactly one run was performed from clean source
+`69872c02976115b3d4e46ac0e268f6dcffa98fde`. The CLI completed with matching IDs,
+all-22 counter reconciliation, and clean restoration, but both paths hit the
+64-token limit without EOS. The answer contained multiple sentences and ended
+mid-sentence. It therefore failed the predeclared presentation criteria above.
+
+The [unmodified failed-experiment JSON](../results/presentation/apple-m4-stricter-prompt-v1.json)
+is retained with SHA-256
+`22edde68e10fbf35fa756effa423852ed3b5d81a44e9a1a5d6aff1f5eb2d4809`.
+The actual output was:
+
+> A compiler is a software tool that translates high-level programming languages
+> into machine code. It takes a source code written in a high-level language,
+> such as C or Java, and converts it into machine code that can be executed by a
+> computer. The compiler then generates a binary file that can be executed by a
+
+No retry or prompt alteration was made in this experiment. A future explicit
+sentence-boundary stopping mode must be reported as a formatting constraint,
+not natural EOS or improved unconstrained model instruction following.
