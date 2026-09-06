@@ -156,8 +156,8 @@ substituting an estimate.
 |---|---|---|
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree | generated code |
 | G1: M4 compiler/kernel — complete | A real TinyLlama `M=1` query projection lowers to generated scalar and ARM64 NEON with retained source, disassembly, correctness, and timings | framework boundary |
-| G2: native eager PyTorch boundary — in progress | The hardened versioned C ABI and a guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, and error paths | model adapter |
-| G3: 22-projection generation proof | A pinned TinyLlama prompt uses same-Q8 fallback for prefill and native `M=1` execution for all 22 `q_proj` modules during cached decode, with correctness, coverage, lifecycle, and timing evidence | evidence-selected extension |
+| G2: native eager PyTorch boundary — complete | The hardened versioned C ABI and guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, error, and lifecycle paths | model adapter |
+| G3: 22-projection generation proof — in progress | The experiment, 22 canonical assets, and owning one-layer adapter are complete; transactional all-layer installation and the paired prompt-to-text result remain | evidence-selected extension |
 | G4: evidence-selected extension | One measured next step—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, or multicore—wins or yields an honest negative result | — |
 
 Failure at a gate causes investigation or a scope cut; it does not unlock more

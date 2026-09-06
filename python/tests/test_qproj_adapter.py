@@ -8,7 +8,7 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -16,10 +16,12 @@ torch = pytest.importorskip("torch")
 
 from decodeforge import torch_bridge as bridge  # noqa: E402
 from decodeforge.qproj_adapter import (  # noqa: E402
+    SAME_Q8_REFERENCE_REASON,
     QProjAdapter,
     QProjAdapterError,
     QProjAdapterInitializationError,
     QProjCounters,
+    QProjExecutionMode,
     fallback_weight_identity,
 )
 
@@ -501,3 +503,185 @@ def test_state_dict_is_empty_and_loading_is_explicitly_rejected(
     with pytest.raises(QProjAdapterError, match="rebuilt from prepared assets"):
         parent.load_state_dict({})
     adapter.close()
+
+
+def test_execution_modes_are_closed_state_and_visible_in_repr(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter, _binding, _weight_source = _adapter(registry)
+    assert [mode.value for mode in QProjExecutionMode] == [
+        "hybrid_native",
+        "same_q8_reference",
+    ]
+    assert adapter.execution_mode is QProjExecutionMode.HYBRID_NATIVE
+    assert "execution_mode='hybrid_native'" in repr(adapter)
+    assert adapter.state_dict() == {}
+
+    previous = adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+    assert previous is QProjExecutionMode.HYBRID_NATIVE
+    assert adapter.execution_mode.value == "same_q8_reference"
+    assert "execution_mode='same_q8_reference'" in repr(adapter)
+    assert (
+        adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+        is QProjExecutionMode.SAME_Q8_REFERENCE
+    )
+    with pytest.raises(TypeError, match="QProjExecutionMode"):
+        adapter.set_execution_mode(cast(Any, "hybrid_native"))
+    assert adapter.execution_mode.value == "same_q8_reference"
+    adapter.close()
+
+
+def test_same_q8_reference_forces_all_shapes_through_checked_fallback(
+    registry: bridge.BindingRegistry,
+) -> None:
+    native_calls: list[Any] = []
+
+    def native(*args: Any) -> Any:
+        native_calls.append(args)
+        return pytest.fail("same-Q8 reference mode entered native")
+
+    adapter, _binding, weight = _adapter(registry, native=native)
+    adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+    inputs = (
+        torch.arange(8, dtype=torch.float32).reshape(1, 1, 8),
+        torch.arange(40, dtype=torch.float32).reshape(1, 5, 8),
+    )
+    for value in inputs:
+        assert torch.equal(adapter(value), torch.nn.functional.linear(value, weight))
+        assert adapter.last_guard_reason == SAME_Q8_REFERENCE_REASON
+
+    assert native_calls == []
+    counters = adapter.counters
+    assert counters.forward == 2
+    assert counters.native_attempt == 0
+    assert counters.fallback_attempt == 2
+    assert counters.fallback_success == 2
+    assert counters.fallback_error == 0
+
+    adapter.same_q8_weight.data.add_(1.0)
+    with pytest.raises(QProjAdapterError, match="no longer matches its identity"):
+        adapter(inputs[0])
+    assert adapter.last_guard_reason == SAME_Q8_REFERENCE_REASON
+    assert adapter.counters.fallback_error == 1
+    assert native_calls == []
+    adapter.close()
+
+
+def test_mode_transition_waits_for_old_calls_and_blocks_new_admission(
+    registry: bridge.BindingRegistry,
+) -> None:
+    native_entered = threading.Event()
+    release_native = threading.Event()
+    native_calls: list[Any] = []
+
+    def native(x: Any, _binding_id: int, _n: int, _k: int) -> Any:
+        native_calls.append(x)
+        native_entered.set()
+        assert release_native.wait(timeout=5)
+        return torch.nn.functional.linear(x, _weight())
+
+    adapter, _binding, weight = _adapter(registry, native=native)
+    decode = torch.ones((1, 1, 8), dtype=torch.float32)
+    results: list[Any] = []
+    first = threading.Thread(target=lambda: results.append(adapter(decode)))
+    first.start()
+    assert native_entered.wait(timeout=5)
+
+    previous_modes: list[QProjExecutionMode] = []
+    transition = threading.Thread(
+        target=lambda: previous_modes.append(
+            adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+        )
+    )
+    transition.start()
+    for _ in range(5_000):
+        with adapter._lifecycle:
+            if adapter._transitioning:
+                break
+            adapter._lifecycle.wait(timeout=0.001)
+    else:
+        pytest.fail("mode transition did not begin")
+
+    second = threading.Thread(target=lambda: results.append(adapter(decode)))
+    second.start()
+    second.join(timeout=0.05)
+    assert second.is_alive()
+    assert len(native_calls) == 1
+
+    release_native.set()
+    first.join(timeout=5)
+    transition.join(timeout=5)
+    second.join(timeout=5)
+    assert not first.is_alive() and not transition.is_alive() and not second.is_alive()
+    assert previous_modes == [QProjExecutionMode.HYBRID_NATIVE]
+    assert adapter.execution_mode is QProjExecutionMode.SAME_Q8_REFERENCE
+    assert len(native_calls) == 1
+    assert len(results) == 2
+    assert all(
+        torch.equal(result, torch.nn.functional.linear(decode, weight))
+        for result in results
+    )
+    counters = adapter.counters
+    assert counters.forward == 2
+    assert counters.native_success == 1
+    assert counters.fallback_success == 1
+    assert adapter.last_guard_reason == SAME_Q8_REFERENCE_REASON
+    adapter.close()
+
+
+def test_mode_transition_from_forward_is_rejected_without_deadlock(
+    registry: bridge.BindingRegistry,
+) -> None:
+    adapter: QProjAdapter
+    transition_errors: list[QProjAdapterError] = []
+
+    def native(x: Any, _binding_id: int, _n: int, _k: int) -> Any:
+        try:
+            adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+        except QProjAdapterError as error:
+            transition_errors.append(error)
+        return torch.nn.functional.linear(x, _weight())
+
+    adapter, _binding, _weight_source = _adapter(registry, native=native)
+    result = adapter(torch.ones((1, 1, 8), dtype=torch.float32))
+    assert result.shape == (1, 1, 4)
+    assert len(transition_errors) == 1
+    assert "admitted forward" in str(transition_errors[0])
+    assert adapter.execution_mode is QProjExecutionMode.HYBRID_NATIVE
+    adapter.close()
+
+
+def test_mode_transition_rejects_closing_closed_and_failed_close(
+    registry: bridge.BindingRegistry,
+) -> None:
+    close_entered = threading.Event()
+    release_close = threading.Event()
+
+    class BlockingCloseBinding(FakeBinding):
+        def close(self) -> None:
+            close_entered.set()
+            assert release_close.wait(timeout=5)
+            super().close()
+
+    closing_adapter, _binding, _weight_source = _adapter(
+        registry, binding=BlockingCloseBinding()
+    )
+    closer = threading.Thread(target=closing_adapter.close)
+    closer.start()
+    assert close_entered.wait(timeout=5)
+    with pytest.raises(QProjAdapterError, match="execution mode"):
+        closing_adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+    release_close.set()
+    closer.join(timeout=5)
+    assert not closer.is_alive() and closing_adapter.closed
+    with pytest.raises(QProjAdapterError, match="execution mode"):
+        closing_adapter.set_execution_mode(QProjExecutionMode.HYBRID_NATIVE)
+
+    failed_adapter, _binding, _weight_source = _adapter(
+        registry, binding=FakeBinding(close_failures=1)
+    )
+    with pytest.raises(RuntimeError, match="injected close failure"):
+        failed_adapter.close()
+    with pytest.raises(QProjAdapterError, match="execution mode"):
+        failed_adapter.set_execution_mode(QProjExecutionMode.SAME_Q8_REFERENCE)
+    failed_adapter.close()

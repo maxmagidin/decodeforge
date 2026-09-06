@@ -46,9 +46,13 @@ SCHEMA_FILES: Final = {
     "host-manifest": SCHEMA_DIR / "host-manifest.schema.json",
     "run-manifest": SCHEMA_DIR / "run-manifest.schema.json",
     "g1-benchmark-session": SCHEMA_DIR / "g1-benchmark-session.schema.json",
+    "g3-experiment-spec": SCHEMA_DIR / "g3-experiment-spec.schema.json",
 }
 CATALOG_FILES: Final = (SCHEMA_DIR / "common.schema.json", *SCHEMA_FILES.values())
 FOUNDATION_REQUIRED_ARTIFACTS: Final = ("host.json", "report.md", "request.json")
+CANONICAL_SOURCE_DOCUMENTS: Final = (
+    ("g3-experiment-spec", _SOURCE_ROOT / "benchmarks" / "g3" / "spec.json"),
+)
 
 JsonObject = dict[str, Any]
 Diagnostic = dict[str, Any]
@@ -659,6 +663,17 @@ def check_all() -> list[str]:
 
     errors.extend(_check_code_registry())
     errors.extend(_check_compiler_source_codes())
+    if not _USING_PACKAGED_SCHEMAS:
+        for schema_name, path in CANONICAL_SOURCE_DOCUMENTS:
+            if not path.is_file():
+                errors.append(
+                    f"canonical document is missing: {path.relative_to(_SOURCE_ROOT)}"
+                )
+                continue
+            if validate_path(path, schema_name):
+                errors.append(
+                    f"canonical document rejected: {path.relative_to(_SOURCE_ROOT)}"
+                )
     for schema_name in sorted(SCHEMA_FILES):
         directory = SCHEMA_DIR / "examples" / schema_name
         examples = sorted(directory.glob("*.json"))

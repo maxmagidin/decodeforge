@@ -13,6 +13,7 @@ import threading
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Final, TypeAlias, cast
 
 import torch
@@ -30,12 +31,20 @@ from .torch_bridge import (
 
 _IDENTITY_PREFIX: Final = "sha256:"
 _MAX_LAYER_NAME_BYTES: Final = 256
+SAME_Q8_REFERENCE_REASON: Final = "forced_same_q8_reference"
 
 NativeCallable: TypeAlias = Callable[[Any, int, int, int], Any]
 
 
 class QProjAdapterError(RuntimeError):
     """A prepared-asset, ownership, or lifecycle contract violation."""
+
+
+class QProjExecutionMode(StrEnum):
+    """Closed execution policies for one query-projection adapter."""
+
+    HYBRID_NATIVE = "hybrid_native"
+    SAME_Q8_REFERENCE = "same_q8_reference"
 
 
 class QProjAdapterInitializationError(QProjAdapterError):
@@ -281,6 +290,9 @@ class QProjAdapter(nn.Module):
         self._closing = False
         self._closed = False
         self._close_failed = False
+        self._transitioning = False
+        self._execution_mode = QProjExecutionMode.HYBRID_NATIVE
+        self._forward_threads: set[int] = set()
         self._in_flight = 0
         self._forward = 0
         self._native_attempt = 0
@@ -291,6 +303,7 @@ class QProjAdapter(nn.Module):
         self._fallback_error = 0
         self._predispatch_error = 0
         self._rejected_closed = 0
+        self._last_guard_reason: str | None = None
         self._binding_id: int | None = None
 
         binding_id = load_binding(library, pack_manifest_json, packed_weight)
@@ -378,7 +391,45 @@ class QProjAdapter(nn.Module):
 
     @property
     def last_guard_reason(self) -> str | None:
-        return self._callable.last_guard_reason
+        with self._counter_lock:
+            return self._last_guard_reason
+
+    @property
+    def execution_mode(self) -> QProjExecutionMode:
+        """Return the mode used by calls admitted after the latest transition."""
+
+        with self._lifecycle:
+            return self._execution_mode
+
+    def set_execution_mode(self, mode: QProjExecutionMode) -> QProjExecutionMode:
+        """Wait for admitted calls, change mode, and return the previous mode."""
+
+        if not isinstance(mode, QProjExecutionMode):
+            raise TypeError("mode must be a QProjExecutionMode")
+        thread_id = threading.get_ident()
+        with self._lifecycle:
+            if thread_id in self._forward_threads:
+                raise QProjAdapterError(
+                    "cannot change execution mode from an admitted forward call"
+                )
+            while self._transitioning:
+                self._lifecycle.wait()
+            if self._closing or self._closed or self._close_failed:
+                raise QProjAdapterError(
+                    "cannot change execution mode while adapter is unavailable"
+                )
+            previous = self._execution_mode
+            if mode is previous:
+                return previous
+            self._transitioning = True
+            try:
+                while self._in_flight:
+                    self._lifecycle.wait()
+                self._execution_mode = mode
+            finally:
+                self._transitioning = False
+                self._lifecycle.notify_all()
+            return previous
 
     @property
     def counters(self) -> QProjCounters:
@@ -441,22 +492,29 @@ class QProjAdapter(nn.Module):
             )
         return functional.linear(x, snapshot, bias=None)
 
-    def _begin_forward(self) -> None:
+    def _begin_forward(self) -> QProjExecutionMode:
+        thread_id = threading.get_ident()
         with self._lifecycle:
+            while self._transitioning:
+                self._lifecycle.wait()
             if self._closing or self._closed or self._close_failed:
                 with self._counter_lock:
                     self._rejected_closed += 1
                 raise QProjAdapterError("q-projection adapter is closed")
             self._in_flight += 1
+            self._forward_threads.add(thread_id)
+            return self._execution_mode
 
     def _end_forward(self) -> None:
+        thread_id = threading.get_ident()
         with self._lifecycle:
+            self._forward_threads.discard(thread_id)
             self._in_flight -= 1
             if self._in_flight == 0:
                 self._lifecycle.notify_all()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self._begin_forward()
+        execution_mode = self._begin_forward()
         try:
             with self._dispatch_lock:
                 try:
@@ -466,11 +524,21 @@ class QProjAdapter(nn.Module):
                         self._forward += 1
                         self._predispatch_error += 1
                     raise
+                forced_reference = (
+                    execution_mode is QProjExecutionMode.SAME_Q8_REFERENCE
+                )
                 try:
-                    result = self._callable(x)
+                    result = (
+                        self._fallback(x) if forced_reference else self._callable(x)
+                    )
                 except BaseException:
-                    reason = self._callable.last_guard_reason
+                    reason = (
+                        SAME_Q8_REFERENCE_REASON
+                        if forced_reference
+                        else self._callable.last_guard_reason
+                    )
                     with self._counter_lock:
+                        self._last_guard_reason = reason
                         self._forward += 1
                         if reason is None:
                             self._native_attempt += 1
@@ -480,8 +548,13 @@ class QProjAdapter(nn.Module):
                             self._fallback_error += 1
                     raise
                 if not isinstance(result, torch.Tensor):
-                    reason = self._callable.last_guard_reason
+                    reason = (
+                        SAME_Q8_REFERENCE_REASON
+                        if forced_reference
+                        else self._callable.last_guard_reason
+                    )
                     with self._counter_lock:
+                        self._last_guard_reason = reason
                         self._forward += 1
                         if reason is None:
                             self._native_attempt += 1
@@ -492,8 +565,13 @@ class QProjAdapter(nn.Module):
                     raise QProjAdapterError(
                         "q-projection dispatch returned a non-tensor result"
                     )
-                reason = self._callable.last_guard_reason
+                reason = (
+                    SAME_Q8_REFERENCE_REASON
+                    if forced_reference
+                    else self._callable.last_guard_reason
+                )
                 with self._counter_lock:
+                    self._last_guard_reason = reason
                     self._forward += 1
                     if reason is None:
                         self._native_attempt += 1
@@ -508,7 +586,7 @@ class QProjAdapter(nn.Module):
     def close(self) -> None:
         binding_id: int | None
         with self._lifecycle:
-            while self._closing:
+            while self._closing or self._transitioning:
                 self._lifecycle.wait()
             if self._closed:
                 return
@@ -592,15 +670,17 @@ class QProjAdapter(nn.Module):
         metadata = self._metadata
         return (
             f"layer_name={metadata.layer_name!r}, n={metadata.n}, k={metadata.k}, "
-            f"closed={self.closed}"
+            f"execution_mode={self.execution_mode.value!r}, closed={self.closed}"
         )
 
 
 __all__ = [
+    "SAME_Q8_REFERENCE_REASON",
     "QProjAdapter",
     "QProjAdapterError",
     "QProjAdapterInitializationError",
     "QProjCounters",
+    "QProjExecutionMode",
     "QProjMetadata",
     "fallback_weight_identity",
 ]

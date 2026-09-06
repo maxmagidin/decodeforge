@@ -79,8 +79,8 @@ Implementation advances through evidence gates rather than component count:
 |---|---|
 | G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree |
 | G1: M4 compiler/kernel — complete | One real TinyLlama q-projection flows through verified IR to generated scalar and ARM64 NEON; the bundle contains source, assembly, correctness, timings, and host metadata |
-| G2: native eager PyTorch boundary — in progress | The hardened C ABI and guarded eager `q8_linear_v1` operator execute the release artifact with tested native, fallback, error, and lifecycle paths |
-| G3: 22-projection generation proof | A pinned TinyLlama prompt uses same-Q8 prefill fallback and native cached `M=1` execution in all 22 `q_proj` modules, with correctness, coverage, and timing evidence |
+| G2: native eager PyTorch boundary — complete | The hardened C ABI and guarded eager `q8_linear_v1` operator execute the release artifact with tested native, fallback, error, and lifecycle paths |
+| G3: 22-projection generation proof — in progress | The frozen experiment, 22 canonical assets, and owning one-layer adapter pass; transactional installation and paired prompt-to-text evidence remain |
 | G4: evidence-selected extension | One measured extension—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, native small batch, or multicore—wins or yields an honest negative result |
 
 Work that belongs to a later gate is kept out of the critical path. In

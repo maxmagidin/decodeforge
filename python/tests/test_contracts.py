@@ -20,6 +20,7 @@ from decodeforge.contracts import (
 
 EXAMPLES = ROOT / "schemas" / "examples"
 BUNDLES = ROOT / "tests" / "fixtures" / "bundles"
+G3_SPEC = Path(__file__).resolve().parents[2] / "benchmarks" / "g3" / "spec.json"
 
 
 def _deep_not_applicable() -> list[object]:
@@ -34,6 +35,10 @@ def _deep_not_applicable() -> list[object]:
 
 def test_catalog_and_directed_examples_are_consistent() -> None:
     assert check_all() == []
+
+
+def test_canonical_g3_experiment_spec_is_accepted() -> None:
+    assert validate_path(G3_SPEC, "g3-experiment-spec") == []
 
 
 def test_schema_error_codes_are_stable() -> None:

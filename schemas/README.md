@@ -1,6 +1,6 @@
 # DecodeForge V1 schemas
 
-This directory contains eight semantic JSON Schema Draft 2020-12 contracts:
+This directory contains nine semantic JSON Schema Draft 2020-12 contracts:
 
 - `compiler-request.schema.json`;
 - `quant-fixture.schema.json`;
@@ -9,7 +9,8 @@ This directory contains eight semantic JSON Schema Draft 2020-12 contracts:
 - `diagnostic.schema.json`;
 - `host-manifest.schema.json`;
 - `run-manifest.schema.json`;
-- `g1-benchmark-session.schema.json`.
+- `g1-benchmark-session.schema.json`;
+- `g3-experiment-spec.schema.json`.
 
 `common.schema.json` contains shared definitions and
 `diagnostic-codes.json` is the append-only stable-code registry. Every `$ref`
@@ -42,11 +43,21 @@ that cross JSON fields are checked by the offline validator; the analysis
 command additionally applies the three-session drift and confidence-interval
 gates.
 
+The G3 experiment schema freezes model and environment provenance, prompt
+tokenization, generation settings, correctness thresholds, session rejection,
+and phase timing before generation evidence is collected. A spec may record
+unresolved external tokenizer/configuration provenance, but such a spec is
+marked `blocked_external_provenance`; a `ready` spec requires resolved file
+identities, dependency versions, and at least two fixed input token IDs.
+
 Run the complete offline contract check with:
 
 ```sh
 uv run --frozen python scripts/validate_schemas.py --all
 ```
+
+In a source checkout, that command also validates the canonical
+`benchmarks/g3/spec.json` document against the G3 schema.
 
 Validate a foundation fixture bundle without executing any artifact with:
 
