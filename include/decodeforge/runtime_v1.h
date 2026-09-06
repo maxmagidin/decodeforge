@@ -138,10 +138,13 @@ int32_t df_runtime_create_neon_v1(
 
 /*
  * Execute one exact M=1 call. Caller preconditions: input/output are aligned,
- * readable/writable for their exact element counts, and disjoint. Invalid
- * handles, lengths, and other structural failures leave output untouched;
- * output is usable only when the return value is OK. Concurrent runs are
- * supported.
+ * readable/writable for their exact element counts, and disjoint. Input must
+ * remain immutable and output must remain exclusively accessible until the
+ * call returns. During concurrent runs, every output range must also be
+ * disjoint from every other active call's input and output ranges; immutable
+ * input ranges may be shared. Invalid handles, lengths, and other structural
+ * failures leave output untouched; output is usable only when the return value
+ * is OK. Concurrent runs satisfying these ownership rules are supported.
  */
 int32_t df_runtime_run_v1(
     df_runtime_handle_v1 handle,

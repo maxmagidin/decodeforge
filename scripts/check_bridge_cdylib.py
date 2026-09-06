@@ -259,7 +259,10 @@ def _check_darwin_eager(path: Path, envelope: dict[str, Any]) -> str:
             counters.native_success,
             counters.native_error,
             counters.fallback,
-        ) != (1, 1, 1, 0, 0):
+            counters.fallback_success,
+            counters.fallback_error,
+            counters.in_flight,
+        ) != (1, 1, 1, 0, 0, 0, 0, 0):
             raise BridgeCheckError(f"unexpected eager counters: {counters}")
         if operator.last_guard_reason is not None:
             raise BridgeCheckError("successful native call retained a guard reason")

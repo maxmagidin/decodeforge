@@ -4,6 +4,11 @@
 - **Date:** 2026-08-30
 - **Decision owner:** Repository owner
 
+> **Sequencing update (2026-08-31):** [ADR 0005](0005-prioritize-eager-q-projection-demo.md)
+> supersedes the requirements below that bounded schedule selection precede
+> framework integration and that G3 use `torch.compile`. The Apple-M4-first
+> target decision and deferred/optional AVX2 status in this ADR remain active.
+
 ## Context
 
 The earlier plan made both ARM64 NEON and x86-64 AVX2 mandatory before the

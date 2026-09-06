@@ -395,6 +395,67 @@ impl PackedWeightsV1 {
     pub fn canonical_manifest_json(&self) -> Result<String> {
         self.manifest.canonical_json()
     }
+
+    /// Reconstruct the canonical logical Q8 storage represented by this OI4
+    /// payload. This is intentionally a Rust-only asset-preparation primitive:
+    /// consumers must not grow a second unpacker that can drift from the
+    /// verified physical layout.
+    pub(crate) fn logical_weights(&self) -> Result<Q8Weights> {
+        self.verify()?;
+        let shape = self.shape();
+        let q_len = (shape.n() as usize)
+            .checked_mul(shape.blocks() as usize)
+            .and_then(|value| value.checked_mul(BLOCK_SIZE as usize))
+            .ok_or_else(|| invalid("DFE-COMP-002", "logical q storage size overflows."))?;
+        let scale_len = (shape.n() as usize)
+            .checked_mul(shape.blocks() as usize)
+            .ok_or_else(|| invalid("DFE-COMP-002", "logical scale storage size overflows."))?;
+        let mut q = Vec::new();
+        q.try_reserve_exact(q_len).map_err(|_| {
+            invalid(
+                "DFE-COMP-002",
+                "unable to reserve reconstructed logical q storage.",
+            )
+        })?;
+        let mut scales = Vec::new();
+        scales.try_reserve_exact(scale_len).map_err(|_| {
+            invalid(
+                "DFE-COMP-002",
+                "unable to reserve reconstructed logical scale storage.",
+            )
+        })?;
+        for row in 0..shape.n() {
+            let panel = row / OUTPUT_TILE;
+            let output_lane = row % OUTPUT_TILE;
+            for block in 0..shape.blocks() {
+                for lane in 0..BLOCK_SIZE {
+                    q.push(
+                        self.q_at(panel, block, lane, output_lane)
+                            .ok_or_else(|| invalid("DFE-COMP-003", "logical q index is invalid."))?
+                            as u8,
+                    );
+                }
+            }
+        }
+        for row in 0..shape.n() {
+            let panel = row / OUTPUT_TILE;
+            let output_lane = row % OUTPUT_TILE;
+            for block in 0..shape.blocks() {
+                scales.push(
+                    self.scale_bits_at(panel, block, output_lane)
+                        .ok_or_else(|| {
+                            invalid("DFE-COMP-003", "logical scale index is invalid.")
+                        })?,
+                );
+            }
+        }
+        Q8Weights::try_new(shape.n(), shape.k(), shape.blocks(), q, scales).map_err(|error| {
+            invalid(
+                "DFE-COMP-005",
+                format!("reconstructed logical Q8 storage is invalid: {error}"),
+            )
+        })
+    }
 }
 
 impl TryFrom<&Q8Weights> for PackedWeightsV1 {

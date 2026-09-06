@@ -28,6 +28,7 @@ MAX_PACKED_WEIGHT_BYTES: Final = 128 * 1024 * 1024
 MAX_VECTOR_ELEMENTS: Final = MAX_PACKED_WEIGHT_BYTES // 4
 MAX_ERROR_BYTES: Final = 4096
 MAX_DYLIB_BYTES: Final = 8 * 1024 * 1024
+_MAX_HANDLE: Final = (1 << 64) - 1
 _POINTER_MAX: Final = (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1
 OPERATOR_SCHEMA: Final = (
     "q8_linear_v1(Tensor x, int binding_id, int n, int k) -> Tensor"
@@ -116,6 +117,19 @@ def _identity(value: str, field: str) -> str:
     ):
         raise ValueError(f"{field} must be sha256:<64 lowercase hex digits>")
     return value
+
+
+def _require_handle(handle: int) -> int:
+    if (
+        isinstance(handle, bool)
+        or not isinstance(handle, int)
+        or not 1 <= handle <= _MAX_HANDLE
+    ):
+        raise TorchBridgeError(
+            BridgeStatus.INVALID_HANDLE,
+            "handle must be a nonzero unsigned 64-bit integer",
+        )
+    return handle
 
 
 def _bounded_bytes(
@@ -463,8 +477,7 @@ class RuntimeLibrary:
         return RuntimeBinding(self, int(handle.value), descriptor)
 
     def get_descriptor(self, handle: int) -> RuntimeDescriptor:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         descriptor = _CDescriptor()
         status = int(
             self._descriptor(ctypes.c_uint64(handle), ctypes.byref(descriptor))
@@ -480,8 +493,7 @@ class RuntimeLibrary:
         output_address: int,
         output_length: int,
     ) -> None:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         input_range = _pointer_range(input_address, input_length, "input")
         output_range = _pointer_range(output_address, output_length, "output")
         if input_range[0] < output_range[1] and output_range[0] < input_range[1]:
@@ -502,13 +514,13 @@ class RuntimeLibrary:
         self._raise_status(status)
 
     def destroy(self, handle: int) -> None:
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TorchBridgeError(BridgeStatus.INVALID_HANDLE, "handle is invalid")
+        handle = _require_handle(handle)
         self._raise_status(int(self._destroy(ctypes.c_uint64(handle))))
 
 
 class BindingLike(Protocol):
-    descriptor: RuntimeDescriptor
+    @property
+    def descriptor(self) -> RuntimeDescriptor: ...
 
     @property
     def closed(self) -> bool: ...
@@ -524,8 +536,17 @@ class BindingLike(Protocol):
     def close(self) -> None: ...
 
 
+@dataclass(frozen=True)
+class _RuntimeOwnership:
+    library: RuntimeLibrary
+    handle: int
+    descriptor: RuntimeDescriptor
+
+
 class RuntimeBinding:
     """A process-local owner of one bridge handle and its library."""
+
+    __slots__ = ("_closed", "_lock", "_ownership", "_registry_owner")
 
     def __init__(
         self,
@@ -533,11 +554,26 @@ class RuntimeBinding:
         handle: int,
         descriptor: RuntimeDescriptor,
     ) -> None:
-        self.library = library
-        self.handle = handle
-        self.descriptor = descriptor
+        self._ownership = _RuntimeOwnership(
+            library=library,
+            handle=_require_handle(handle),
+            descriptor=descriptor,
+        )
         self._closed = False
         self._lock = threading.RLock()
+        self._registry_owner: tuple[BindingRegistry, int] | None = None
+
+    @property
+    def library(self) -> RuntimeLibrary:
+        return self._ownership.library
+
+    @property
+    def handle(self) -> int:
+        return self._ownership.handle
+
+    @property
+    def descriptor(self) -> RuntimeDescriptor:
+        return self._ownership.descriptor
 
     @property
     def closed(self) -> bool:
@@ -556,8 +592,8 @@ class RuntimeBinding:
                 raise TorchBridgeError(
                     BridgeStatus.INVALID_HANDLE, "runtime binding is closed"
                 )
-            self.library.run(
-                self.handle,
+            self._ownership.library.run(
+                self._ownership.handle,
                 input_address,
                 input_length,
                 output_address,
@@ -568,10 +604,53 @@ class RuntimeBinding:
         with self._lock:
             if self._closed:
                 return
-            try:
-                self.library.destroy(self.handle)
-            finally:
-                self._closed = True
+            owner = self._registry_owner
+            if owner is None:
+                self._destroy_locked()
+                return
+        registry, binding_id = owner
+        try:
+            registry.close(binding_id)
+        except TorchBridgeError as error:
+            if error.status is BridgeStatus.INVALID_HANDLE and self.closed:
+                return
+            raise
+
+    def _destroy_locked(self) -> None:
+        """Destroy or converge a definitively absent native handle to closed."""
+
+        try:
+            self._ownership.library.destroy(self._ownership.handle)
+        except TorchBridgeError as error:
+            if error.status is not BridgeStatus.INVALID_HANDLE:
+                raise
+        self._closed = True
+
+    def _claim_registry(self, registry: BindingRegistry, binding_id: int) -> None:
+        """Atomically transfer this live binding into one registry."""
+
+        with self._lock:
+            if self._closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
+                )
+            if self._registry_owner is not None:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "binding is already registered"
+                )
+            self._registry_owner = (registry, binding_id)
+
+    def _close_from_registry(self, registry: BindingRegistry, binding_id: int) -> None:
+        """Close while the owning registry retains reachability for failures."""
+
+        with self._lock:
+            if self._registry_owner != (registry, binding_id):
+                raise TorchBridgeError(
+                    BridgeStatus.INTERNAL, "binding registry ownership is inconsistent"
+                )
+            if not self._closed:
+                self._destroy_locked()
+            self._registry_owner = None
 
     def __enter__(self) -> RuntimeBinding:
         if self.closed:
@@ -593,13 +672,15 @@ class BindingRegistry:
         self._entries: dict[int, BindingLike] = {}
 
     def register(self, binding: BindingLike) -> int:
-        if binding.closed:
-            raise TorchBridgeError(
-                BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
-            )
         with self._lock:
             binding_id = self._next_id
             self._next_id += 1
+            if isinstance(binding, RuntimeBinding):
+                binding._claim_registry(self, binding_id)
+            elif binding.closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INVALID_HANDLE, "cannot register a closed binding"
+                )
             self._entries[binding_id] = binding
             return binding_id
 
@@ -607,7 +688,29 @@ class BindingRegistry:
         if isinstance(binding_id, bool) or not isinstance(binding_id, int):
             return None
         with self._lock:
-            return self._entries.get(binding_id)
+            binding = self._entries.get(binding_id)
+            if binding is None:
+                return None
+            if binding.closed:
+                self._entries.pop(binding_id, None)
+                return None
+            return binding
+
+    def _close_locked(self, binding_id: int) -> None:
+        binding = self._entries.get(binding_id)
+        if binding is None:
+            raise TorchBridgeError(
+                BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
+            )
+        if isinstance(binding, RuntimeBinding):
+            binding._close_from_registry(self, binding_id)
+        elif not binding.closed:
+            binding.close()
+            if not binding.closed:
+                raise TorchBridgeError(
+                    BridgeStatus.INTERNAL, "binding close did not close the binding"
+                )
+        self._entries.pop(binding_id, None)
 
     def close(self, binding_id: int) -> None:
         if isinstance(binding_id, bool) or not isinstance(binding_id, int):
@@ -615,19 +718,19 @@ class BindingRegistry:
                 BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
             )
         with self._lock:
-            binding = self._entries.pop(binding_id, None)
-        if binding is None:
-            raise TorchBridgeError(
-                BridgeStatus.INVALID_HANDLE, "binding ID is not registered"
-            )
-        binding.close()
+            self._close_locked(binding_id)
 
     def clear(self) -> None:
+        failures: list[Exception] = []
         with self._lock:
-            bindings = list(self._entries.values())
-            self._entries.clear()
-        for binding in bindings:
-            binding.close()
+            for binding_id in tuple(self._entries):
+                try:
+                    self._close_locked(binding_id)
+                except Exception as error:
+                    error.add_note(f"while closing binding ID {binding_id}")
+                    failures.append(error)
+        if failures:
+            raise ExceptionGroup("one or more bindings could not be closed", failures)
 
 
 _BINDINGS = BindingRegistry()
@@ -709,6 +812,8 @@ def _tensor_guard_reason(
         return "shape"
     if int(x.numel()) != k:
         return "numel"
+    if not bool(torch_module.isfinite(x).all().item()):
+        return "nonfinite"
     return None
 
 
@@ -720,7 +825,13 @@ def _native_q8_linear(
     *,
     torch_module: Any | None = None,
 ) -> Any:
-    """Run one native call; this function never invokes fallback."""
+    """Run one native call; this function never invokes fallback.
+
+    The caller must not mutate ``x`` or expose the returned output to another
+    thread until this call returns. The bridge borrows the input storage and
+    exclusively borrows the newly allocated output storage during native
+    execution.
+    """
 
     torch = _torch_module() if torch_module is None else torch_module
     if (
@@ -801,19 +912,38 @@ def _call_registered_native(x: Any, binding_id: int, n: int, k: int) -> Any:
 
 @dataclass(frozen=True)
 class DispatchCounters:
-    """Immutable snapshot of completed eager dispatch accounting."""
+    """Immutable snapshot of completed outcomes and current in-flight work."""
 
     dispatch: int
     native_attempt: int
     native_success: int
     native_error: int
     fallback: int
+    fallback_success: int = 0
+    fallback_error: int = 0
+    in_flight: int = 0
 
     def validate(self) -> None:
+        if any(
+            value < 0
+            for value in (
+                self.dispatch,
+                self.native_attempt,
+                self.native_success,
+                self.native_error,
+                self.fallback,
+                self.fallback_success,
+                self.fallback_error,
+                self.in_flight,
+            )
+        ):
+            raise AssertionError("dispatch counters must be nonnegative")
         if self.dispatch != self.native_attempt + self.fallback:
             raise AssertionError("dispatch counter invariant failed")
         if self.native_attempt != self.native_success + self.native_error:
             raise AssertionError("native counter invariant failed")
+        if self.fallback != self.fallback_success + self.fallback_error:
+            raise AssertionError("fallback counter invariant failed")
 
 
 FallbackCallable: TypeAlias = Callable[[Any], Any]
@@ -861,6 +991,9 @@ class NativeQ8Linear:
         self._native_success = 0
         self._native_error = 0
         self._fallback = 0
+        self._fallback_success = 0
+        self._fallback_error = 0
+        self._in_flight = 0
         self._last_guard_reason: str | None = None
         self._counter_lock = threading.Lock()
 
@@ -873,6 +1006,9 @@ class NativeQ8Linear:
                 native_success=self._native_success,
                 native_error=self._native_error,
                 fallback=self._fallback,
+                fallback_success=self._fallback_success,
+                fallback_error=self._fallback_error,
+                in_flight=self._in_flight,
             )
         snapshot.validate()
         return snapshot
@@ -889,6 +1025,8 @@ class NativeQ8Linear:
             self._native_success = 0
             self._native_error = 0
             self._fallback = 0
+            self._fallback_success = 0
+            self._fallback_error = 0
             self._last_guard_reason = None
 
     def guard_reason(self, x: Any) -> str | None:
@@ -903,28 +1041,46 @@ class NativeQ8Linear:
             reason = _tensor_guard_reason(
                 x, self.binding_id, self.n, self.k, torch_module=torch
             )
-        except Exception:
-            reason = "guard_error"
+        except Exception as error:
+            with self._counter_lock:
+                self._last_guard_reason = "guard_error"
+            raise TorchBridgeError(
+                BridgeStatus.INVALID_ARGUMENT,
+                "guard inspection failed before dispatch",
+            ) from error
         if reason is not None:
             with self._counter_lock:
                 self._last_guard_reason = reason
+                self._in_flight += 1
             try:
-                return self.fallback(x)
-            finally:
+                result = self.fallback(x)
+            except BaseException:
                 with self._counter_lock:
+                    self._in_flight -= 1
                     self._dispatch += 1
                     self._fallback += 1
+                    self._fallback_error += 1
+                raise
+            with self._counter_lock:
+                self._in_flight -= 1
+                self._dispatch += 1
+                self._fallback += 1
+                self._fallback_success += 1
+            return result
         with self._counter_lock:
             self._last_guard_reason = None
+            self._in_flight += 1
         try:
             result = self._native_operator(x, self.binding_id, self.n, self.k)
-        except Exception:
+        except BaseException:
             with self._counter_lock:
+                self._in_flight -= 1
                 self._dispatch += 1
                 self._native_attempt += 1
                 self._native_error += 1
             raise
         with self._counter_lock:
+            self._in_flight -= 1
             self._dispatch += 1
             self._native_attempt += 1
             self._native_success += 1
