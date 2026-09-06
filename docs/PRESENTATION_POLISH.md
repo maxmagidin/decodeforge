@@ -102,3 +102,26 @@ This is a narrow plain-prose presentation policy, not a general sentence
 segmenter: abbreviations, decimal points, and quotations can be ambiguous.
 It does not improve the model's unconstrained instruction-following ability.
 The option is off by default; default EOS/token-limit behavior is unchanged.
+
+### Observed formatting result: passed
+
+One real run from clean source `60ab7b20ea70b9caa2ce3f5ce414505e814d9509`
+in an isolated checkout produced this exact answer in both paths:
+
+> A compiler is a software tool that translates high-level programming languages
+> into machine code.
+
+The [retained formatting-run JSON](../results/presentation/apple-m4-sentence-boundary-v1.json)
+records 18 identical generated tokens and `stop_reason=sentence_boundary`, with
+`stopped_by_eos=false`. Every reference layer made 18 fallback calls; every
+hybrid layer made one prefill fallback and 17 native cached-decode calls. All
+22 original modules were restored, with no live adapters or in-flight calls.
+
+No output was truncated or rewritten after generation. This passes the narrow
+formatting experiment, not the earlier EOS-based prompt-only experiment. Both
+the original two-sentence result and the failed stricter-prompt result remain
+retained. No G3 measurement, prompt, or acceptance criterion was changed.
+
+To use the explicit formatting mode, add `--stop-after-sentence` to the
+standalone presentation command and use the original compiler question. The
+default command continues to use normal EOS/token-limit stopping.
