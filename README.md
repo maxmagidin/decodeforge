@@ -43,6 +43,48 @@ manager, general tensor framework, or GPU compiler. PyTorch/Transformers owns
 model loading, tokenization, attention, KV state, and generation. DecodeForge
 owns the compiler path for a narrow set of hot CPU operators.
 
+## Measured results: Apple M4
+
+TinyLlama already runs locally with PyTorch. DecodeForge demonstrates a custom
+compiler taking over **22 query projections during cached single-token decode**,
+not a new ability to run the model locally or a general-purpose inference engine.
+
+| Evaluation | Observed result | What it establishes |
+| --- | --- | --- |
+| Generated NEON vs generated scalar | **~3.96x speedup** in each of 3 independent sessions | Same-Q8 single-projection prepared-call performance, **not whole-model speedup** |
+| Native vs same-Q8 reference correctness | **30/30 prompts; 1,070 generated steps; exact token agreement** | Correct native dispatch across all 22 layers and clean restoration; maximum absolute logit difference `0.0000171661` |
+| Q8 vs original FP32 sensitivity | **30/30 greedy sequences matched; 99.7099% next-token argmax agreement** on 1,034 fixed reference tokens | Small observed quantization effect on this synthetic corpus, not a general quality guarantee |
+| Model performance protocol | **81 measured generations + 27 warmups across 3 fresh processes** | Separate performance measurements without correctness-comparison hooks |
+| Setup and memory | **16.30–16.63 s** setup components; **4.62–4.80 GiB** peak process RSS | Reused pinned artifacts/caches; RSS covers all paths, not per-path memory savings |
+
+Decode throughput below is in **tokens/second**. Each range spans the three
+per-process medians, not a confidence interval or selected best runs. The cases
+use short/medium/long prompts and output caps of 16/32/64 tokens respectively.
+
+| Case / output cap | Original FP32 PyTorch | Hybrid native | Guarded same-Q8 reference |
+| --- | --- | --- | --- |
+| Short / 16 | 11.61–15.47 | 11.29–14.74 | 3.84–4.70 |
+| Medium / 32 | 14.78–14.86 | 14.17–14.29 | 4.27–4.53 |
+| Long / 64 | 12.23–13.74 | 10.85–13.23 | 4.37–4.47 |
+
+**The native path beats the guarded same-Q8 reference, but does not consistently
+beat original FP32 PyTorch.** Production guards remain enabled, including the
+reference fallback's weight cloning/hashing; finite-logit checks remain in decode
+timing. These are guarded model-boundary measurements, not isolated kernel
+timings. Only query projections use native decode; the rest remains in PyTorch.
+Also, 29/30 correctness generations hit their token cap, and a second physical
+Mac remains untested: neither broad instruction-following quality nor cross-host
+performance is established.
+
+See the [G1 kernel measurements](results/g1/apple-m4-primary/README.md) and
+[full model evaluation](results/evaluation/apple-m4-v1/README.md) for raw evidence,
+confidence intervals where applicable, prefill/total-generation timings, and
+limitations. Recompute and verify the retained analyses without running the model:
+
+```sh
+make verify-g1-result verify-evaluation-result
+```
+
 ## Why this scope
 
 The original all-in-one engine concept packages several independent systems
