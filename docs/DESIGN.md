@@ -24,8 +24,9 @@ fallback, error, and lifecycle tests. G3.0–G3.3 are code-complete, including
 deterministic 22-layer asset preparation, the identity-bound owning adapter,
 and transactional all-layer installation. The hardened generation runner and
 ten-file analyzer/verifier now retain three accepted G3.4 sessions and verified
-G3.5 evidence. G3 is complete under its frozen protocol. The generated text is
-control-token output, so a useful presentation demo remains separate work.
+G3.5 evidence. G3 is complete under its frozen protocol. Its generated text is
+control-token output; the separate [chat-template demo](PRESENTATION_DEMO.md)
+now produces useful text without replacing that evidence.
 Generation timings compare guarded/instrumented same-Q8 and hybrid-native
 paths, not stock PyTorch or isolated kernel work; see the
 [result interpretation](G3_RESULT_2026_09_05.md).

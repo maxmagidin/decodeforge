@@ -11,8 +11,9 @@ through a versioned native ABI. The completed G2 boundary exposes that artifact
 as a guarded eager PyTorch operator, and the G3 implementation installs it for
 all 22 TinyLlama query projections during cached single-token decode. Three
 accepted model sessions and their independently verified result bundle complete
-the frozen G3 technical gate. A useful chat-formatted presentation demo remains
-separate from that accepted evidence.
+the frozen G3 technical gate. A separate chat-formatted presentation demo now
+produces useful text with identical reference/native tokens; it does not replace
+that accepted evidence.
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and unsupported operations. Prompt prefill uses a reference
@@ -295,8 +296,10 @@ same-Q8 reference and 0.751 seconds for hybrid native execution. The reference
 includes per-call fallback-weight cloning and hashing; both paths include hook
 instrumentation. These are not isolated kernel timings or a stock-PyTorch
 comparison. The frozen prompt produced control-token text rather than a useful
-sentence, so a polished text demo remains follow-up work. See the
-[result interpretation and limitations](docs/G3_RESULT_2026_09_05.md).
+sentence. A separate [chat-template presentation demo](docs/PRESENTATION_DEMO.md)
+now produces a meaningful answer with identical tokens, all-22 native coverage,
+and clean restoration; it gives two sentences rather than the requested one.
+See the [original result interpretation](docs/G3_RESULT_2026_09_05.md).
 
 Reproduce the checked-in analysis with `make verify-g1-result`.
 
