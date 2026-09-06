@@ -12,12 +12,10 @@ from pathlib import Path
 PROCESS_START_NS = time.perf_counter_ns()
 
 from decodeforge.evaluation import (  # noqa: E402
-    EvaluationError,
     EvaluationRequest,
     run_evaluation,
     write_evaluation_json,
 )
-from decodeforge.presentation_demo import PresentationDemoError  # noqa: E402
 
 
 def main() -> int:
@@ -40,6 +38,8 @@ def main() -> int:
     parser.add_argument("--session-index", type=int, choices=range(3), default=0)
     arguments = parser.parse_args()
     try:
+        if arguments.output.exists() or arguments.output.is_symlink():
+            raise FileExistsError("evaluation output already exists")
         evidence = run_evaluation(
             EvaluationRequest(
                 spec_path=arguments.spec.resolve(),
@@ -51,9 +51,12 @@ def main() -> int:
                 session_index=arguments.session_index,
                 process_start_ns=PROCESS_START_NS,
             ),
+            progress=lambda message: print(
+                f"evaluation: {message}", file=sys.stderr, flush=True
+            ),
         )
         write_evaluation_json(arguments.output, evidence)
-    except (EvaluationError, PresentationDemoError) as error:
+    except Exception as error:
         print(f"evaluation: error: {error}", file=sys.stderr)
         failure = {
             "format": "decodeforge_evaluation_v1",

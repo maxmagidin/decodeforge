@@ -131,15 +131,19 @@ def test_hybrid_single_token_run_fails_cached_coverage_reconciliation() -> None:
         ev._reconcile("hybrid_native", 1, delta)
 
 
+@pytest.mark.parametrize("error_type", [ev.EvaluationError, RuntimeError])
 def test_cli_fatal_error_writes_nonoverwriting_rejected_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    error_type: type[Exception],
 ) -> None:
     output = tmp_path / "rejected.json"
     monkeypatch.setattr(
         cli,
         "run_evaluation",
-        lambda _request: (_ for _ in ()).throw(ev.EvaluationError("synthetic fatal")),
+        lambda _request, **_kwargs: (_ for _ in ()).throw(
+            error_type("synthetic fatal")
+        ),
     )
     monkeypatch.setattr(
         sys,

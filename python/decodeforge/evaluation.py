@@ -30,6 +30,7 @@ from . import presentation_demo as _presentation
 from .evaluation_metrics import compare_logits, token_metrics
 from .qproj_adapter import QProjExecutionMode
 from .qproj_model import tinyllama_qproj_paths
+from .torch_bridge import BRIDGE_ABI_VERSION
 
 MAX_CASES: Final = 30
 MAX_NEW_TOKENS: Final = 64
@@ -749,6 +750,7 @@ def run_evaluation(
         "command_line": list(sys.argv),
         "model_files": model_files,
         "bridge_library_sha256": digest,
+        "bridge_abi_version": BRIDGE_ABI_VERSION,
         "model_identity": {
             "model_id": _presentation._PINNED_MODEL_ID,
             "revision": _presentation._PINNED_MODEL_REVISION,
@@ -1002,6 +1004,28 @@ def run_evaluation(
                     }
             evidence["performance"] = perf
             evidence["actual_path_order"] = ["fp32", *order]
+            for runs in perf:
+                ref_samples = runs["paths"]["same_q8_reference"]["measured_generations"]
+                native_samples = runs["paths"]["hybrid_native"]["measured_generations"]
+                for index, (ref_sample, native_sample) in enumerate(
+                    zip(ref_samples, native_samples, strict=True)
+                ):
+                    if (
+                        "error" in ref_sample
+                        or "error" in native_sample
+                        or ref_sample["generated_token_ids"]
+                        != native_sample["generated_token_ids"]
+                    ):
+                        evidence["failures"].append(
+                            {
+                                "id": runs["case"]["id"],
+                                "repetition": index,
+                                "error": (
+                                    "performance native/reference token mismatch "
+                                    "or missing sample"
+                                ),
+                            }
+                        )
     finally:
         if installation is not None:
             installation.close()

@@ -185,3 +185,33 @@ reason fields; do not silently retry or replace a case. A successful report
 must retain raw observations sufficient to recompute the summaries. This
 evaluation's result is additional evidence and must never be copied into the
 frozen G3 result bundle.
+
+## Running the evaluation
+
+Use a clean checkout with the pinned dependencies and verified external model,
+Q8 assets, and bridge described in [the presentation guide](PRESENTATION_DEMO.md).
+The supplied spec must byte-match this checkout's committed V1 spec. Output
+paths must be new absolute paths; the runner never replaces an existing result.
+
+Run `make check-rust-toolchain` and `make check` before capture. Then run
+`scripts/run_evaluation.py --help` for the required artifact paths. Invoke it
+with `uv run --frozen --extra g3-generation python`, the common artifact flags,
+and `--spec benchmarks/evaluation-v1/spec.json`:
+
+1. `--mode correctness --session-index 0 --output <new-absolute-correctness.json>`
+2. `--mode performance --session-index 0 --output <new-absolute-performance-0.json>`
+3. Repeat performance in new processes with indices 1 and 2 and distinct outputs.
+
+Do not run concurrent builds, tests, or other evaluation processes during
+performance capture. FP32 runs first, before adapter installation; the two Q8
+paths alternate their order by session index. This ordering is disclosed, not
+claimed to eliminate thermal or scheduler effects. Within-process repetitions
+are not independent hosts or independent process samples.
+
+`scripts/analyze_evaluation.py --correctness <file> --performance <file-0>
+<file-1> <file-2> --spec benchmarks/evaluation-v1/spec.json --output <new-file>`
+checks completeness, identity agreement, token/counter evidence, and recomputes
+token-weighted NLL and per-process timing summaries. It refuses rejected or
+incomplete sessions; inspect and retain those raw failures separately. This
+summary checker does not independently re-execute the model or reconstruct
+transient logits from their retained error metrics.

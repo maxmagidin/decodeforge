@@ -212,6 +212,14 @@ def summarize(
         "format": "decodeforge_evaluation_summary_v1",
         "g3_evidence": False,
         "spec_sha256": spec_digest,
+        "source": correctness["source"],
+        "setup_and_memory_by_session": [
+            {
+                "session_index": session["session_index"],
+                "timing": session.get("timing", {}),
+            }
+            for session in performance
+        ],
         "correctness": {
             "cases": len(cases),
             "native_reference_exact": len(cases),
