@@ -60,7 +60,7 @@ _PINNED_MODEL_FILES: Final = {
     ),
     "special_tokens_map.json": (
         551,
-        "82d96d7a9e6ced037f12394b7ea6a5b02e6ca87e0d11aa8d60d9be857ce7db",
+        "82d96d7a9e6ced037f12394b7ea6a5b02e6ca87e0d11edaa8d60d9be857ce7db",
     ),
 }
 

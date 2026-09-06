@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,23 @@ from decodeforge.torch_bridge import RuntimeLibrary
 from torch import nn
 
 ROOT = Path("/opt/decodeforge-presentation")
+
+
+def test_presentation_model_pins_match_accepted_g3_model() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    spec = json.loads((repository / "benchmarks/g3/spec.json").read_text())
+    model = spec["model"]
+    records = [
+        model["weights_file"],
+        *model["configuration_files"],
+        *model["tokenizer_files"],
+    ]
+    assert model["model_id"] == demo._PINNED_MODEL_ID
+    assert model["revision"] == demo._PINNED_MODEL_REVISION
+    assert {
+        record["filename"]: (record["size_bytes"], record["sha256"])
+        for record in records
+    } == demo._PINNED_MODEL_FILES
 
 
 class FakeTokenizer:
