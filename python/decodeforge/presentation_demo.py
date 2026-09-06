@@ -31,6 +31,7 @@ from .torch_bridge import RuntimeLibrary
 
 MAX_NEW_TOKENS: Final = 64
 _SHA256_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+_ASCII_SENTENCE_BOUNDARY_RE: Final = re.compile(r"[.!?](?=\s|$)")
 _PINNED_MODEL_ID: Final = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 _PINNED_MODEL_REVISION: Final = "fe8a4ea1ffedaf415f4da2f062534de366a451e6"
 _PINNED_MODEL_FILES: Final = {
@@ -103,6 +104,7 @@ class PresentationRequest:
     bridge_sha256: str
     prompt: str
     max_new_tokens: int = MAX_NEW_TOKENS
+    stop_after_sentence: bool = False
 
 
 def _require_path(path: Path, label: str, *, directory: bool = False) -> Path:
@@ -318,6 +320,38 @@ def _counter_summary(counters: QProjModelCounters) -> dict[str, Any]:
     }
 
 
+def _has_ascii_sentence_boundary(text: str) -> bool:
+    """Return whether text contains an ASCII sentence-ending punctuation mark."""
+
+    return _ASCII_SENTENCE_BOUNDARY_RE.search(text) is not None
+
+
+def _ends_at_ascii_sentence_boundary(text: str) -> bool:
+    match = _ASCII_SENTENCE_BOUNDARY_RE.search(text)
+    return match is not None and not text[match.end() :].strip()
+
+
+class _SentenceBoundaryStopping:
+    """Minimal Transformers stopping-criteria adapter for one local sequence."""
+
+    def __init__(self, tokenizer: Any, prompt_length: int) -> None:
+        self._tokenizer = tokenizer
+        self._prompt_length = prompt_length
+        self.matched = False
+
+    def __call__(
+        self, input_ids: torch.Tensor, _scores: Any, **_kwargs: Any
+    ) -> torch.Tensor:
+        if input_ids.ndim != 2 or input_ids.shape[0] != 1:
+            raise PresentationDemoError(
+                "sentence-boundary stopping requires one generated sequence"
+            )
+        generated_ids = input_ids[0, self._prompt_length :].tolist()
+        text = str(self._tokenizer.decode(generated_ids, skip_special_tokens=True))
+        self.matched = _has_ascii_sentence_boundary(text)
+        return torch.tensor([self.matched], device=input_ids.device, dtype=torch.bool)
+
+
 def _counter_delta(
     before: dict[str, Any], after: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -379,8 +413,11 @@ def _generate(
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     max_new_tokens: int,
-) -> tuple[list[int], list[int], str, str, bool]:
+    *,
+    stop_after_sentence: bool = False,
+) -> tuple[list[int], list[int], str, str, str]:
     eos = _eos_ids(tokenizer)
+    sentence_stopping: _SentenceBoundaryStopping | None = None
     kwargs: dict[str, Any] = {
         "attention_mask": attention_mask,
         "max_new_tokens": max_new_tokens,
@@ -396,6 +433,11 @@ def _generate(
         # different padding convention; TinyLlama's EOS is the frozen pad ID.
         "pad_token_id": eos[0],
     }
+    if stop_after_sentence:
+        from transformers import StoppingCriteriaList
+
+        sentence_stopping = _SentenceBoundaryStopping(tokenizer, input_ids.shape[1])
+        kwargs["stopping_criteria"] = StoppingCriteriaList([sentence_stopping])
     try:
         with torch.inference_mode():
             output = cast(Any, model).generate(input_ids, **kwargs)
@@ -414,11 +456,28 @@ def _generate(
     if eos_positions and eos_positions[0] != len(generated_ids) - 1:
         raise PresentationDemoError("model generation continued after EOS")
     stopped_by_eos = bool(generated_ids and generated_ids[-1] in eos)
-    if not stopped_by_eos and len(generated_ids) != max_new_tokens:
+    text = str(tokenizer.decode(generated_ids, skip_special_tokens=True))
+    boundary = _ends_at_ascii_sentence_boundary(text)
+    if (
+        sentence_stopping is not None
+        and _has_ascii_sentence_boundary(text)
+        and not boundary
+    ):
+        raise PresentationDemoError("sentence-boundary stopping was not honored")
+    if sentence_stopping is not None and sentence_stopping.matched:
+        if not boundary or stopped_by_eos:
+            raise PresentationDemoError(
+                "sentence-boundary stopping did not end at a valid boundary"
+            )
+        stop_reason = "sentence_boundary"
+    elif stopped_by_eos:
+        stop_reason = "eos"
+    elif len(generated_ids) == max_new_tokens:
+        stop_reason = "max_new_tokens"
+    else:
         raise PresentationDemoError("generation stopped before EOS or the token limit")
     raw_text = str(tokenizer.decode(generated_ids, skip_special_tokens=False))
-    text = str(tokenizer.decode(generated_ids, skip_special_tokens=True))
-    return all_ids, generated_ids, raw_text, text, stopped_by_eos
+    return all_ids, generated_ids, raw_text, text, stop_reason
 
 
 def run_presentation_demo(
@@ -439,6 +498,8 @@ def run_presentation_demo(
         or not 1 <= request.max_new_tokens <= MAX_NEW_TOKENS
     ):
         raise PresentationDemoError("max_new_tokens must be in the range 1..64")
+    if type(request.stop_after_sentence) is not bool:
+        raise PresentationDemoError("stop_after_sentence must be a boolean")
     if not isinstance(request.prompt, str) or not request.prompt.strip():
         raise PresentationDemoError("prompt must be nonempty text")
     if len(request.prompt) > 4096:
@@ -509,8 +570,13 @@ def run_presentation_demo(
         for name, mode in paths:
             installation.set_execution_mode(mode)
             before = _counter_summary(installation.counters)
-            all_ids, generated_ids, raw_text, text, stopped_by_eos = _generate(
-                model, tokenizer, input_ids, attention_mask, request.max_new_tokens
+            all_ids, generated_ids, raw_text, text, stop_reason = _generate(
+                model,
+                tokenizer,
+                input_ids,
+                attention_mask,
+                request.max_new_tokens,
+                stop_after_sentence=request.stop_after_sentence,
             )
             after = _counter_summary(installation.counters)
             delta = _counter_delta(before, after)
@@ -523,8 +589,8 @@ def run_presentation_demo(
                 "generated_token_count": len(generated_ids),
                 "raw_text": raw_text,
                 "text": text,
-                "stopped_by_eos": stopped_by_eos,
-                "stop_reason": "eos" if stopped_by_eos else "max_new_tokens",
+                "stopped_by_eos": stop_reason == "eos",
+                "stop_reason": stop_reason,
                 "counters_before": before,
                 "counters_after": after,
                 "counter_delta": delta,
@@ -594,6 +660,7 @@ def run_presentation_demo(
             ).hexdigest(),
         },
         "max_new_tokens": request.max_new_tokens,
+        "stop_after_sentence": request.stop_after_sentence,
         "runs": snapshots,
         "comparison": {
             "token_ids_exact": True,

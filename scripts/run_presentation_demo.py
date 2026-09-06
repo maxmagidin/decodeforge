@@ -23,6 +23,11 @@ def main() -> int:
     parser.add_argument("--library-sha256", required=True)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument(
+        "--stop-after-sentence",
+        action="store_true",
+        help="opt in to stopping after the first ASCII sentence boundary",
+    )
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
     try:
@@ -34,6 +39,7 @@ def main() -> int:
                 bridge_sha256=arguments.library_sha256,
                 prompt=arguments.prompt,
                 max_new_tokens=arguments.max_new_tokens,
+                stop_after_sentence=arguments.stop_after_sentence,
             )
         )
         if arguments.output is not None:
