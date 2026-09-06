@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="800" viewBox="0 0 1040 800" role="img" aria-labelledby="title description">
+  <title id="title">DecodeForge: measured Apple M4 decode throughput</title>
+  <desc id="description">Ranges of three per-process medians in tokens per second. Native decode beats the guarded same-Q8 reference, but does not consistently beat original FP32 PyTorch. All nine numeric ranges are also listed in the README table.</desc>
+  <style>
+    text { font-family: system-ui, -apple-system, sans-serif; fill: #eee9df; }
+    .muted { fill: #aaa6a0; }
+    .label { font-size: 17px; }
+    .value { font-size: 17px; font-variant-numeric: tabular-nums; }
+    .grid { stroke: #39373d; stroke-width: 1; }
+  </style>
+  <rect width="1040" height="800" rx="18" fill="#101013"/>
+  <text x="40" y="43" font-size="13" letter-spacing="2" style="fill:#d8b35b">DECODEFORGE / APPLE M4 / TINYLLAMA 1.1B</text>
+  <text x="40" y="83" font-size="29" font-weight="650">Real-model decode throughput</text>
+  <text x="40" y="116" font-size="17" class="muted">81 measured generations · 27 warmups · 3 fresh processes · higher is faster</text>
+  <text x="40" y="148" font-size="15" class="muted">Each segment spans the minimum–maximum of three process medians, not a confidence interval.</text>
+  <text x="340" y="190" font-size="14" class="muted">DECODE TOKENS / SECOND</text>
+  <text x="870" y="190" font-size="14" class="muted">MEDIAN RANGE</text>
+  <line x1="340.000" y1="206" x2="340.000" y2="686" class="grid"/>
+  <text x="340.000" y="711" text-anchor="middle" font-size="15" class="muted">0</text>
+  <line x1="460.000" y1="206" x2="460.000" y2="686" class="grid"/>
+  <text x="460.000" y="711" text-anchor="middle" font-size="15" class="muted">4</text>
+  <line x1="580.000" y1="206" x2="580.000" y2="686" class="grid"/>
+  <text x="580.000" y="711" text-anchor="middle" font-size="15" class="muted">8</text>
+  <line x1="700.000" y1="206" x2="700.000" y2="686" class="grid"/>
+  <text x="700.000" y="711" text-anchor="middle" font-size="15" class="muted">12</text>
+  <line x1="820.000" y1="206" x2="820.000" y2="686" class="grid"/>
+  <text x="820.000" y="711" text-anchor="middle" font-size="15" class="muted">16</text>
+  <text x="40" y="218" font-size="13" font-weight="650" class="muted">SHORT PROMPT / 16-TOKEN CAP</text>
+  <g id="short-01-16-fp32" data-case="short-01-16" data-path="fp32" data-min="11.607290161945933" data-max="15.46509866072586">
+    <title>SHORT PROMPT / 16-TOKEN CAP: Original FP32 PyTorch, 11.61–15.47 tokens/second</title>
+    <text x="40" y="256" class="label">Original FP32 PyTorch</text>
+    <line x1="688.219" y1="250" x2="803.953" y2="250" stroke="#9bbaf0" stroke-width="5"/>
+    <path d="M 688.219 243 V 257 M 803.953 243 V 257" stroke="#9bbaf0" stroke-width="2"/>
+    <text x="870" y="256" class="value">11.61–15.47</text>
+  </g>
+  <g id="short-01-16-hybrid_native" data-case="short-01-16" data-path="hybrid_native" data-min="11.28918687023765" data-max="14.740040952747114">
+    <title>SHORT PROMPT / 16-TOKEN CAP: Hybrid native, 11.29–14.74 tokens/second</title>
+    <text x="40" y="294" class="label">Hybrid native</text>
+    <line x1="678.676" y1="288" x2="782.201" y2="288" stroke="#d8b35b" stroke-width="5"/>
+    <path d="M 678.676 281 V 295 M 782.201 281 V 295" stroke="#d8b35b" stroke-width="2"/>
+    <text x="870" y="294" class="value">11.29–14.74</text>
+  </g>
+  <g id="short-01-16-same_q8_reference" data-case="short-01-16" data-path="same_q8_reference" data-min="3.8369042427399482" data-max="4.703880651394033">
+    <title>SHORT PROMPT / 16-TOKEN CAP: Guarded same-Q8 reference, 3.84–4.70 tokens/second</title>
+    <text x="40" y="332" class="label">Guarded same-Q8 reference</text>
+    <line x1="455.107" y1="326" x2="481.116" y2="326" stroke="#aaa6a0" stroke-width="5"/>
+    <path d="M 455.107 319 V 333 M 481.116 319 V 333" stroke="#aaa6a0" stroke-width="2"/>
+    <text x="870" y="332" class="value">3.84–4.70</text>
+  </g>
+  <text x="40" y="378" font-size="13" font-weight="650" class="muted">MEDIUM PROMPT / 32-TOKEN CAP</text>
+  <g id="medium-02-32-fp32" data-case="medium-02-32" data-path="fp32" data-min="14.784156663622014" data-max="14.858148112062375">
+    <title>MEDIUM PROMPT / 32-TOKEN CAP: Original FP32 PyTorch, 14.78–14.86 tokens/second</title>
+    <text x="40" y="416" class="label">Original FP32 PyTorch</text>
+    <line x1="783.525" y1="410" x2="785.744" y2="410" stroke="#9bbaf0" stroke-width="5"/>
+    <path d="M 783.525 403 V 417 M 785.744 403 V 417" stroke="#9bbaf0" stroke-width="2"/>
+    <text x="870" y="416" class="value">14.78–14.86</text>
+  </g>
+  <g id="medium-02-32-hybrid_native" data-case="medium-02-32" data-path="hybrid_native" data-min="14.174826998351278" data-max="14.285715918367533">
+    <title>MEDIUM PROMPT / 32-TOKEN CAP: Hybrid native, 14.17–14.29 tokens/second</title>
+    <text x="40" y="454" class="label">Hybrid native</text>
+    <line x1="765.245" y1="448" x2="768.571" y2="448" stroke="#d8b35b" stroke-width="5"/>
+    <path d="M 765.245 441 V 455 M 768.571 441 V 455" stroke="#d8b35b" stroke-width="2"/>
+    <text x="870" y="454" class="value">14.17–14.29</text>
+  </g>
+  <g id="medium-02-32-same_q8_reference" data-case="medium-02-32" data-path="same_q8_reference" data-min="4.273437605167706" data-max="4.525793473334983">
+    <title>MEDIUM PROMPT / 32-TOKEN CAP: Guarded same-Q8 reference, 4.27–4.53 tokens/second</title>
+    <text x="40" y="492" class="label">Guarded same-Q8 reference</text>
+    <line x1="468.203" y1="486" x2="475.774" y2="486" stroke="#aaa6a0" stroke-width="5"/>
+    <path d="M 468.203 479 V 493 M 475.774 479 V 493" stroke="#aaa6a0" stroke-width="2"/>
+    <text x="870" y="492" class="value">4.27–4.53</text>
+  </g>
+  <text x="40" y="538" font-size="13" font-weight="650" class="muted">LONG PROMPT / 64-TOKEN CAP</text>
+  <g id="long-03-64-fp32" data-case="long-03-64" data-path="fp32" data-min="12.22826751298928" data-max="13.742831394755685">
+    <title>LONG PROMPT / 64-TOKEN CAP: Original FP32 PyTorch, 12.23–13.74 tokens/second</title>
+    <text x="40" y="576" class="label">Original FP32 PyTorch</text>
+    <line x1="706.848" y1="570" x2="752.285" y2="570" stroke="#9bbaf0" stroke-width="5"/>
+    <path d="M 706.848 563 V 577 M 752.285 563 V 577" stroke="#9bbaf0" stroke-width="2"/>
+    <text x="870" y="576" class="value">12.23–13.74</text>
+  </g>
+  <g id="long-03-64-hybrid_native" data-case="long-03-64" data-path="hybrid_native" data-min="10.85260179190099" data-max="13.232905161262137">
+    <title>LONG PROMPT / 64-TOKEN CAP: Hybrid native, 10.85–13.23 tokens/second</title>
+    <text x="40" y="614" class="label">Hybrid native</text>
+    <line x1="665.578" y1="608" x2="736.987" y2="608" stroke="#d8b35b" stroke-width="5"/>
+    <path d="M 665.578 601 V 615 M 736.987 601 V 615" stroke="#d8b35b" stroke-width="2"/>
+    <text x="870" y="614" class="value">10.85–13.23</text>
+  </g>
+  <g id="long-03-64-same_q8_reference" data-case="long-03-64" data-path="same_q8_reference" data-min="4.37219356030541" data-max="4.473589127117673">
+    <title>LONG PROMPT / 64-TOKEN CAP: Guarded same-Q8 reference, 4.37–4.47 tokens/second</title>
+    <text x="40" y="652" class="label">Guarded same-Q8 reference</text>
+    <line x1="471.166" y1="646" x2="474.208" y2="646" stroke="#aaa6a0" stroke-width="5"/>
+    <path d="M 471.166 639 V 653 M 474.208 639 V 653" stroke="#aaa6a0" stroke-width="2"/>
+    <text x="870" y="652" class="value">4.37–4.47</text>
+  </g>
+  <text x="40" y="754" font-size="18" font-weight="650" style="fill:#d8b35b">Faster than guarded Q8; no consistent win over FP32.</text>
+  <text x="40" y="781" font-size="14" class="muted">Production guards and fallback clone/hash remain. Source: results/evaluation/apple-m4-v1/summary.json</text>
+</svg>

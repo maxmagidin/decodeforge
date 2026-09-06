@@ -2,6 +2,10 @@
 
 **A shape-specializing compiler for quantized LLM linear layers on commodity CPUs.**
 
+New here? Start with the [plain-language primer](docs/PRIMER.md), jump to the
+[benchmark results](#measured-results-apple-m4), or read the
+[contributor setup guide](CONTRIBUTING.md).
+
 DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
 Third-party dependencies, model artifacts, and separately attributed material
 retain their own licenses.
@@ -60,6 +64,8 @@ not a new ability to run the model locally or a general-purpose inference engine
 Decode throughput below is in **tokens/second**. Each range spans the three
 per-process medians, not a confidence interval or selected best runs. The cases
 use short/medium/long prompts and output caps of 16/32/64 tokens respectively.
+
+![Apple M4 decode throughput: native execution is faster than the guarded same-Q8 reference but does not consistently beat FP32 PyTorch. Exact ranges follow in the table.](docs/assets/apple-m4-decode-throughput.svg)
 
 | Case / output cap | Original FP32 PyTorch | Hybrid native | Guarded same-Q8 reference |
 | --- | --- | --- | --- |
@@ -265,6 +271,7 @@ analysis.
 
 ## Documents
 
+- [Plain-language project primer](docs/PRIMER.md)
 - [Design and technical specification](docs/DESIGN.md)
 - [Benchmark and experimental methodology](docs/BENCHMARKS.md)
 - [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
