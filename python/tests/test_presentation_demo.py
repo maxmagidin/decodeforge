@@ -95,6 +95,36 @@ class FakeModel(nn.Module):
         )
 
 
+class SentenceTokenizer(FakeTokenizer):
+    def decode(self, values: Any, *, skip_special_tokens: bool) -> str:
+        if skip_special_tokens:
+            return "A compiler translates source code."
+        return "A compiler translates source code."
+
+
+class PostBoundaryTokenizer(SentenceTokenizer):
+    def decode(self, values: Any, *, skip_special_tokens: bool) -> str:
+        return "A compiler. Additional text follows."
+
+
+class SentenceModel(FakeModel):
+    def generate(self, input_ids: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+        self.generate_calls.append(kwargs)
+        assert self.installation is not None
+        self.installation.calls += 2
+        if self.installation.mode is QProjExecutionMode.HYBRID_NATIVE:
+            self.installation.native += 22
+            self.installation.fallback += 22
+        else:
+            self.installation.fallback += 44
+        output = torch.cat(
+            (input_ids, torch.tensor([[13, 14]], dtype=torch.int64)), dim=1
+        )
+        criteria = kwargs["stopping_criteria"]
+        assert bool(criteria(output, torch.empty((1, 0))))
+        return output
+
+
 @dataclass
 class FakeInstallation:
     model: FakeModel
@@ -227,12 +257,14 @@ def test_demo_applies_chat_template_and_proves_both_paths() -> None:
     assert len(model.generate_calls) == 2
     assert all(call["do_sample"] is False for call in model.generate_calls)
     assert all(call["use_cache"] is True for call in model.generate_calls)
+    assert all("stopping_criteria" not in call for call in model.generate_calls)
     assert all(call["eos_token_id"] == 99 for call in model.generate_calls)
     assert all(call["pad_token_id"] == 99 for call in model.generate_calls)
     assert all(
         call["return_dict_in_generate"] is False for call in model.generate_calls
     )
     assert result["comparison"]["token_ids_exact"] is True
+    assert result["stop_after_sentence"] is False
     assert result["runs"]["same_q8_reference"]["raw_text"].startswith("raw")
     assert result["runs"]["hybrid_native"]["text"].startswith("clean")
     assert result["runs"]["hybrid_native"]["stopped_by_eos"] is True
@@ -240,6 +272,82 @@ def test_demo_applies_chat_template_and_proves_both_paths() -> None:
     assert result["runs"]["hybrid_native"]["generated_token_count"] == 2
     assert result["restoration"]["closed"] is True
     assert installation.closed
+
+
+def test_demo_sentence_boundary_option_stops_at_first_complete_sentence() -> None:
+    tokenizer = SentenceTokenizer()
+    model = SentenceModel()
+    installation = FakeInstallation(model)
+
+    def installer(current: nn.Module, _assets: Path, _runtime: Any) -> FakeInstallation:
+        model.installation = installation
+        return installation
+
+    request = _request()
+    result = run_presentation_demo(
+        PresentationRequest(
+            request.model_directory,
+            request.asset_directory,
+            request.bridge_library,
+            request.bridge_sha256,
+            request.prompt,
+            request.max_new_tokens,
+            stop_after_sentence=True,
+        ),
+        model_loader=lambda _path: model,
+        tokenizer_loader=lambda _path: tokenizer,
+        runtime_loader=lambda _path, _digest: cast(RuntimeLibrary, object()),
+        installer=installer,
+        model_verifier=lambda _path: {},
+    )
+    assert result["stop_after_sentence"] is True
+    assert result["runs"]["hybrid_native"]["stop_reason"] == "sentence_boundary"
+    assert result["runs"]["hybrid_native"]["stopped_by_eos"] is False
+    assert result["runs"]["hybrid_native"]["text"] == (
+        "A compiler translates source code."
+    )
+
+
+@pytest.mark.parametrize("stop_after_sentence", [False, True])
+def test_demo_allows_explicit_token_limit(stop_after_sentence: bool) -> None:
+    class NoBoundaryModel(nn.Module):
+        def generate(self, input_ids: torch.Tensor, **_kwargs: Any) -> torch.Tensor:
+            return torch.cat(
+                (input_ids, torch.tensor([[13, 14]], dtype=torch.int64)), dim=1
+            )
+
+    inputs = torch.tensor([[10, 11, 12]], dtype=torch.int64)
+    *_, stop_reason = demo._generate(
+        NoBoundaryModel(),
+        FakeTokenizer(),
+        inputs,
+        inputs,
+        2,
+        stop_after_sentence=stop_after_sentence,
+    )
+    assert stop_reason == "max_new_tokens"
+
+
+def test_demo_sentence_boundary_option_rejects_post_boundary_tokens() -> None:
+    class PostBoundaryModel(nn.Module):
+        def generate(self, input_ids: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+            output = torch.cat(
+                (input_ids, torch.tensor([[13, 14]], dtype=torch.int64)), dim=1
+            )
+            criteria = kwargs["stopping_criteria"]
+            assert bool(criteria(output, torch.empty((1, 0))))
+            return output
+
+    inputs = torch.tensor([[10, 11, 12]], dtype=torch.int64)
+    with pytest.raises(PresentationDemoError, match="boundary"):
+        demo._generate(
+            PostBoundaryModel(),
+            PostBoundaryTokenizer(),
+            inputs,
+            inputs,
+            2,
+            stop_after_sentence=True,
+        )
 
 
 @pytest.mark.parametrize(

@@ -82,3 +82,23 @@ The actual output was:
 No retry or prompt alteration was made in this experiment. A future explicit
 sentence-boundary stopping mode must be reported as a formatting constraint,
 not natural EOS or improved unconstrained model instruction following.
+
+## Separate formatting experiment: explicit sentence stopping
+
+The next experiment uses the original user message
+`Write one short sentence about a compiler.` and the same chat template,
+greedy CPU execution and 64-token cap, with the new opt-in
+`--stop-after-sentence` flag. It stops generation at the first ASCII `.`, `?`,
+or `!` followed by whitespace or the end of the currently decoded text. The
+stopping rule runs during generation; the retained output is not post-processed
+into a sentence. A token containing extra text after that boundary is rejected.
+
+Acceptance requires exact reference/hybrid tokens, all-22 native cached-decode
+coverage, clean restoration, and a readable one-sentence compiler explanation
+with `stop_reason=sentence_boundary`. EOS is not required and must not be
+claimed. Preserve a token-limit or otherwise unsuccessful outcome honestly.
+
+This is a narrow plain-prose presentation policy, not a general sentence
+segmenter: abbreviations, decimal points, and quotations can be ambiguous.
+It does not improve the model's unconstrained instruction-following ability.
+The option is off by default; default EOS/token-limit behavior is unchanged.
