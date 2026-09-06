@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "protocol_id": "g3-tinyllama-qproj-generation-v1",
+  "format": "decodeforge_g3_generation_session_v1",
+  "canonical_identity_algorithm": "sha256_utf8_json_sort_keys_compact_unicode_no_nan_v1",
+  "session_id": "g3-session-template-not-run",
+  "session_index": 0,
+  "experiment_spec": {
+    "path": "benchmarks/g3/spec.json",
+    "sha256": "3d4a5d8662cc8d8b41814d2a72d614349afc8e93c78d587489b28c82f290dd2f"
+  },
+  "bundle_inventory": [
+    {"path": "README.md", "role": "human_summary"},
+    {"path": "analysis.json", "role": "derived_analysis"},
+    {"path": "asset-inventory.json", "role": "asset_provenance"},
+    {"path": "correctness.json", "role": "correctness_evidence"},
+    {"path": "coverage.json", "role": "dispatch_coverage"},
+    {"path": "environment.txt", "role": "environment_capture"},
+    {"path": "generated.txt", "role": "demonstration_text"},
+    {"path": "manifest.json", "role": "closed_bundle_manifest"},
+    {"path": "prompt.json", "role": "prompt_and_token_ids"},
+    {"path": "timings.csv", "role": "raw_timing_samples"}
+  ],
+  "state": {
+    "status": "rejected",
+    "stage": "preflight",
+    "accepted": false,
+    "rejection_reasons": ["environment_mismatch"]
+  },
+  "prompt": {
+    "text": "Write one short sentence about a compiler.",
+    "encoding": "UTF-8",
+    "tokenizer_method": "AutoTokenizer.from_pretrained-local-files-only",
+    "add_special_tokens": true,
+    "input_ids": [1, 14350, 697, 3273, 10541, 1048, 263, 6516, 29889],
+    "attention_mask": [1, 1, 1, 1, 1, 1, 1, 1, 1]
+  },
+  "provenance": null,
+  "environment": null,
+  "assets": null,
+  "offline_preparation": null,
+  "startup_timings": null,
+  "runs": null,
+  "correctness": null,
+  "reconciliation": null,
+  "drift": null
+}
