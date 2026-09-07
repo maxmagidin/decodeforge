@@ -1,6 +1,8 @@
 # DecodeForge: a reader's primer
 
-Read this as a guided tour: [the system](#how-the-pieces-fit-together),
+This is the walkthrough I'd give someone opening the repo for the first time.
+You don't need to know the internal gate names to follow it. Pick a starting
+point: [the system](#how-the-pieces-fit-together),
 [the findings](#what-did-the-benchmarks-show),
 [the experimental method](#experimental-method-step-by-step),
 [the testing strategy](#testing-the-system-and-the-measurement-code), and
@@ -8,21 +10,21 @@ Read this as a guided tour: [the system](#how-the-pieces-fit-together),
 
 ## The project in one paragraph
 
-DecodeForge is a small compiler that generates specialized CPU code for part of
-a language model. It takes fixed, quantized weight matrices, checks their
-mathematical and memory-layout contracts, generates scalar or ARM64 NEON code,
-and uses Clang/LLVM to build executable machine code. A native bridge connects
-that code to PyTorch. The completed demonstration runs all **22 query
-projections in TinyLlama-1.1B during cached single-token decoding** on an Apple
-M4. PyTorch and Transformers still run the rest of the model. This is a compiler
-and integration project, not a new model or a complete inference engine.
+DecodeForge is my project for taking a piece of a language model all the way
+from a mathematical operation to generated CPU code running inside PyTorch.
+The compiler checks fixed, quantized weight matrices, generates scalar or
+ARM64 NEON code, and uses Clang/LLVM to build the machine code. A native bridge
+connects it to the model. The working demo runs all **22 query projections in
+TinyLlama-1.1B during cached single-token decoding** on an Apple M4.
+PyTorch and Transformers still handle everything around those projections.
+I haven't built a new language model or a complete inference engine here.
 
 ## Why build it if TinyLlama already runs locally?
 
-TinyLlama already runs on a Mac using PyTorch. The engineering question is
-whether a small, independently built compiler can take responsibility for a
-real computation inside that model, execute specialized native code correctly,
-and demonstrate exactly where it helps.
+It does already run locally. That's an important distinction: local execution
+isn't the contribution. What I wanted to build was a compiler that takes over
+a real computation inside that model, with enough checks to tell whether it
+runs correctly and enough measurement to tell whether it helps.
 
 A query projection transforms a token's internal representation into the
 "query" used by attention. During single-token decoding, this projection is a
@@ -59,15 +61,18 @@ Same-Q8 reference              Native query projections
     +--------- Rest of model: PyTorch --+
 ```
 
-The compiler makes operations, reduction order, vector width, and packed
-addressing explicit in intermediate representations. It does not merely call
-an existing matrix-multiplication library. Generated source, machine-code
-audits, artifact identities, and timing samples are retained for inspection.
+This is where the compiler work lives. Operations, reduction order, vector
+width, and packed addressing are explicit in the intermediate representations;
+the implementation isn't just a call to an existing matrix-multiplication
+library. You can inspect the generated source, machine-code audits, artifact
+identities, and timing samples rather than taking the diagram on trust.
 
-The bridge checks shapes, data types, buffers, and artifact identities before
-native execution. Installation is transactional: an unsuccessful installation
-must not leave a partially modified model. Closing the adapters restores the
-original PyTorch modules and releases native resources.
+The bridge is also part of the work. It checks shapes, data types, buffers,
+and artifact identities before native execution. Installation is transactional:
+if it fails halfway through, it must not leave half the model modified.
+Closing the adapters restores the original PyTorch modules and releases
+native resources. Getting the right answer once wouldn't be enough if the
+next run inherited broken state.
 
 Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/src/ir.rs)
 → [weight packing](../compiler/decodeforge-compiler/src/pack.rs)
@@ -88,7 +93,9 @@ Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/
 
 ## What did the benchmarks show?
 
-There are two different performance results, and they must not be combined.
+Here's the distinction I want to make up front: the kernel got faster than
+the generated scalar baseline. That doesn't mean the whole model got faster
+than PyTorch. Those are two different experiments.
 
 **The kernel result:** generated NEON code was approximately **3.96x faster
 than generated scalar code** across three independent Apple M4 sessions. Both
@@ -128,22 +135,25 @@ or a GPU inference engine was established.
   next-token argmax agreement over 1,034 tokens. This is not a general quality
   guarantee or proof that quantization improves the model.
 
-These are correctness and integration findings, not a broad capability score.
-**29/30 generations reached their token cap** rather than stopping naturally.
-A separate sentence-formatted presentation demo is not a benchmark or proof
-of improved instruction following. Clean-checkout evaluation succeeded on the
-same M4; another physical Mac remains untested.
+The model can agree with the reference and still give an unfinished answer.
+In fact, **29/30 generations reached their token cap** rather than stopping
+naturally. That's why I describe these as correctness and integration results,
+not a broad capability score. The separate sentence-formatted demo doesn't
+change that conclusion. Clean-checkout evaluation worked on the same M4;
+another physical Mac remains untested.
 
 ## Experimental method, step by step
 
-The method separates three questions: **did compilation preserve the
-computation, what changed because of quantization, and how fast is the
-resulting implementation?** Each comparison has its own baseline and rules.
+This is the longer version of how I tested it. The three questions are:
+**did compilation preserve the computation, what changed because of
+quantization, and how fast is the resulting implementation?** Keeping them
+separate matters more than getting one impressive-looking number.
 
 ### 1. Fix the experiment before inspecting outputs
 
-The broader evaluation uses a committed specification: 30 unique, original
-synthetic prompts, ten in each input-length class, with output caps of 16,
+The first thing to fix is what will be measured. The broader evaluation uses
+a committed specification: 30 unique, original synthetic prompts, ten in each
+input-length class, with output caps of 16,
 32, and 64 occurring ten times each. Three performance cases are named in
 advance, not chosen because they produced favorable timings. These are
 sensitivity probes, not a representative sample of real user tasks or an
@@ -169,10 +179,11 @@ Read: [fixed cases and settings](../benchmarks/evaluation-v1/spec.json),
 | Original FP32 vs same-Q8 reference | Prompts or fixed teacher-forced tokens | Query-projection weight representation and reference path | How sensitive is this probe to quantization? |
 | Original FP32 vs hybrid native timing | Named prompt/cap and measurement boundaries | Combined quantization, adapters, and generated execution | How does the integrated implementation compare in practice? |
 
-The final row is a practical comparison, not a controlled estimate of the
-compiler's isolated contribution. Likewise, the guarded Q8 fallback includes
-production work that original FP32 does not perform. Keeping both baselines
-visible prevents attributing all differences to machine-code quality.
+The last row is the practical question: how does the integrated version run
+against FP32? It's useful, but several things change at once. It can't tell
+us the compiler's isolated contribution. The guarded Q8 fallback also does
+production work that original FP32 doesn't. I keep both baselines in the
+report so those costs don't disappear into a speedup headline.
 
 Read: [numerical comparison policy](BENCHMARKS.md#numeric-policy),
 [reference/native paths](../python/decodeforge/qproj_adapter.py), and
@@ -187,11 +198,11 @@ prefix. Every compared value must be finite and satisfy the predeclared rule:
 abs(native - reference) <= 0.001 + 0.001 * abs(reference)
 ```
 
-That is an elementwise absolute-plus-relative tolerance, not an average error
-that could hide one bad output. Exact generated token-ID equality is a
-separate requirement. If tokens diverge, the runner does not compare unrelated
-continuations and call them equivalent. Matching rendered strings is not
-enough, and matching tokens cannot excuse a failed logit check.
+In plain terms, every compared value has to pass. A small average error
+can't hide one bad output. Exact generated token-ID equality is a separate
+requirement. If tokens diverge, the runner doesn't compare unrelated
+continuations and call them equivalent. The same text isn't enough, and
+even the same tokens can't excuse a failed logit check.
 
 Per-layer counters independently establish execution: all 22 layers must
 show the expected prefill/reference and cached/native calls without errors.
@@ -206,10 +217,11 @@ Read: [correctness and lifecycle rules](EVALUATION_V1.md#correctness-and-lifecyc
 
 ### 4. Measure quantization sensitivity on identical target sequences
 
-Free-running generations can diverge and then receive different future
-inputs. The separate teacher-forced probe avoids that confound: both FP32
-and same-Q8 receive the same fixed token sequence, including the same previous
-target tokens at each prediction position. No extra EOS is appended. The
+There's a catch with comparing free-running generations: once they disagree,
+they start receiving different future inputs. The teacher-forced probe keeps
+that from changing the comparison: both FP32 and same-Q8 receive the same
+fixed token sequence, including the same previous target tokens at each
+prediction position. No extra EOS is appended. The
 project-authored reference text is a fixed stimulus, not a ground-truth answer.
 
 For each target token, negative log-likelihood (NLL) is
@@ -244,8 +256,9 @@ The speedup estimator is the exponentiated median of paired log latency
 ratios. A deterministic 10,000-resample paired BCa (bias-corrected and
 accelerated bootstrap) produces a 95% interval for each session. The declared
 claim rule requires **all three lower confidence bounds to exceed 1.0**.
-All three passed. The pooled result is descriptive; it does not replace this
-per-session rule or turn repeated measurements into independent machines.
+All three passed. That's the basis for the kernel speedup claim. The pooled
+result is descriptive; it doesn't replace the per-session rule, and repeating
+an experiment on one machine doesn't turn it into several machines.
 
 A session is rejected if the geometric center of paired backend latencies
 drifts by more than 10% between the first and last ten pairs. That detects
@@ -260,7 +273,8 @@ Read: [frozen G1 specification](../benchmarks/g1/spec.json),
 
 ### 6. Measure model performance separately from correctness capture
 
-The broader model evaluation deliberately uses a smaller descriptive design:
+For the model benchmark, the design is smaller and the conclusion is
+descriptive. Here's exactly where the sample count comes from:
 **3 processes × 3 fixed cases × 3 paths × 3 measured repetitions = 81
 generations**, plus one warmup per process/case/path, or 27 warmups.
 Correctness-comparison hooks and teacher-forced scoring are outside performance
@@ -296,12 +310,13 @@ checks, all-layer counters, clean teardown, and complete timing samples.
 Rejected attempts and their reasons remain separate from accepted summaries;
 a failure must not become a success-looking JSON report.
 
-The analyzer checks the retained records and recomputes token-weighted metrics
-and timing summaries. This gives a reader an inexpensive audit path. It is
-not independent model re-execution: full-vocabulary logits were transient,
-so the summary verifier cannot reconstruct them from saved error metrics.
-Clean source and hashes make the evidence traceable, not externally certified
-or immune to every measurement error.
+You shouldn't need to load a model just to check the arithmetic in the report.
+The analyzer reads the saved records and recomputes the token-weighted metrics
+and timing summaries. But checking a report isn't the same as rerunning its
+experiment: full-vocabulary logits were transient, so the verifier can't
+reconstruct them from saved error metrics. Clean source and hashes make the
+evidence traceable. They don't make it externally certified or rule out every
+measurement error.
 
 Read: [acceptance policy](EVALUATION_V1.md#result-acceptance-and-retention),
 [raw correctness capture](../results/evaluation/apple-m4-v1/correctness-v1.json),
@@ -311,9 +326,12 @@ Read: [acceptance policy](EVALUATION_V1.md#result-acceptance-and-retention),
 
 ## Testing the system and the measurement code
 
-The tests form layers of evidence. Small fixtures check precise failure modes;
-compiled-library integration checks cross the real native boundary; model
-captures test the combined system. None substitutes for the others.
+I don't want "the tests passed" to hide what was actually tested. Small
+fixtures are good at catching specific mistakes. Compiled-library checks
+cross the real native boundary. Model captures exercise the combined system.
+All three are useful, and none can stand in for the others. The measurement
+code needs tests too: a broken metric can make correct model code look wrong,
+or the other way around.
 
 | Layer | Strategy and examples | Inspect the tests |
 | --- | --- | --- |
@@ -348,15 +366,15 @@ appropriate; only the retained model captures support the model-level claims.
   verified. New model execution on another physical host is still needed for
   a cross-host claim.
 
-These limits define the next experiments: reproduce on another compatible
-Mac, expand externally meaningful task-quality coverage, and profile the
-guarded boundary/prefill costs before proposing a new optimization. They are
-future work, not results silently included in the completed scope.
+My next steps would follow those limits: reproduce on another compatible Mac,
+test a broader set of meaningful tasks, and profile the guarded boundary and
+prefill costs before choosing another optimization. Those are follow-up
+experiments. They aren't part of the results reported here.
 
 ## What can a visitor run?
 
-Start with [CONTRIBUTING.md](../CONTRIBUTING.md) for the pinned tools and setup.
-Then choose the level of verification you need:
+If you want to try it, start with [CONTRIBUTING.md](../CONTRIBUTING.md) for the
+pinned tools and setup. You don't have to begin with a full model capture:
 
 ```sh
 # Recompute retained benchmark analyses; no model execution or download.
@@ -385,7 +403,8 @@ native library; the model weights are not committed to this repository.
 | Compiler implementation | [Rust compiler crate](../compiler/decodeforge-compiler/src/lib.rs) |
 | PyTorch model integration | [Query-projection model adapters](../python/decodeforge/qproj_model.py) |
 
-The original G0–G3 compiler/demo scope is complete. Broader layer coverage,
-less boundary overhead, native prefill, additional CPU targets, and multicore
-execution are possible follow-ups, not demonstrated results. Original project
-code is under [Apache 2.0](../LICENSE); model and dependency terms remain separate.
+That's the project as it stands: the original G0–G3 compiler/demo scope is
+complete. There's room to explore broader layer coverage, less boundary
+overhead, native prefill, more CPU targets, and multicore execution. I keep
+those separate from what the repo already demonstrates. Original project code
+is under [Apache 2.0](../LICENSE); model and dependency terms remain separate.

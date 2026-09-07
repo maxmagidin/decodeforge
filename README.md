@@ -2,39 +2,41 @@
 
 **A shape-specializing compiler for quantized LLM linear layers on commodity CPUs.**
 
-New here? Start with the [plain-language primer](docs/PRIMER.md), jump to the
-[benchmark results](#measured-results-apple-m4), or read the
-[contributor setup guide](CONTRIBUTING.md).
+Want the short version? Read the [primer](docs/PRIMER.md). Here for the numbers?
+Jump to the [benchmarks](#measured-results-apple-m4). To run the checks yourself,
+start with [setup](CONTRIBUTING.md).
 
 DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
 Third-party dependencies, model artifacts, and separately attributed material
 retain their own licenses.
 
-DecodeForge compiles the dominant operation in autoregressive LLM decode—large
-matrix-vector products with frozen weights—into guarded ARM64 NEON kernels on
-an Apple M4. Its completed compiler path lowers a typed Q8 linear operation,
-packs weights into an output-interleaved layout, emits scalar and NEON C, asks
-Clang/LLVM to build the machine code, audits the artifact, and executes it
-through a versioned native ABI. The completed G2 boundary exposes that artifact
-as a guarded eager PyTorch operator, and the G3 implementation installs it for
-all 22 TinyLlama query projections during cached single-token decode. Three
-accepted model sessions and their independently verified result bundle complete
-the frozen G3 technical gate. A separate chat-formatted presentation demo now
-produces useful text with identical reference/native tokens; it does not replace
-that accepted evidence.
+I built DecodeForge around a fairly specific question: can a small compiler
+generate code that actually runs inside a language model, and can I measure
+what it contributes?
+
+The result is a Rust compiler that turns fixed-weight matrix-vector products
+into guarded ARM64 NEON kernels on an Apple M4. It lowers a typed Q8 operation,
+packs the weights, emits scalar or NEON C, and uses Clang/LLVM to build the
+machine code. A versioned native bridge connects that code to eager PyTorch.
+It now runs **all 22 TinyLlama query projections during cached single-token
+decode**, with saved evidence for numerical agreement, native dispatch, and
+clean restoration of the original model.
+
+The compiler, native bridge, and model integration complete the G0–G3 scope.
+Three accepted model sessions establish the frozen G3 gate. There's also a
+separate chat-formatted text demo; its output isn't a substitute for the
+benchmark evidence.
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and unsupported operations. Prompt prefill uses a reference
 path reconstructed from the same Q8 weights; only eligible `M=1` decode calls
 enter generated native code. General `torch.compile`/FX integration, schedule
 search, all-model linear coverage, fusion, multicore execution, and x86-64 AVX2
-are evidence-selected extensions rather than prerequisites for a usable demo.
+are possible next steps. They aren't part of what this version demonstrates.
 
-The project asks one question:
-
-> Can one small compiler own a real hot path in CPU text generation—Q8 lowering,
-> packing, ARM64 NEON code generation, and native execution across all 22 query
-> projections—while producing evidence strong enough to defend every claim?
+The part I want you to be able to inspect is the whole path: the Q8 semantics,
+the packed layout, the generated instructions, the PyTorch call, and the
+measurement. The links below follow that path.
 
 The Mac-first target choice is recorded in
 [ADR 0001](docs/decisions/0001-mac-first-required-path.md). The shorter path
@@ -42,16 +44,16 @@ from the completed compiler to an eager query-projection generation demo is
 recorded in
 [ADR 0005](docs/decisions/0005-prioritize-eager-q-projection-demo.md).
 
-This is deliberately not an inference server, work-stealing runtime, KV-cache
-manager, general tensor framework, or GPU compiler. PyTorch/Transformers owns
-model loading, tokenization, attention, KV state, and generation. DecodeForge
-owns the compiler path for a narrow set of hot CPU operators.
+The boundary is intentional: DecodeForge owns these CPU operators, while
+PyTorch/Transformers owns the model around them. This repo doesn't implement
+an inference server, a general tensor framework, or a GPU compiler.
 
 ## Measured results: Apple M4
 
-TinyLlama already runs locally with PyTorch. DecodeForge demonstrates a custom
-compiler taking over **22 query projections during cached single-token decode**,
-not a new ability to run the model locally or a general-purpose inference engine.
+Yes, TinyLlama could already run locally with PyTorch. The result here is a
+custom compiler taking over **22 query projections during cached single-token
+decode**. Whether that makes the model faster is a separate question, so I
+keep both the kernel and model measurements visible.
 
 | Evaluation | Observed result | What it establishes |
 | --- | --- | --- |
@@ -73,14 +75,15 @@ use short/medium/long prompts and output caps of 16/32/64 tokens respectively.
 | Medium / 32 | 14.78–14.86 | 14.17–14.29 | 4.27–4.53 |
 | Long / 64 | 12.23–13.74 | 10.85–13.23 | 4.37–4.47 |
 
-**The native path beats the guarded same-Q8 reference, but does not consistently
-beat original FP32 PyTorch.** Production guards remain enabled, including the
-reference fallback's weight cloning/hashing; finite-logit checks remain in decode
-timing. These are guarded model-boundary measurements, not isolated kernel
-timings. Only query projections use native decode; the rest remains in PyTorch.
-Also, 29/30 correctness generations hit their token cap, and a second physical
-Mac remains untested: neither broad instruction-following quality nor cross-host
-performance is established.
+My read of the result: **the native path beats the guarded same-Q8 reference,
+but does not consistently beat original FP32 PyTorch.** Production guards
+remain enabled, including the reference fallback's weight cloning/hashing;
+finite-logit checks remain in decode timing. These are guarded model-boundary
+measurements, not isolated kernel timings. Only query projections use native
+decode; the rest remains in PyTorch.
+There are limits here: 29/30 correctness generations hit their token cap,
+and a second physical Mac remains untested. I wouldn't use this result to
+claim broad instruction-following quality or cross-host performance.
 
 See the [G1 kernel measurements](results/g1/apple-m4-primary/README.md) and
 [full model evaluation](results/evaluation/apple-m4-v1/README.md) for raw evidence,
@@ -93,8 +96,9 @@ make verify-g1-result verify-evaluation-result
 
 ### How the results were tested
 
-The evaluation separates compiler correctness, quantization sensitivity, and
-performance instead of treating one speedup number as proof of all three.
+I want three separate answers from the tests: did the compiler preserve the
+computation, what changed with quantization, and how fast does it run?
+Each needs a different comparison.
 
 | Experiment | Controls and measurement strategy | Acceptance / interpretation |
 | --- | --- | --- |
@@ -114,9 +118,9 @@ for linked protocols, code, tests, raw observations, and threats to validity.
 
 ## Why this scope
 
-The original all-in-one engine concept packages several independent systems
-questions. That makes a result hard to attribute and leaves too many components
-half-finished. DecodeForge has one measurable contribution:
+The original scope was an all-in-one engine. That's several systems projects
+at once: a compiler, a runtime, scheduling, and model integration. I narrowed
+this version to a path that can be built, tested, and measured end to end:
 
 ```text
 frozen q_proj weight + static [N,K] + CPU target
@@ -199,8 +203,9 @@ only those shapes are required for the first complete result.
 
 ## Evidence, not architecture alone
 
-The primary project artifact is a reproducible compiler run, not this design.
-For each published generated kernel, DecodeForge retains:
+If you want to judge the project, start with a compiler run and its evidence.
+The architecture explains the choices; these artifacts let you check them.
+For each published generated kernel, the repo retains:
 
 - canonical Region IR and Loop IR;
 - generated C/intrinsics and the exact compiler invocation;
@@ -214,9 +219,9 @@ For each published generated kernel, DecodeForge retains:
 - compile/pack time, code size, and—where applicable—tuning time, cache-hit
   latency, and break-even calls.
 
-Every performance claim must be reconstructible from a checked-in result bundle.
-If a counter is unavailable on a host, the manifest records that fact instead of
-substituting an estimate.
+If I quote a performance number, you should be able to trace it back to a
+checked-in result bundle. If a counter is unavailable on a host, the manifest
+says so. An estimate doesn't get presented as a measurement.
 
 | Skill signal | Required proof |
 |---|---|
@@ -262,7 +267,7 @@ extension; it is not part of the required Mac-first G0–G3 path.
 
 ## Credible success
 
-The project is résumé-ready when it can demonstrate all of the following:
+Here's what I want a reader to be able to verify in this repo:
 
 - scalar and NEON kernels agree with a dequantize-then-matmul oracle within a
   documented numeric tolerance on the M4; AVX2 is required only if selected as
