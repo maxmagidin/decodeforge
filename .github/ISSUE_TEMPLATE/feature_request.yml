@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a measured extension to the current compiler or model path.
+title: "proposal: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DecodeForge keeps its core deliberately narrow. Strong proposals identify a measured bottleneck, a bounded implementation, and the evidence required to accept or reject it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or measured bottleneck
+      description: What observation shows that this is the next useful constraint to address?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope
+      description: Name the smallest compiler/runtime/model surface that would answer the question.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Acceptance evidence
+      description: Define correctness, performance, artifact, and reproduction evidence before implementation.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: This proposal does not silently change the Q8 numeric contract, public ABI, or evidence identity.
+          required: true
+        - label: This proposal does not assume a speedup before measurement.
+          required: true

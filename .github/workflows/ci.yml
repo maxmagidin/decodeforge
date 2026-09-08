@@ -1,4 +1,4 @@
-name: foundation
+name: DecodeForge CI
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   portable:
-    name: ${{ matrix.name }}
+    name: Verify · ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -3,8 +3,10 @@ name = "decodeforge"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
-description = "DecodeForge command-line interface."
+description = "CLI for DecodeForge contract versions and cross-language Q8 fixture verification."
 build = "build.rs"
 
 [[bin]]

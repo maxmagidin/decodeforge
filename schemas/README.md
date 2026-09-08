@@ -1,6 +1,8 @@
 # DecodeForge V1 schemas
 
-This directory contains ten semantic JSON Schema Draft 2020-12 contracts:
+These closed, offline contracts make compiler inputs, schedules, host state,
+benchmarks, diagnostics, and retained model evidence independently verifiable.
+The directory contains ten semantic JSON Schema Draft 2020-12 contracts:
 
 - `compiler-request.schema.json`;
 - `quant-fixture.schema.json`;

@@ -16,8 +16,11 @@ The compiler checks fixed, quantized weight matrices, generates scalar or
 ARM64 NEON code, and uses Clang/LLVM to build the machine code. A native bridge
 connects it to the model. The working demo runs all **22 query projections in
 TinyLlama-1.1B during cached single-token decoding** on an Apple M4.
-PyTorch and Transformers still handle everything around those projections.
-I haven't built a new language model or a complete inference engine here.
+Generated NEON measured approximately **3.96× faster than generated scalar** at
+the same-Q8 kernel boundary, and the integrated path matched the same-Q8 model
+over **1,070 native decode steps**. PyTorch and Transformers deliberately remain
+responsible for everything around those projections; DecodeForge is a focused
+compiler/runtime path rather than a new model or full inference engine.
 
 ## Why build it if TinyLlama already runs locally?
 
@@ -90,6 +93,17 @@ Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/
 | NEON / SIMD | ARM vector instructions that operate on several values at once, rather than one scalar value at a time. |
 | Prefill vs decode | Prefill processes the input prompt. Cached decode processes one new token at a time while reusing the model's attention cache. |
 | Same-Q8 reference | A comparison path reconstructed from the identical quantized weights. It isolates compiler differences from changes caused by quantization. |
+
+## What the project demonstrates
+
+| Engineering area | Concrete implementation |
+| --- | --- |
+| Compiler construction | Typed Region/Loop IR, deterministic lowering, strict scalar/NEON generation, and explicit tail behavior |
+| Data layout and SIMD | Output-interleaved OI4 packing, activation broadcast, signed widening, vector accumulation, and scalar cleanup |
+| Native systems | Mach-O/disassembly audits, versioned C ABIs, opaque ownership, buffer/feature guards, and bounded diagnostics |
+| ML integration | Transactional eager PyTorch adapters across all 22 TinyLlama query projections with observable native/fallback dispatch |
+| Performance engineering | Balanced paired trials, predeclared acceptance rules, BCa intervals, drift rejection, and retained raw samples |
+| Reproducibility | Pinned tools and artifacts, clean-process captures, schema-closed evidence, tamper tests, and offline verification |
 
 ## What did the benchmarks show?
 

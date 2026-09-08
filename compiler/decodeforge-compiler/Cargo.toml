@@ -3,8 +3,10 @@ name = "decodeforge-compiler"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
-description = "DecodeForge G1 IR, deterministic Q8 packing, and audited native code generation."
+description = "Typed Q8 IR, OI4 packing, scalar/NEON code generation, and native artifact audits."
 
 [lib]
 path = "src/lib.rs"

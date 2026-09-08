@@ -10,3 +10,5 @@ members = [
 
 [workspace.package]
 license = "Apache-2.0"
+repository = "https://github.com/maxmagidin/decodeforge"
+homepage = "https://github.com/maxmagidin/decodeforge"

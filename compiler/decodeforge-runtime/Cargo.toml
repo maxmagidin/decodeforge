@@ -3,8 +3,10 @@ name = "decodeforge-runtime"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
-description = "DecodeForge runtime ownership and generated-module boundary."
+description = "Guarded ownership, validation, loading, and execution for generated DecodeForge modules."
 
 [lib]
 path = "src/lib.rs"
