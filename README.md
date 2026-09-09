@@ -8,7 +8,7 @@
 I built (with a lot of help from AI) a Rust compiler that turns quantized LLM projections into ARM64 NEON kernels
 and runs them inside PyTorch.
 
-DecodeForge compiles the query projection that helps attention process each new token inside TinyLlama. 
+DecodeForge compiles the query projection that helps attention process each new token inside TinyLlama.
 It specializes a fixed shape and loop schedule for Apple M4, generates scalar or ARM64 NEON C, checks the compiled
 library, and calls it from PyTorch.
 

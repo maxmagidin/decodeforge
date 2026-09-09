@@ -1,11 +1,15 @@
 name: DecodeForge CI
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A newer PR commit supersedes the older review run. Main-branch runs remain
+  # independent so a later documentation edit cannot make a healthy run look
+  # like a failure by cancelling it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
