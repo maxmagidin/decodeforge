@@ -124,7 +124,8 @@ test: test-bridge-cdylib
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
 
 test-profile:
-	$(UV) run --frozen --extra g3-generation python -m pytest -q python/tests/test_decode_profile.py
+	$(UV) run --frozen --extra g3-generation python -m pytest -q \
+		python/tests/test_decode_profile.py python/tests/test_profile_capture.py
 
 check: lint test verify-g1-result
 	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"
