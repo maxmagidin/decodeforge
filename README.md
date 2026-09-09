@@ -204,8 +204,7 @@ the [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md).
 
 Additional navigation is available in the
 [compiler](compiler/README.md), [Python](python/README.md),
-[benchmark](benchmarks/README.md), [results](results/README.md), and
-[documentation](docs/README.md) indexes.
+[benchmark](benchmarks/README.md), and [results](results/README.md) indexes.
 
 ## Scope and limitations
 
@@ -227,13 +226,7 @@ repeatable kernel result, not general model quality or cross-host performance.
 
 This scope lets each benchmark measure a specific part of the system.
 
-## Documentation
-
-The [documentation map](docs/README.md) separates the plain-language tour,
-current technical contracts, reproduction guides, and historical project
-record.
-
-## Status and next work
+## Status
 
 The original G0–G3 path is complete:
 
@@ -244,10 +237,28 @@ The original G0–G3 path is complete:
 - **G3:** all-22 TinyLlama query-projection execution with retained model
   correctness, dispatch, lifecycle, and timing evidence.
 
-The next optimization should be selected from profiling rather than feature
-count: reduce guard/prefill overhead, broaden native linear coverage, add
-schedule selection, reproduce on another physical Mac, or implement the
-deferred AVX2 target.
+## Next work
+
+The highest-value next milestone is a **consistent model-level improvement over
+original FP32 PyTorch**, not another isolated kernel number. The practical path
+is to profile the complete decode boundary, remove measured overhead, extend
+native execution to the next expensive linear family, and then repeat a frozen
+model benchmark.
+
+| Priority | Work | Why it matters | Evidence required before calling it complete |
+| --- | --- | --- | --- |
+| P0 | Profile adapter dispatch, guards, hashing/cloning, each native projection, and the remaining PyTorch decode path | Explains where the 3.96× kernel gain is lost at model level | Raw per-boundary traces from fresh processes with stable cost attribution |
+| P1 | Reduce the largest measured bridge or guard cost without weakening identity, numerical, or lifecycle checks | Converts compiler speed into user-visible decode performance | A rule fixed before measurement, exact-token/logit parity, clean teardown, and improved model timing |
+| P1 | Add the next projection family selected by profiling—likely key, value, output, or an MLP projection | Increases the share of each token handled by generated code | Typed shape support, scalar/NEON parity, native-call counters, and end-to-end evaluation |
+| P2 | Support native prompt prefill and batched `M > 1` shapes | Moves beyond the current single-token-only native boundary | Tail/shape tests, prompt-level correctness, memory measurements, and separate prefill timing |
+| P2 | Add several legal schedules and choose between them from a reproducible tuning record | Turns one fixed schedule into a more capable compiler | Held-out shape results, deterministic selection, and retained rejected schedules |
+| P2 | Reproduce correctness and performance on another physical Apple Silicon machine and a broader prompt set | Tests whether the current result survives a new host and workload | Independent host metadata, raw captures, and the same acceptance checks |
+| P3 | Add an x86-64 AVX2 backend and a small versioned release/demo package | Broadens portability and makes the project easier to try | Cross-backend fixtures, Linux native execution, packaged examples, and release CI |
+
+Every row is future work, not a current capability claim. New benchmarks should
+name their baseline and acceptance rule before results are inspected, and
+unfavorable outcomes should remain visible just as they are in the current
+evidence.
 
 DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
 Third-party dependencies and model artifacts retain their own licenses.
