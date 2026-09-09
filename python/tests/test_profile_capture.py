@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import ctypes
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,19 +10,25 @@ from typing import Any, cast
 import pytest
 import torch
 from decodeforge import profile_capture as capture
+from decodeforge import torch_bridge as bridge
 from decodeforge.decode_profile import (
     DecodeProfile,
     generate_cached_unprofiled,
     profile_cached_generation,
+    tinyllama_component_paths,
 )
 from decodeforge.evaluation import CachedGeneration
-from decodeforge.qproj_adapter import QProjExecutionMode
+from decodeforge.qproj_adapter import (
+    QProjAdapter,
+    QProjExecutionMode,
+    fallback_weight_identity,
+)
 from decodeforge.qproj_model import (
     QProjLayerCounters,
     QProjModelCounters,
     tinyllama_qproj_paths,
 )
-from decodeforge.torch_bridge import RuntimeLibrary
+from decodeforge.torch_bridge import RuntimeDescriptor, RuntimeLibrary
 from torch import nn
 
 
@@ -37,47 +45,49 @@ class FakeTokenizer:
         return f"{prefix}:{list(values)}"
 
 
-class FakeAdapter(nn.Module):
-    def __init__(self, layer: int, installation: FakeInstallation) -> None:
-        super().__init__()
-        self.layer = layer
-        self.installation = installation
-        self.forward_count = 0
-        self.native = 0
-        self.fallback = 0
-        self._last_guard_reason: str | None = None
+MODULE_ID = "sha256:" + "b" * 64
+PACK_ID = "sha256:" + "c" * 64
 
-    @property
-    def adapter(self) -> FakeAdapter:
-        return self
 
-    @property
-    def counters(self) -> Any:
-        return SimpleNamespace(
-            forward=self.forward_count,
-            native_attempt=self.native,
-            native_success=self.native,
-            native_error=0,
-            fallback_attempt=self.fallback,
-            fallback_success=self.fallback,
-            fallback_error=0,
-            predispatch_error=0,
+class FakeBinding:
+    def __init__(self) -> None:
+        self.descriptor = RuntimeDescriptor(
+            n=1,
+            k=1,
+            packed_weight_bytes=144,
+            module_id=MODULE_ID,
+            packed_weight_id=PACK_ID,
         )
+        self.closed = False
 
-    @property
-    def last_guard_reason(self) -> str | None:
-        return self._last_guard_reason
+    def run(
+        self,
+        input_address: int,
+        input_length: int,
+        output_address: int,
+        output_length: int,
+    ) -> None:
+        assert input_length == output_length == 1
+        source = (ctypes.c_float * input_length).from_address(input_address)
+        destination = (ctypes.c_float * output_length).from_address(output_address)
+        destination[0] = source[0]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeLibrary:
+    def create_binding(self, _manifest: Any, _packed: Any) -> FakeBinding:
+        return FakeBinding()
+
+
+class FakeInstalledAdapter(nn.Module):
+    def __init__(self, adapter: QProjAdapter) -> None:
+        super().__init__()
+        self.adapter = adapter
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        self.forward_count += 1
-        cached = inputs.shape[1] == 1
-        if self.installation.mode is QProjExecutionMode.HYBRID_NATIVE and cached:
-            self.native += 1
-            self._last_guard_reason = None
-        else:
-            self.fallback += 1
-            self._last_guard_reason = "forced_or_prefill"
-        return inputs
+        return cast(torch.Tensor, self.adapter(inputs))
 
 
 class FakeLayer(nn.Module):
@@ -94,8 +104,9 @@ class FakeLayer(nn.Module):
 
 
 class FakeModel(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, stop_after_cached: bool = True) -> None:
         super().__init__()
+        self.stop_after_cached = stop_after_cached
         self.model = nn.Module()
         self.model.embed_tokens = nn.Identity()
         self.model.layers = nn.ModuleList(FakeLayer() for _ in range(22))
@@ -121,7 +132,11 @@ class FakeModel(nn.Module):
         values = self.model.get_submodule("norm")(values)
         self.lm_head(values)
         logits = torch.full((1, values.shape[1], 128), -2.0)
-        token = 1 if kwargs.get("past_key_values") is None else 99
+        token = (
+            99
+            if self.stop_after_cached and kwargs.get("past_key_values") is not None
+            else 1
+        )
         logits[0, -1, token] = 2.0
         return SimpleNamespace(logits=logits, past_key_values=object())
 
@@ -133,13 +148,35 @@ class FakeInstallation:
         self.originals = tuple(
             model.get_submodule(path) for path in tinyllama_qproj_paths()
         )
-        self.adapters = tuple(FakeAdapter(layer, self) for layer in range(22))
+        weight = torch.ones((1, 1), dtype=torch.float32)
+        fallback_id = fallback_weight_identity(weight)
+        self.adapters = tuple(
+            QProjAdapter(
+                layer_name=path,
+                library=FakeLibrary(),  # type: ignore[arg-type]
+                pack_manifest_json=b"{}",
+                packed_weight=b"packed",
+                fallback_weight=weight,
+                fallback_weight_id=fallback_id,
+                fallback_parent_packed_weight_id=PACK_ID,
+                expected_module_id=MODULE_ID,
+                native_operator=lambda value,
+                binding_id,
+                n,
+                k: bridge._native_q8_linear(
+                    value, binding_id, n, k, torch_module=torch
+                ),
+            )
+            for path in tinyllama_qproj_paths()
+        )
         self.inventory = SimpleNamespace(aggregate_identity="sha256:" + "a" * 64)
         self._closed = False
         self.fail_close = fail_close
         for path, adapter in zip(tinyllama_qproj_paths(), self.adapters, strict=True):
             parent_path, _, name = path.rpartition(".")
-            setattr(model.get_submodule(parent_path), name, adapter)
+            setattr(
+                model.get_submodule(parent_path), name, FakeInstalledAdapter(adapter)
+            )
 
     @property
     def closed(self) -> bool:
@@ -155,17 +192,17 @@ class FakeInstallation:
             QProjLayerCounters(
                 layer=index,
                 layer_path=tinyllama_qproj_paths()[index],
-                forward=adapter.forward_count,
-                native_attempt=adapter.native,
-                native_success=adapter.native,
-                native_error=0,
-                fallback_attempt=adapter.fallback,
-                fallback_success=adapter.fallback,
-                fallback_error=0,
-                predispatch_error=0,
-                rejected_closed=0,
-                in_flight=0,
-                closed=self._closed,
+                forward=adapter.counters.forward,
+                native_attempt=adapter.counters.native_attempt,
+                native_success=adapter.counters.native_success,
+                native_error=adapter.counters.native_error,
+                fallback_attempt=adapter.counters.fallback_attempt,
+                fallback_success=adapter.counters.fallback_success,
+                fallback_error=adapter.counters.fallback_error,
+                predispatch_error=adapter.counters.predispatch_error,
+                rejected_closed=adapter.counters.rejected_closed,
+                in_flight=adapter.counters.in_flight,
+                closed=adapter.counters.closed,
             )
             for index, adapter in enumerate(self.adapters)
         )
@@ -180,6 +217,8 @@ class FakeInstallation:
 
     def set_execution_mode(self, mode: QProjExecutionMode) -> QProjExecutionMode:
         previous = self.mode
+        for adapter in self.adapters:
+            adapter.set_execution_mode(mode)
         self.mode = mode
         return previous
 
@@ -191,6 +230,8 @@ class FakeInstallation:
         for path, original in zip(tinyllama_qproj_paths(), self.originals, strict=True):
             parent_path, _, name = path.rpartition(".")
             setattr(self.model.get_submodule(parent_path), name, original)
+        for adapter in self.adapters:
+            adapter.close()
         self._closed = True
 
 
@@ -287,11 +328,16 @@ def test_capture_runs_matched_paths_and_restores_model(
         assert run["warmup"]["measured"] is False
         assert run["control"]["trace"] is None
         assert run["profile"]["trace"]["claim_class"] == "diagnostic_profile"
+        assert (
+            run["profile"]["trace"]["boundary_contract"]
+            == "decodeforge_adapter_internal_v1"
+        )
+        assert run["profile"]["trace"]["qproj_details"] is True
         qproj = tinyllama_qproj_paths()[0]
         dispatch = [
             event["dispatch"]
             for event in run["profile"]["trace"]["events"]
-            if event["module_path"] == qproj
+            if event["module_path"] == qproj and event["boundary"] == "module_forward"
         ]
         assert dispatch == (
             ["fallback", "native"]
@@ -412,6 +458,54 @@ def test_capture_rejects_incomplete_profile_inventory(tmp_path: Path) -> None:
         _run(tmp_path, profile_runner=incomplete_profile)
 
 
+def test_capture_rejects_component_only_profile_contract(tmp_path: Path) -> None:
+    def component_only(*args: Any, **kwargs: Any) -> DecodeProfile:
+        current = profile_cached_generation(*args, **kwargs)
+        return replace(current, qproj_details=False)
+
+    with pytest.raises(capture.ProfileCaptureError, match="trace metadata"):
+        _run(tmp_path, profile_runner=component_only)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "wrong_context", "unexpected", "boolean_step", "invalid_timing"],
+)
+def test_capture_rejects_malformed_internal_trace(
+    tmp_path: Path, mutation: str
+) -> None:
+    document, _model, _installation = _run(tmp_path)
+    record = document["runs"]["same_q8_reference"]["profile"]
+    trace = copy.deepcopy(record["trace"])
+    generation_wire = record["generation"]
+    generation = CachedGeneration(
+        list(generation_wire["token_ids"]),
+        list(generation_wire["generated_token_ids"]),
+        str(generation_wire["stop_reason"]),
+        generation_wire["stop_reason"] == "eos",
+        [],
+        [],
+    )
+    internal = next(
+        event for event in trace["events"] if event["boundary"] == "fallback_hash"
+    )
+    if mutation == "missing":
+        trace["events"].remove(internal)
+    elif mutation == "wrong_context":
+        internal["module_path"] = "model.layers.21.self_attn.q_proj"
+    elif mutation == "unexpected":
+        extra = dict(internal)
+        extra["event_id"] = max(event["event_id"] for event in trace["events"]) + 1
+        trace["events"].append(extra)
+    elif mutation == "boolean_step":
+        internal["step_index"] = False
+    else:
+        internal["end_ns"] = -1
+
+    with pytest.raises(capture.ProfileCaptureError):
+        capture._check_profile_trace("same_q8_reference", generation, trace)
+
+
 def test_rejected_document_preserves_completed_observations(tmp_path: Path) -> None:
     def mismatch_profile(*args: Any, **kwargs: Any) -> DecodeProfile:
         current = profile_cached_generation(*args, **kwargs)
@@ -486,6 +580,39 @@ def test_source_identity_covers_every_executed_capture_module() -> None:
         "python/decodeforge/profile_capture.py",
         "python/decodeforge/qproj_adapter.py",
         "python/decodeforge/qproj_model.py",
+        "python/decodeforge/qproj_profile.py",
         "python/decodeforge/torch_bridge.py",
         "scripts/run_profile_capture.py",
     }
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_events"),
+    [
+        (QProjExecutionMode.SAME_Q8_REFERENCE, 18_881),
+        (QProjExecutionMode.HYBRID_NATIVE, 14_723),
+    ],
+)
+def test_detailed_maximum_length_trace_fits_event_budget(
+    mode: QProjExecutionMode, expected_events: int
+) -> None:
+    model = FakeModel(stop_after_cached=False)
+    installation = FakeInstallation(model)
+    installation.set_execution_mode(mode)
+    tokenizer = FakeTokenizer()
+    input_ids = torch.tensor([[10, 11, 12]], dtype=torch.int64)
+    attention_mask = torch.ones_like(input_ids)
+    try:
+        traced = profile_cached_generation(
+            model,
+            tokenizer,
+            input_ids,
+            attention_mask,
+            64,
+            module_paths=tinyllama_component_paths(),
+            qproj_details=True,
+        )
+        assert len(traced.generation.generated_ids) == 64
+        assert len(traced.events) == expected_events
+    finally:
+        installation.close()

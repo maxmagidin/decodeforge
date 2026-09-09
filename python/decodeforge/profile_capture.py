@@ -10,6 +10,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Final, TypeVar
 
@@ -19,6 +20,7 @@ from torch import nn
 from . import evaluation
 from . import presentation_demo as presentation
 from .decode_profile import (
+    MAX_PROFILE_EVENTS,
     DecodeProfile,
     generate_cached_unprofiled,
     profile_cached_generation,
@@ -86,6 +88,7 @@ def _source_identity() -> dict[str, Any]:
         root / "python" / "decodeforge" / "profile_capture.py",
         root / "python" / "decodeforge" / "qproj_adapter.py",
         root / "python" / "decodeforge" / "qproj_model.py",
+        root / "python" / "decodeforge" / "qproj_profile.py",
         root / "python" / "decodeforge" / "torch_bridge.py",
         root / "scripts" / "run_profile_capture.py",
     )
@@ -236,6 +239,7 @@ def _run_once(
                 attention_mask,
                 max_new_tokens,
                 module_paths=tinyllama_component_paths(),
+                qproj_details=True,
             ),
         )
         if not isinstance(captured, DecodeProfile):
@@ -282,87 +286,235 @@ def _check_profile_trace(
 ) -> None:
     paths = list(tinyllama_component_paths())
     events = trace.get("events")
+    trace_clock = trace.get("clock")
+    generated_ids = trace.get("generated_token_ids")
+    generated_count = trace.get("generated_token_count")
     if (
-        trace.get("generated_token_ids") != generation.generated_ids
-        or trace.get("generated_token_count") != len(generation.generated_ids)
+        trace.get("format") != "decodeforge_decode_profile_v1"
+        or type(trace.get("schema_version")) is not int
+        or trace.get("schema_version") != 1
+        or trace.get("claim_class") != "diagnostic_profile"
+        or trace.get("performance_claim_allowed") is not False
+        or trace.get("boundary_contract") != "decodeforge_adapter_internal_v1"
+        or trace.get("qproj_details") is not True
+        or not isinstance(trace_clock, dict)
+        or trace_clock.get("overhead_subtracted") is not False
+        or not isinstance(generated_ids, list)
+        or any(type(value) is not int or value < 0 for value in generated_ids)
+        or generated_ids != generation.generated_ids
+        or type(generated_count) is not int
+        or generated_count != len(generation.generated_ids)
         or trace.get("stop_reason") != generation.stop_reason
         or trace.get("module_paths") != paths
         or not isinstance(events, list)
+        or not 1 <= len(events) <= MAX_PROFILE_EVENTS
     ):
         raise ProfileCaptureError(f"{name} trace metadata is inconsistent")
-    roots = [event for event in events if event.get("parent_id") is None]
+    by_id: dict[int, dict[str, Any]] = {}
+    children: dict[int | None, list[dict[str, Any]]] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            raise ProfileCaptureError(f"{name} trace event is invalid")
+        event_id = event.get("event_id")
+        parent_id = event.get("parent_id")
+        step_index = event.get("step_index")
+        start_ns = event.get("start_ns")
+        end_ns = event.get("end_ns")
+        inclusive_ns = event.get("inclusive_ns")
+        exclusive_ns = event.get("exclusive_ns")
+        if (
+            isinstance(event_id, bool)
+            or not isinstance(event_id, int)
+            or event_id < 0
+            or event_id in by_id
+            or (
+                parent_id is not None
+                and (isinstance(parent_id, bool) or not isinstance(parent_id, int))
+            )
+            or isinstance(step_index, bool)
+            or not isinstance(step_index, int)
+            or not -1 <= step_index < 64
+            or isinstance(start_ns, bool)
+            or not isinstance(start_ns, int)
+            or start_ns < 0
+            or isinstance(end_ns, bool)
+            or not isinstance(end_ns, int)
+            or end_ns < start_ns
+            or isinstance(inclusive_ns, bool)
+            or not isinstance(inclusive_ns, int)
+            or inclusive_ns != end_ns - start_ns
+            or isinstance(exclusive_ns, bool)
+            or not isinstance(exclusive_ns, int)
+            or not 0 <= exclusive_ns <= inclusive_ns
+        ):
+            raise ProfileCaptureError(f"{name} trace event identity is invalid")
+        by_id[event_id] = event
+        children.setdefault(parent_id, []).append(event)
+    for values in children.values():
+        values.sort(key=lambda event: int(event["event_id"]))
+    for event in events:
+        parent_id = event["parent_id"]
+        if parent_id is not None:
+            parent = by_id.get(parent_id)
+            if (
+                parent is None
+                or parent_id >= event["event_id"]
+                or event["start_ns"] < parent["start_ns"]
+                or event["end_ns"] > parent["end_ns"]
+            ):
+                raise ProfileCaptureError(f"{name} trace nesting is invalid")
+        direct = sorted(
+            children.get(event["event_id"], []),
+            key=lambda child: int(child["start_ns"]),
+        )
+        if any(left["end_ns"] > right["start_ns"] for left, right in pairwise(direct)):
+            raise ProfileCaptureError(f"{name} trace siblings overlap")
+        expected_exclusive = event["inclusive_ns"] - sum(
+            child["inclusive_ns"] for child in direct
+        )
+        if event["exclusive_ns"] != expected_exclusive:
+            raise ProfileCaptureError(f"{name} trace exclusive timing is invalid")
+
+    roots = children.get(None, [])
     if (
         len(roots) != 1
         or roots[0].get("boundary") != "generation"
         or roots[0].get("phase") != "generation"
         or roots[0].get("step_index") != -1
+        or roots[0].get("module_path") is not None
     ):
         raise ProfileCaptureError(f"{name} trace generation root is invalid")
-    root_id = roots[0].get("event_id")
+    root_id = int(roots[0]["event_id"])
+    visited = {root_id}
+    qproj_paths = set(tinyllama_qproj_paths())
+    steps = children.get(root_id, [])
+    if len(steps) != len(generation.generated_ids):
+        raise ProfileCaptureError(f"{name} trace step coverage is invalid")
+
+    def exact_children(
+        parent: dict[str, Any], expected: list[str]
+    ) -> list[dict[str, Any]]:
+        values = children.get(int(parent["event_id"]), [])
+        if [value.get("boundary") for value in values] != expected:
+            raise ProfileCaptureError(
+                f"{name} trace {parent.get('boundary')} children are invalid"
+            )
+        visited.update(int(value["event_id"]) for value in values)
+        return values
+
+    def check_context(
+        event: dict[str, Any], phase: str, step_index: int, module_path: str | None
+    ) -> None:
+        if (
+            event.get("phase") != phase
+            or event.get("step_index") != step_index
+            or event.get("module_path") != module_path
+        ):
+            raise ProfileCaptureError(f"{name} trace event context is invalid")
+
+    def check_unannotated(event: dict[str, Any]) -> None:
+        if event.get("dispatch") is not None or event.get("guard_reason") is not None:
+            raise ProfileCaptureError(f"{name} trace annotation is invalid")
+
+    check_unannotated(roots[0])
+
     for step_index in range(len(generation.generated_ids)):
         boundary = "prefill" if step_index == 0 else "cached_step"
         phase = "prefill" if step_index == 0 else "cached_decode"
-        matches = [
-            event
-            for event in events
-            if event.get("boundary") == boundary
-            and event.get("phase") == phase
-            and event.get("step_index") == step_index
-            and event.get("parent_id") == root_id
-        ]
-        if len(matches) != 1:
+        step = steps[step_index]
+        if step.get("boundary") != boundary:
             raise ProfileCaptureError(f"{name} trace step coverage is invalid")
-        boundaries: dict[str, Any] = {}
-        for child_boundary in (
+        check_context(step, phase, step_index, None)
+        check_unannotated(step)
+        visited.add(int(step["event_id"]))
+        step_boundaries = [
             "input_preparation",
             "model_forward",
             "output_validation",
             "token_selection",
             "bookkeeping",
+        ]
+        major = exact_children(step, step_boundaries)
+        for event in major:
+            check_context(event, phase, step_index, None)
+            check_unannotated(event)
+        major_by_name = {str(event["boundary"]): event for event in major}
+        for child_boundary in (
+            "input_preparation",
+            "output_validation",
+            "token_selection",
+            "bookkeeping",
         ):
-            children = [
-                event
-                for event in events
-                if event.get("boundary") == child_boundary
-                and event.get("phase") == phase
-                and event.get("step_index") == step_index
-                and event.get("parent_id") == matches[0].get("event_id")
-            ]
-            if len(children) != 1:
-                raise ProfileCaptureError(
-                    f"{name} trace {child_boundary} coverage is invalid"
-                )
-            boundaries[child_boundary] = children[0]
+            exact_children(major_by_name[child_boundary], [])
 
-        modules = sorted(
-            (
-                event
-                for event in events
-                if event.get("boundary") == "module_forward"
-                and event.get("phase") == phase
-                and event.get("step_index") == step_index
-                and event.get("parent_id")
-                == boundaries["model_forward"].get("event_id")
-            ),
-            key=lambda event: int(event["event_id"]),
+        modules = exact_children(
+            major_by_name["model_forward"], ["module_forward"] * len(paths)
         )
         if [event.get("module_path") for event in modules] != paths:
             raise ProfileCaptureError(f"{name} trace component coverage is invalid")
+        for module in modules:
+            module_path = str(module["module_path"])
+            check_context(module, phase, step_index, module_path)
+            if module_path not in qproj_paths:
+                check_unannotated(module)
+                exact_children(module, [])
+                continue
 
-    expected_cached = max(len(generation.generated_ids) - 1, 0)
-    expected = (
-        ["fallback"] * len(generation.generated_ids)
-        if name == "same_q8_reference"
-        else ["fallback", *("native" for _ in range(expected_cached))]
-    )
-    for path in tinyllama_qproj_paths():
-        observed = [
-            event["dispatch"]
-            for event in events
-            if event["boundary"] == "module_forward" and event["module_path"] == path
-        ]
-        if observed != expected:
-            raise ProfileCaptureError(f"{name} trace dispatch mismatch at {path}")
+            expected_dispatch = (
+                "fallback"
+                if name == "same_q8_reference" or step_index == 0
+                else "native"
+            )
+            if module.get("dispatch") != expected_dispatch:
+                raise ProfileCaptureError(
+                    f"{name} trace dispatch mismatch at {module_path}"
+                )
+            expected_reason = (
+                "forced_same_q8_reference"
+                if name == "same_q8_reference"
+                else "m_gt_one"
+                if step_index == 0
+                else None
+            )
+            if module.get("guard_reason") != expected_reason:
+                raise ProfileCaptureError(
+                    f"{name} trace guard reason mismatch at {module_path}"
+                )
+            if expected_dispatch == "fallback":
+                internal = exact_children(module, ["adapter_storage_guard", "fallback"])
+                fallback = internal[1]
+                check_context(internal[0], phase, step_index, module_path)
+                check_context(fallback, phase, step_index, module_path)
+                fallback_children = exact_children(
+                    fallback,
+                    [
+                        "adapter_storage_guard",
+                        "fallback_clone",
+                        "fallback_hash",
+                        "fallback_linear",
+                    ],
+                )
+                for event in fallback_children:
+                    check_context(event, phase, step_index, module_path)
+                    check_unannotated(event)
+                    exact_children(event, [])
+                for event in internal:
+                    check_unannotated(event)
+            else:
+                internal = exact_children(
+                    module, ["adapter_storage_guard", "guarded_native_operator"]
+                )
+                for event in internal:
+                    check_context(event, phase, step_index, module_path)
+                    check_unannotated(event)
+                exact_children(internal[0], [])
+                binding = exact_children(internal[1], ["guarded_binding_run"])
+                check_context(binding[0], phase, step_index, module_path)
+                check_unannotated(binding[0])
+                exact_children(binding[0], [])
+
+    if visited != set(by_id):
+        raise ProfileCaptureError(f"{name} trace contains unexpected events")
 
 
 def _check_restoration(

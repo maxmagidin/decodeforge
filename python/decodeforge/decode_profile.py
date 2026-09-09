@@ -12,7 +12,7 @@ import time
 import weakref
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Any, Final
@@ -21,6 +21,7 @@ import torch
 from torch import nn
 
 from .evaluation import MAX_NEW_TOKENS, CachedGeneration, _eos_ids, _output_parts
+from .qproj_profile import profile_qproj_internals
 
 Clock = Callable[[], int]
 
@@ -395,12 +396,57 @@ def _event_records(events: Sequence[ProfileEvent]) -> list[dict[str, Any]]:
             isinstance(event.event_id, bool)
             or not isinstance(event.event_id, int)
             or event.event_id < 0
+            or (
+                event.parent_id is not None
+                and (
+                    isinstance(event.parent_id, bool)
+                    or not isinstance(event.parent_id, int)
+                )
+            )
             or isinstance(event.start_ns, bool)
             or not isinstance(event.start_ns, int)
             or event.start_ns < 0
             or isinstance(event.end_ns, bool)
             or not isinstance(event.end_ns, int)
             or event.end_ns < event.start_ns
+            or not isinstance(event.boundary, str)
+            or not event.boundary
+            or not isinstance(event.phase, str)
+            or not event.phase
+            or isinstance(event.step_index, bool)
+            or not isinstance(event.step_index, int)
+            or not -1 <= event.step_index < MAX_NEW_TOKENS
+            or (
+                event.module_path is not None
+                and (
+                    not isinstance(event.module_path, str)
+                    or not event.module_path
+                    or len(event.module_path) > MAX_PROFILE_PATH_CHARS
+                )
+            )
+            or (
+                event.dispatch is not None
+                and (
+                    not isinstance(event.dispatch, str)
+                    or event.dispatch
+                    not in {
+                        "native",
+                        "native_error",
+                        "fallback",
+                        "fallback_error",
+                        "predispatch_error",
+                        "ambiguous",
+                    }
+                )
+            )
+            or (
+                event.guard_reason is not None
+                and (
+                    not isinstance(event.guard_reason, str)
+                    or not event.guard_reason
+                    or len(event.guard_reason) > MAX_PROFILE_PATH_CHARS
+                )
+            )
         ):
             raise DecodeProfileError("profile event has invalid identity or timing")
         if event.parent_id is not None:
@@ -486,14 +532,23 @@ class DecodeProfile:
     module_paths: tuple[str, ...]
     clock_name: str
     clock_resolution_ns: int | None
+    qproj_details: bool = False
 
     def to_wire(self) -> dict[str, Any]:
+        if not isinstance(self.qproj_details, bool):
+            raise DecodeProfileError("qproj_details must be a boolean")
         records = _event_records(self.events)
         return {
             "format": "decodeforge_decode_profile_v1",
             "schema_version": 1,
             "claim_class": "diagnostic_profile",
             "performance_claim_allowed": False,
+            "boundary_contract": (
+                "decodeforge_adapter_internal_v1"
+                if self.qproj_details
+                else "decodeforge_component_v1"
+            ),
+            "qproj_details": self.qproj_details,
             "clock": {
                 "name": self.clock_name,
                 "resolution_ns": self.clock_resolution_ns,
@@ -507,7 +562,8 @@ class DecodeProfile:
             "summary": _summaries(records),
             "interpretation": (
                 "Diagnostic inclusive/exclusive timings include profiler overhead. "
-                "They do not establish a performance improvement."
+                "The outer native eligibility guard remains in the q-projection "
+                "remainder. Timings do not establish a performance improvement."
             ),
         }
 
@@ -613,6 +669,7 @@ def profile_cached_generation(
     max_new_tokens: int,
     *,
     module_paths: Sequence[str] = (),
+    qproj_details: bool = False,
     clock: Clock = time.perf_counter_ns,
 ) -> DecodeProfile:
     """Profile one greedy CPU generation without touching benchmark protocols."""
@@ -623,8 +680,18 @@ def profile_cached_generation(
     paths = tuple(module_paths)
     collector = _ProfileCollector(clock)
     generated: list[int] = []
+    internal_profile = (
+        profile_qproj_internals(
+            model,
+            paths,
+            lambda boundary, path: collector.span(boundary, module_path=path),
+        )
+        if qproj_details
+        else nullcontext()
+    )
     with (
         _profile_module_forwards(model, paths, collector),
+        internal_profile,
         collector.step("generation", -1),
         collector.span("generation"),
         torch.inference_mode(),
@@ -689,6 +756,7 @@ def profile_cached_generation(
         paths,
         "time.perf_counter_ns" if uses_default_clock else "injected",
         resolution,
+        qproj_details,
     )
 
 

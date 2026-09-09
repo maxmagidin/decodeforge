@@ -113,6 +113,8 @@ def test_profile_preserves_generation_and_partitions_nested_spans() -> None:
     wire = captured.to_wire()
     assert wire["claim_class"] == "diagnostic_profile"
     assert wire["performance_claim_allowed"] is False
+    assert wire["boundary_contract"] == "decodeforge_component_v1"
+    assert wire["qproj_details"] is False
     events = wire["events"]
     roots = [event for event in events if event["parent_id"] is None]
     assert len(roots) == 1
@@ -365,6 +367,7 @@ def test_foreign_thread_cannot_close_the_owner_module_span() -> None:
         lambda events: (events[0], events[0]),
         lambda events: (replace(events[0], parent_id=events[0].event_id),),
         lambda events: (replace(events[0], boundary="not_generation"),),
+        lambda events: (replace(events[0], step_index=False),),
     ],
 )
 def test_public_profile_rejects_malformed_event_trees(mutate: Any) -> None:
