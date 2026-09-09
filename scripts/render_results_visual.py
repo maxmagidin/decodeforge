@@ -159,7 +159,7 @@ def render(g1_path: Path, evaluation_path: Path) -> str:
         (52, f"{median_speedup:.2f}{MULTIPLY}", "NEON vs generated scalar", GOLD),
         (352, "22/22", "query projections dispatched", BLUE),
         (652, f"{metrics['cases']}/30", "correctness prompts passed", GREEN),
-        (952, f"{metrics['steps']:,}", "exact-token decode steps", TEXT),
+        (952, f"{metrics['steps']:,}", "generated tokens matched", TEXT),
     ]
     for metric_x, value, label, color in metric_cards:
         parts.extend(

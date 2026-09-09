@@ -32,7 +32,7 @@ text { font-family: system-ui, -apple-system, sans-serif; fill: #f5f1e7; }
 <text x="670.0" y="220.0" class="metric-label muted">correctness prompts passed</text>
 <rect x="952" y="145" width="276" height="98" rx="14" fill="#19181c" stroke="#3a373f"/>
 <text x="970" y="190" class="metric" style="fill:#f5f1e7">1,070</text>
-<text x="970.0" y="220.0" class="metric-label muted">exact-token decode steps</text>
+<text x="970.0" y="220.0" class="metric-label muted">generated tokens matched</text>
 <rect x="52" y="270" width="540" height="430" rx="18" fill="#19181c" stroke="#3a373f"/>
 <text x="76.0" y="307.0" class="panel-title">Generated-kernel speedup</text>
 <text x="76.0" y="330.0" class="axis muted">Paired BCa 95% intervals · zoomed axis</text>

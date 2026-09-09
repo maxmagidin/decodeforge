@@ -7,7 +7,8 @@ Use this page to choose the shortest document that answers your question.
 | Goal | Document |
 | --- | --- |
 | Understand the project without compiler background | [Reader's primer](PRIMER.md) |
-| Review the strongest results and limitations | [Apple M4 evaluation](../results/evaluation/apple-m4-v1/README.md) |
+| Review the isolated kernel result | [G1 Apple M4 result](../results/g1/apple-m4-primary/README.md) |
+| Review model integration and its limits | [Broader Apple M4 evaluation](../results/evaluation/apple-m4-v1/README.md) |
 | Follow the implementation architecture | [Technical design](DESIGN.md) |
 | Reproduce or contribute | [Contributing guide](../CONTRIBUTING.md) |
 
@@ -21,7 +22,7 @@ Use this page to choose the shortest document that answers your question.
 | [G0 evidence V1](G0_EVIDENCE_V1.md) | Provenance and correctness-bundle contract |
 | [Evaluation V1](EVALUATION_V1.md) | Frozen broader model experiment and acceptance rules |
 
-## Delivery and review
+## Project record (historical)
 
 | Document | Purpose |
 | --- | --- |
@@ -52,6 +53,6 @@ Use this page to choose the shortest document that answers your question.
 - [ADR 0005](decisions/0005-prioritize-eager-q-projection-demo.md): prioritize
   the eager all-query-projection model proof.
 
-Historical documents are retained because the repository treats decisions and
-evidence as versioned artifacts. The current public overview lives in the
+These documents record how the implementation and evidence evolved. They are
+useful for audit history, but the current public overview lives in the
 [root README](../README.md).

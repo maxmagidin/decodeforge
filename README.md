@@ -5,19 +5,18 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
 [![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-blue.svg)](pyproject.toml)
 
-**A Rust compiler that turns quantized LLM linear operations into audited
-ARM64 NEON kernels and executes them inside PyTorch.**
+**A Rust compiler that turns quantized LLM projections into ARM64 NEON kernels
+and runs them inside PyTorch.**
 
-DecodeForge follows one performance-critical operation from numerical
-semantics to generated machine code: a fixed-weight, single-token query
-projection used during LLM decode. It lowers typed Q8 IR, packs weights into an
-output-interleaved layout, emits deterministic scalar or NEON C, audits the
-compiled artifact, and calls it through a guarded native bridge.
+DecodeForge compiles one operation inside TinyLlama: the query projection that
+helps attention process each new token. It specializes a fixed shape and loop
+schedule for Apple M4, generates scalar or ARM64 NEON C, checks the compiled
+library, and calls it from PyTorch.
 
-The completed Apple M4 path runs generated code across **all 22 TinyLlama query
-projections during cached single-token decode**. The repository includes the
-source, disassembly audits, raw samples, correctness results, model integration
-evidence, and offline verification needed to check that claim.
+During cached single-token decode, generated code handles the `q_proj` module
+in every one of TinyLlama's 22 transformer layers. The repository keeps the
+generated source, machine-code checks, raw timing samples, model results, and
+offline verifiers behind that claim.
 
 > **Headline result:** generated NEON was approximately **3.96× faster** than
 > generated scalar across three independent Apple M4 sessions at the same-Q8
@@ -26,26 +25,46 @@ evidence, and offline verification needed to check that claim.
 
 [Read the plain-language primer](docs/PRIMER.md) ·
 [Inspect the results](results/README.md) ·
-[Understand the design](docs/DESIGN.md)
+[Understand the design](docs/DESIGN.md) ·
+[Try it](#try-it)
 
 ## Results at a glance
 
-| Completed proof | Result | Evidence |
+| Measurement | Result | Evidence |
 | --- | ---: | --- |
 | Generated NEON vs generated scalar | **3.956×–3.962×** across 3 independent sessions | [G1 kernel result](results/g1/apple-m4-primary/README.md) |
-| Native vs same-Q8 model behavior | **30/30 prompts**, **1,070 decode steps**, exact token agreement | [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md) |
+| Native vs same-Q8 model behavior | **30/30 prompts**, **1,070 generated tokens**, exact token agreement | [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md) |
 | Maximum native/reference logit difference | **0.0000171661** | [Correctness capture](results/evaluation/apple-m4-v1/correctness-v1.json) |
-| Native execution coverage | **22/22** TinyLlama query projections during cached decode | [G3 evidence](results/g3/apple-m4-primary/README.md) |
+| Native execution coverage | **22/22** query projections across **1,040 cached steps** and **22,880 native calls** | [Correctness capture](results/evaluation/apple-m4-v1/correctness-v1.json) |
 | Q8 vs original FP32 sensitivity | **99.7099%** next-token argmax agreement on 1,034 fixed tokens | [Evaluation summary](results/evaluation/apple-m4-v1/summary.json) |
 | Reproducible model benchmark | **81 measured generations + 27 warmups** across 3 fresh processes | [Evaluation protocol](docs/EVALUATION_V1.md) |
 
-The broader model benchmark found that the hybrid native path was substantially
-faster than the guarded same-Q8 reference, but **did not consistently beat
-original FP32 PyTorch**. That negative boundary is retained because it separates
-the compiler's verified kernel result from the performance of the surrounding
-model and guard path.
+The kernel improvement did not produce a consistent model speedup over original
+FP32 PyTorch. Model timing also includes the adapters, runtime checks, and all
+the operations that remain in PyTorch.
 
 ![DecodeForge Apple M4 results overview: three generated-kernel confidence intervals, all-22 projection coverage, exact-token correctness, and model throughput ranges.](docs/assets/decodeforge-results-overview.svg)
+
+## Try it
+
+You do not need TinyLlama weights to verify the saved results. After installing
+the [prerequisites](CONTRIBUTING.md#prerequisites):
+
+```sh
+git clone https://github.com/maxmagidin/decodeforge.git
+cd decodeforge
+make setup
+make verify-g1-result verify-g3-result verify-evaluation-result
+```
+
+The three commands end with `verify-g1-result: ok`, `g3-verification: ok`, and
+`evaluation-summary-verification: ok`. They recompute or validate the retained
+evidence; they do not rerun the model.
+
+Run the complete development suite with `make check`. A new local generation
+needs the pinned TinyLlama/tokenizer files and prepared Q8 assets; follow the
+[presentation guide](docs/PRESENTATION_DEMO.md) when you want to cross that
+heavier boundary.
 
 ## What DecodeForge builds
 
@@ -65,7 +84,7 @@ fixed TinyLlama q_proj weights + static [N,K] + Apple M4 target
               deterministic scalar / ARM64 NEON C
                               │
                               ▼
-               Clang build + Mach-O/disassembly audit
+             Clang build + machine-code validation
                               │
                               ▼
               versioned runtime ABI + guarded ownership
@@ -84,31 +103,46 @@ PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and every unsupported operation. DecodeForge replaces only the
 eligible query-projection work it can guard and verify.
 
-## Why this is a compiler
+## What “22 query projections” means
 
-DecodeForge does more than wrap a handwritten kernel:
+TinyLlama has 22 transformer layers, and each layer has one `q_proj` linear
+operation that builds the attention query for the current token. DecodeForge
+replaces that one operation in all 22 layers during cached decode. It does not
+replace an entire transformer layer: key, value, and output projections, the
+MLP, attention, and prompt prefill remain in PyTorch or the same-Q8 reference.
+
+## Inside the compiler
+
+The compiler represents the operation, chooses its memory layout and loop
+structure, and generates the code:
 
 - **Typed IR:** Region and Loop IR keep operator semantics separate from the
   execution schedule, vector width, reduction order, tails, and packed offsets.
 - **Deterministic lowering:** the same versioned request and weights produce
-  byte-stable source and identity-bound artifacts.
+  byte-stable source and artifacts tied to their inputs by hashes.
 - **Generated code:** the compiler emits strict scalar and ARM64 NEON C rather
   than calling an existing matrix-multiplication primitive.
 - **Verified packing:** OI4 packing aligns memory with output-lane
-  vectorization while preserving exact logical weight identities.
-- **Native artifact audit:** compiled modules are checked for architecture,
+  vectorization while preserving the same quantized weights.
+- **Machine-code validation:** compiled modules are checked for architecture,
   symbols, relocations, helpers, stack behavior, and expected instruction forms
-  before loading.
+  before loading. This is an automated contract check, not a third-party
+  security audit or a formal proof.
 - **Guarded execution:** versioned C ABIs validate shapes, buffer extents,
   features, artifact identities, ownership, and lifecycle state.
-- **Evidence-first measurement:** correctness gates run before timing; raw
-  observations, rejected states, specifications, and analyzers remain checked
-  in.
+- **Reproducible measurements:** correctness gates run before timing; raw
+  observations, failed runs and their reasons, specifications, and analyzers
+  remain checked in.
+
+The generated module specializes the shape and schedule; separately identified
+weight packs supply the actual values. DecodeForge controls the loops, layout,
+and numerical contract, while Clang performs instruction selection and register
+allocation.
 
 Follow the implementation from [IR](compiler/decodeforge-compiler/src/ir.rs)
 to [packing](compiler/decodeforge-compiler/src/pack.rs),
 [NEON generation](compiler/decodeforge-compiler/src/codegen/neon_c.rs),
-[artifact auditing](compiler/decodeforge-compiler/src/native/audit.rs), the
+[artifact validation](compiler/decodeforge-compiler/src/native/audit.rs), the
 [native bridge](compiler/decodeforge-bridge/src/lib.rs), and the
 [PyTorch model adapter](python/decodeforge/qproj_model.py).
 
@@ -154,38 +188,12 @@ projections use native decode; the rest of the model stays in PyTorch.
 For the full numerical, lifecycle, setup, memory, and limitations record, read
 the [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md).
 
-## Reproduce the checked-in evidence
-
-The fastest review path does not download a model or rerun an experiment. It
-recomputes the retained analyses and verifies their identities:
-
-```sh
-make verify-g1-result verify-evaluation-result
-```
-
-Run the complete portable development suite with:
-
-```sh
-make setup
-make check
-```
-
-`make check` covers Rust and Python formatting, linting, typing, unit and native
-tests, Q8 fixture parity, actual bridge-library execution where supported,
-schema validation, documentation, and retained-evidence verification. Shared
-CI intentionally has no performance threshold.
-
-A new model execution requires the pinned TinyLlama/tokenizer files, prepared
-Q8 assets, and a verified native library; model weights are not committed.
-Follow the [presentation guide](docs/PRESENTATION_DEMO.md) for an interactive
-run or the [evaluation protocol](docs/EVALUATION_V1.md) for a new measurement.
-
 ## Repository guide
 
 | Path | Responsibility |
 | --- | --- |
 | [`compiler/decodeforge-core`](compiler/decodeforge-core) | Exact Q8 semantics, identities, and fixture contracts |
-| [`compiler/decodeforge-compiler`](compiler/decodeforge-compiler) | Typed IR, lowering, OI4 packing, source generation, toolchain and artifact audits |
+| [`compiler/decodeforge-compiler`](compiler/decodeforge-compiler) | Typed IR, lowering, OI4 packing, source generation, toolchain and artifact validation |
 | [`compiler/decodeforge-runtime`](compiler/decodeforge-runtime) | Generated-module validation, ownership, loading, and execution |
 | [`compiler/decodeforge-bridge`](compiler/decodeforge-bridge) | Hardened process-local C ABI over verified modules and packs |
 | [`python/decodeforge`](python/decodeforge) | Evidence tooling, eager PyTorch binding, query-projection adapters, evaluation |
@@ -213,34 +221,24 @@ The completed G0–G3 path is intentionally narrow:
 
 The remaining 133 TinyLlama linear modules, native prefill, schedule search,
 x86-64 AVX2, fusion, multicore execution, and general graph compilation are
-not implemented claims. The current evidence comes from one physical M4 and a
+not implemented. The current evidence comes from one physical M4 and a
 synthetic 30-prompt corpus; it establishes implementation agreement and a
 repeatable kernel result, not general model quality or cross-host performance.
 
-These boundaries are deliberate. They make it possible to attribute each
-result to a concrete layer of the system rather than hiding several unfinished
-projects behind one benchmark number.
+This scope lets each benchmark measure a specific part of the system.
 
 ## Documentation
 
-- [Reader's primer](docs/PRIMER.md) — the project, results, and methodology in
-  plain language.
-- [Documentation map](docs/README.md) — every design, protocol, decision, and
-  review document by purpose.
-- [Technical design](docs/DESIGN.md) — IR, packing, code generation, runtime,
-  and model boundaries.
-- [Q8 format](docs/Q8_FORMAT_V1.md) — normative numerical and serialization
-  contract.
-- [Benchmark methodology](docs/BENCHMARKS.md) — timing, statistical, and
-  evidence policy.
-- [Evaluation protocol](docs/EVALUATION_V1.md) — frozen broader model study.
+The [documentation map](docs/README.md) separates the plain-language tour,
+current technical contracts, reproduction guides, and historical project
+record.
 
 ## Status and next work
 
 The original G0–G3 path is complete:
 
 - **G0:** independent Python/Rust Q8 semantics and a provenance-bound corpus;
-- **G1:** typed IR, OI4 packing, deterministic scalar/NEON generation, audited
+- **G1:** typed IR, OI4 packing, deterministic scalar/NEON generation, validated
   native artifacts, and the retained M4 kernel result;
 - **G2:** a hardened native ABI and guarded eager PyTorch operator;
 - **G3:** all-22 TinyLlama query-projection execution with retained model

@@ -2,16 +2,19 @@
 
 <!-- What changes, and which project boundary does it affect? -->
 
+Thanks for contributing. Small fixes do not need benchmark artifacts; explain
+what is not applicable below.
+
 ## Evidence
 
 <!-- Link tests, generated artifacts, result bundles, or before/after behavior. -->
 
 ## Validation
 
-- [ ] `make format`
-- [ ] `make check`
+- [ ] `make format` (or not applicable)
+- [ ] `make check` (or focused checks are explained below)
 - [ ] `git diff --check`
-- [ ] Native/model/evidence commands required by the changed gate
+- [ ] Native/model/evidence commands required by this change (or not applicable)
 
 ## Claim and compatibility review
 

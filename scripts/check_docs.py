@@ -22,6 +22,7 @@ REQUIRED = {
     ROOT / "results" / "README.md",
 }
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 EXCLUDED_DIRS = {
     ".git",
     ".lavish",
@@ -41,16 +42,39 @@ def markdown_files() -> list[Path]:
     )
 
 
-def local_link_target(source: Path, raw_target: str) -> Path | None:
+def local_link_target(source: Path, raw_target: str) -> tuple[Path, str | None] | None:
     target = raw_target.strip()
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1]
-    if target.startswith(("http://", "https://", "mailto:", "#")):
+    if target.startswith(("http://", "https://", "mailto:")):
         return None
-    target = unquote(target.split("#", 1)[0])
-    if not target:
-        return None
-    return (source.parent / target).resolve()
+    path_text, separator, fragment = target.partition("#")
+    path_text = unquote(path_text)
+    path = source if not path_text else (source.parent / path_text).resolve()
+    return path, unquote(fragment) if separator else None
+
+
+def heading_slug(heading: str) -> str:
+    """Approximate GitHub's stable Markdown heading IDs for local link checks."""
+    heading = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", heading)
+    heading = re.sub(r"<[^>]+>", "", heading)
+    heading = heading.replace("`", "").lower()
+    heading = re.sub(r"[^\w\- ]", "", heading)
+    return re.sub(r"-+", "-", heading.replace(" ", "-")).strip("-")
+
+
+def markdown_anchors(path: Path) -> set[str]:
+    anchors: set[str] = set()
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = HEADING_RE.match(line)
+        if match is None:
+            continue
+        base = heading_slug(match.group(1))
+        count = counts.get(base, 0)
+        counts[base] = count + 1
+        anchors.add(base if count == 0 else f"{base}-{count}")
+    return anchors
 
 
 def check() -> list[str]:
@@ -65,9 +89,19 @@ def check() -> list[str]:
         if sum(line.startswith("```") for line in text.splitlines()) % 2:
             errors.append(f"unbalanced fenced code block: {relative}")
         for match in LINK_RE.finditer(text):
-            target = local_link_target(path, match.group(1))
-            if target is not None and not target.exists():
+            local = local_link_target(path, match.group(1))
+            if local is None:
+                continue
+            target, fragment = local
+            if not target.exists():
                 errors.append(f"broken local link in {relative}: {match.group(1)}")
+            elif (
+                fragment
+                and target.is_file()
+                and target.suffix.lower() == ".md"
+                and fragment not in markdown_anchors(target)
+            ):
+                errors.append(f"broken local anchor in {relative}: {match.group(1)}")
         if "file://" in text:
             errors.append(f"nonportable file URI in {relative}")
     return errors

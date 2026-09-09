@@ -18,8 +18,10 @@ connects it to the model. The working demo runs all **22 query projections in
 TinyLlama-1.1B during cached single-token decoding** on an Apple M4.
 Generated NEON measured approximately **3.96× faster than generated scalar** at
 the same-Q8 kernel boundary, and the integrated path matched the same-Q8 model
-over **1,070 native decode steps**. PyTorch and Transformers deliberately remain
-responsible for everything around those projections; DecodeForge is a focused
+across **1,070 generated tokens**. Of those, 1,040 were cached steps that sent
+22,880 query-projection calls through native code; the first prediction for each
+of 30 prompts came from prefill. PyTorch and Transformers remain responsible
+for everything around those projections; DecodeForge is a focused
 compiler/runtime path rather than a new model or full inference engine.
 
 ## Why build it if TinyLlama already runs locally?
@@ -52,7 +54,7 @@ Fixed model weights + shape + CPU target
                   |
        Clang/LLVM builds machine code
                   |
-       Audit artifact; load native bridge
+     Validate machine code; load native bridge
                   |
        Guarded eager PyTorch adapters
                   |
@@ -67,8 +69,9 @@ Same-Q8 reference              Native query projections
 This is where the compiler work lives. Operations, reduction order, vector
 width, and packed addressing are explicit in the intermediate representations;
 the implementation isn't just a call to an existing matrix-multiplication
-library. You can inspect the generated source, machine-code audits, artifact
-identities, and timing samples rather than taking the diagram on trust.
+library. You can inspect the generated source, machine-code validation,
+artifact identities, and timing samples rather than taking the diagram on
+trust.
 
 The bridge is also part of the work. It checks shapes, data types, buffers,
 and artifact identities before native execution. Installation is transactional:
@@ -85,6 +88,32 @@ Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/
 → [native bridge](../compiler/decodeforge-bridge/src/lib.rs)
 → [PyTorch model adapters](../python/decodeforge/qproj_model.py).
 
+### A short code tour
+
+| Stop | Look for | Why it matters |
+| --- | --- | --- |
+| [IR](../compiler/decodeforge-compiler/src/ir.rs) | `LoopKernelV1` | The loop order, vector width, reduction order, and tail policy are data rather than hidden control flow. |
+| [Lowering](../compiler/decodeforge-compiler/src/lower.rs) | `lower_q8_linear` | This is where the typed operation becomes one concrete scalar or NEON schedule. |
+| [NEON generator](../compiler/decodeforge-compiler/src/codegen/neon_c.rs) | `emit_neon_c` | The compiler writes the C/intrinsics module; it does not call a prebuilt GEMM kernel. |
+| [Artifact validator](../compiler/decodeforge-compiler/src/native/audit.rs) | architecture, symbol, relocation, stack, and instruction checks | The compiled library must match its expected contract before loading. This is automated validation, not a security audit or formal proof. |
+| [Model installation](../python/decodeforge/qproj_model.py) | `install_tinyllama_qproj` | All 22 adapters install together, roll back together, and restore the original modules on close. |
+
+OI4 packing groups four output rows together. For one input value `x[k]`, the
+kernel reads four neighboring quantized weights and updates four independent
+FP32 sums:
+
+```text
+x[k] × [q[row 0,k], q[row 1,k], q[row 2,k], q[row 3,k]]
+                    ↓
+        [sum row 0, sum row 1, sum row 2, sum row 3]
+```
+
+That layout matches NEON's four lanes while preserving the K-axis reduction
+order for each output. The generated module specializes the shape and schedule;
+the packed weights remain separate runtime data. DecodeForge chooses the loops,
+layout, and numerical contract, while Clang handles instruction selection and
+register allocation.
+
 ## Four terms worth knowing
 
 | Term | Meaning here |
@@ -100,10 +129,10 @@ Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/
 | --- | --- |
 | Compiler construction | Typed Region/Loop IR, deterministic lowering, strict scalar/NEON generation, and explicit tail behavior |
 | Data layout and SIMD | Output-interleaved OI4 packing, activation broadcast, signed widening, vector accumulation, and scalar cleanup |
-| Native systems | Mach-O/disassembly audits, versioned C ABIs, opaque ownership, buffer/feature guards, and bounded diagnostics |
+| Native systems | Mach-O/disassembly validation, versioned C ABIs, opaque ownership, buffer/feature guards, and bounded diagnostics |
 | ML integration | Transactional eager PyTorch adapters across all 22 TinyLlama query projections with observable native/fallback dispatch |
-| Performance engineering | Balanced paired trials, predeclared acceptance rules, BCa intervals, drift rejection, and retained raw samples |
-| Reproducibility | Pinned tools and artifacts, clean-process captures, schema-closed evidence, tamper tests, and offline verification |
+| Performance engineering | Balanced paired trials, rules fixed before measurement, BCa intervals, drift rejection, and retained raw samples |
+| Reproducibility | Pinned tools and artifacts, clean-process captures, validated result files, tamper tests, and offline verification |
 
 ## What did the benchmarks show?
 
@@ -111,11 +140,11 @@ Here's the distinction I want to make up front: the kernel got faster than
 the generated scalar baseline. That doesn't mean the whole model got faster
 than PyTorch. Those are two different experiments.
 
-**The kernel result:** generated NEON code was approximately **3.96x faster
+**The kernel result:** generated NEON code was approximately **3.96× faster
 than generated scalar code** across three independent Apple M4 sessions. Both
 used the same Q8 projection and complete prepared-call boundary, including
 output checks. Packing, compilation, loading, and allocation were outside the
-timed boundary. This is not a 3.96x speedup over PyTorch or over the whole model.
+timed boundary. This is not a 3.96× speedup over PyTorch or over the whole model.
 The [G1 report](../results/g1/apple-m4-primary/README.md) retains the exact
 speedups, confidence intervals, and raw observations.
 
@@ -125,7 +154,7 @@ the guarded same-Q8 reference, and hybrid native execution. Native decode
 delivered roughly **11–15 tokens/s**, versus **4–5 tokens/s** for the guarded
 Q8 reference. Original FP32 was around **12–15 tokens/s**: native execution
 did **not consistently beat FP32**. The
-[README chart and exact table](../README.md#measured-results-apple-m4) show all
+[README chart and exact table](../README.md#measured-apple-m4-behavior) show all
 three cases and their run-to-run ranges.
 
 The model benchmark excludes correctness-comparison hooks, but retains
@@ -137,11 +166,12 @@ or a GPU inference engine was established.
 
 ## How do we know it works?
 
-- **30/30 fixed prompts and 1,070 generated steps:** native and same-Q8
+- **30/30 fixed prompts and 1,070 generated tokens:** native and same-Q8
   reference token sequences agreed exactly. Maximum absolute logit difference
   was about **0.00001717**, within the declared tolerance.
-- **Actual native execution:** counters reconciled all 22 query projections;
-  matching outputs alone would not prove the native path ran.
+- **Actual native execution:** counters reconciled 1,040 cached steps and 22,880
+  native calls across all 22 query projections; matching outputs alone would
+  not prove the native path ran.
 - **Clean restoration:** all 22 original modules were restored, with no live
   adapters or in-flight calls remaining.
 - **Quantization sensitivity:** all 30 greedy sequences also matched FP32 on
@@ -155,6 +185,29 @@ naturally. That's why I describe these as correctness and integration results,
 not a broad capability score. The separate sentence-formatted demo doesn't
 change that conclusion. Clean-checkout evaluation worked on the same M4;
 another physical Mac remains untested.
+
+## What did not go according to plan?
+
+Three failures changed how I describe and test the project:
+
+- **A faster kernel was not automatically a faster model.** Generated NEON beat
+  generated scalar at the isolated boundary, but the integrated path did not
+  consistently beat original FP32 PyTorch. The honest next step is profiling
+  the full path, not relabeling the kernel number as model speedup.
+- **Correct tokens did not guarantee a useful answer.** The frozen G3 prompt
+  produced identical control-token text on both paths. That proved agreement,
+  not output quality. A separate chat-template experiment later produced a
+  readable answer without rewriting the accepted result. See the
+  [G3 interpretation](G3_RESULT_2026_09_05.md) and
+  [presentation experiment](PRESENTATION_DEMO.md).
+- **A test double hid a real lifecycle bug.** It reported 22 installed adapters
+  after cleanup even though the live count should have been zero. The first
+  capture was rejected, the double was fixed to mirror the real lifecycle, and
+  all evidence was recaptured from a fresh revision. See the
+  [capture audit](G3_CAPTURE_AUDIT_2026_09_05.md).
+
+Those outcomes are useful engineering evidence: they show where an isolated
+benchmark, an exact-match check, or a mock can tell an incomplete story.
 
 ## Experimental method, step by step
 
@@ -206,7 +259,8 @@ Read: [numerical comparison policy](BENCHMARKS.md#numeric-policy),
 ### 3. Require numerical agreement and observable execution
 
 During correctness capture, compare model logits at every shared input
-prefix. Every compared value must be finite and satisfy the predeclared rule:
+prefix. Every compared value must be finite and satisfy the rule fixed before
+measurement:
 
 ```text
 abs(native - reference) <= 0.001 + 0.001 * abs(reference)
@@ -317,12 +371,13 @@ Read: [timing inclusions and exclusions](EVALUATION_V1.md#practical-performance-
 
 ### 7. Preserve evidence and make rejection behavior testable
 
-The broader runner refuses a dirty or unidentified producer, altered
+The broader runner refuses a checkout with uncommitted changes or an unrecorded
+revision, an altered
 specification, invalid model outputs, and existing output paths. Acceptance
 requires consistent identities, exact native/reference tokens, numerical
 checks, all-layer counters, clean teardown, and complete timing samples.
 Rejected attempts and their reasons remain separate from accepted summaries;
-a failure must not become a success-looking JSON report.
+a failure must not become a report marked successful.
 
 You shouldn't need to load a model just to check the arithmetic in the report.
 The analyzer reads the saved records and recomputes the token-weighted metrics

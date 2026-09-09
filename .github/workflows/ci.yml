@@ -1,5 +1,9 @@
 name: DecodeForge CI
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
   pull_request:
@@ -48,7 +52,7 @@ jobs:
         run: |
           make repair-rust-toolchain-apply
           make check-rust-toolchain
-      - name: Run foundation checks
+      - name: Run development checks
         run: make check
       - name: Verify checked-in G0 evidence
         run: make verify-g0-result

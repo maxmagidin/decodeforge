@@ -1,7 +1,8 @@
 # DecodeForge Rust workspace
 
-The Rust side owns exact Q8 semantics, compilation, native artifact validation,
-runtime safety, and the C boundary used by Python/PyTorch.
+The Rust workspace turns a typed Q8 projection into generated native code,
+checks the result before loading it, and exposes a small C boundary to
+Python/PyTorch.
 
 ```text
 decodeforge-core
@@ -19,10 +20,10 @@ decodeforge-compiler ───► decodeforge-runtime
 
 | Crate | Responsibility |
 | --- | --- |
-| [`decodeforge-core`](decodeforge-core) | `DFQ8_B32_V1` quantization, canonical evaluation, fixture parsing, and identities |
-| [`decodeforge-compiler`](decodeforge-compiler) | Region/Loop IR, OI4 packing, scalar/NEON generation, toolchain control, Mach-O audit, and model-asset preparation |
-| [`decodeforge-runtime`](decodeforge-runtime) | Generated-module ABI validation, loading, scalar/native execution, and ownership |
-| [`decodeforge-bridge`](decodeforge-bridge) | Hardened process-local C ABI with opaque handles, limits, lifecycle linearization, and diagnostics |
+| [`decodeforge-core`](decodeforge-core) | Defines Q8 quantization, reference evaluation, fixtures, and content identities |
+| [`decodeforge-compiler`](decodeforge-compiler) | Lowers typed IR, packs OI4 weights, generates scalar/NEON C, and validates the compiled artifact |
+| [`decodeforge-runtime`](decodeforge-runtime) | Loads validated modules and manages scalar/native execution and ownership |
+| [`decodeforge-bridge`](decodeforge-bridge) | Exposes a versioned, process-local C ABI with opaque handles, bounds, lifecycle rules, and diagnostics |
 | [`decodeforge-cli`](decodeforge-cli) | Version reporting and Q8 fixture verification |
 
 The compiler currently generates strict scalar and Apple ARM64 NEON code for
