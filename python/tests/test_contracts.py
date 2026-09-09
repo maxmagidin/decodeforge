@@ -344,7 +344,11 @@ def test_g3_make_recipes_never_render_raw_public_inputs(tmp_path: Path) -> None:
             ("SESSION_1", "SESSION_2", "SESSION_3", "RECEIPT", "OUTPUT_DIR"),
             ("SESSION_1", "SESSION_2", "SESSION_3", "RECEIPT", "OUTPUT_DIR"),
         ),
-        ("verify-g3-result", ("BUNDLE",), ("BUNDLE",)),
+        (
+            "verify-g3-result",
+            ("BUNDLE",),
+            ("BUNDLE:-results/g3/apple-m4-primary",),
+        ),
     )
     for target, variables, references in cases:
         result = subprocess.run(

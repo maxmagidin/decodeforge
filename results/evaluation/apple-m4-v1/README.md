@@ -9,10 +9,11 @@ from accepted G3; neither its specification nor its evidence was changed.
 
 ## Correctness and quantization sensitivity
 
-- **30/30 cases passed**, covering 1,070 generated steps with exact
-  same-Q8/native token agreement. Maximum absolute model-logit difference was
+- **30/30 cases passed**, covering 1,070 generated tokens with exact
+  same-Q8/native agreement. Maximum absolute model-logit difference was
   `0.0000171661376953125`, within the declared elementwise tolerance.
-- Every case reconciled all 22 layers' reference/native dispatch counters.
+- Across the 1,040 cached generation steps, counters recorded 22,880 native
+  calls: one query projection in each of TinyLlama's 22 layers.
   Cleanup restored the exact original modules: 0 installed, 22 restored,
   0 live adapters, 0 in-flight calls.
 - All **30 greedy sequences also matched original FP32** on this corpus.

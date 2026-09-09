@@ -3,8 +3,10 @@ name = "decodeforge-bridge"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
-description = "C ABI bridge for verified DecodeForge generated modules."
+description = "Versioned C ABI bridge between PyTorch buffers and verified generated modules."
 
 [lib]
 path = "src/lib.rs"

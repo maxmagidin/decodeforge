@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title description">
+<title id="title">DecodeForge Apple M4 results overview</title>
+<desc id="description">Verified kernel speedups with paired confidence intervals, correctness and coverage metrics, and observed model decode-throughput ranges.</desc>
+<style>
+text { font-family: system-ui, -apple-system, sans-serif; fill: #f5f1e7; }
+.eyebrow { font-size: 13px; font-weight: 750; letter-spacing: 2px; }
+.title { font-size: 36px; font-weight: 760; }
+.subtitle { font-size: 16px; }
+.metric { font-size: 35px; font-weight: 780; font-variant-numeric: tabular-nums; }
+.metric-label { font-size: 13px; }
+.panel-title { font-size: 20px; font-weight: 720; }
+.axis { font-size: 12px; font-variant-numeric: tabular-nums; }
+.row-label { font-size: 13px; }
+.value { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.muted { fill: #aaa6a0; }
+.gold { fill: #d8b35b; }
+.green { fill: #6ee7a8; }
+.blue { fill: #7dd3fc; }
+</style>
+<rect width="1280" height="760" rx="24" fill="#0d0d0f"/>
+<text x="52.0" y="45.0" class="eyebrow gold">DECODEFORGE / RETAINED APPLE M4 EVIDENCE</text>
+<text x="52.0" y="88.0" class="title">From generated kernel to model execution</text>
+<text x="52.0" y="116.0" class="subtitle muted">Rendered from checked-in G1 and evaluation JSON; kernel and model boundaries stay separate.</text>
+<rect x="52" y="145" width="276" height="98" rx="14" fill="#19181c" stroke="#3a373f"/>
+<text x="70" y="190" class="metric" style="fill:#d8b35b">3.96×</text>
+<text x="70.0" y="220.0" class="metric-label muted">NEON vs generated scalar</text>
+<rect x="352" y="145" width="276" height="98" rx="14" fill="#19181c" stroke="#3a373f"/>
+<text x="370" y="190" class="metric" style="fill:#7dd3fc">22/22</text>
+<text x="370.0" y="220.0" class="metric-label muted">query projections dispatched</text>
+<rect x="652" y="145" width="276" height="98" rx="14" fill="#19181c" stroke="#3a373f"/>
+<text x="670" y="190" class="metric" style="fill:#6ee7a8">30/30</text>
+<text x="670.0" y="220.0" class="metric-label muted">correctness prompts passed</text>
+<rect x="952" y="145" width="276" height="98" rx="14" fill="#19181c" stroke="#3a373f"/>
+<text x="970" y="190" class="metric" style="fill:#f5f1e7">1,070</text>
+<text x="970.0" y="220.0" class="metric-label muted">generated tokens matched</text>
+<rect x="52" y="270" width="540" height="430" rx="18" fill="#19181c" stroke="#3a373f"/>
+<text x="76.0" y="307.0" class="panel-title">Generated-kernel speedup</text>
+<text x="76.0" y="330.0" class="axis muted">Paired BCa 95% intervals · zoomed axis</text>
+<line x1="165.0" y1="354" x2="165.0" y2="570" stroke="#3a373f"/>
+<text x="165.0" y="590.0" class="axis muted">3.94×</text>
+<line x1="260.8" y1="354" x2="260.8" y2="570" stroke="#3a373f"/>
+<text x="260.8" y="590.0" class="axis muted">3.95×</text>
+<line x1="356.5" y1="354" x2="356.5" y2="570" stroke="#3a373f"/>
+<text x="356.5" y="590.0" class="axis muted">3.96×</text>
+<line x1="452.3" y1="354" x2="452.3" y2="570" stroke="#3a373f"/>
+<text x="452.3" y="590.0" class="axis muted">3.97×</text>
+<line x1="548.0" y1="354" x2="548.0" y2="570" stroke="#3a373f"/>
+<text x="548.0" y="590.0" class="axis muted">3.98×</text>
+<text x="76.0" y="395.0" class="row-label">Session 1</text>
+<line x1="270.6" y1="390" x2="424.0" y2="390" stroke="#d8b35b" stroke-width="5"/>
+<path d="M 270.6 382 V 398 M 424.0 382 V 398" stroke="#d8b35b" stroke-width="2"/>
+<circle cx="325.0" cy="390" r="6" fill="#6ee7a8" stroke="#0d0d0f" stroke-width="2"/>
+<text x="470.0" y="377.0" class="value green">3.95671×</text>
+<g id="g1-session-01" data-lower="3.9510289587966043" data-point="3.9567098367241553" data-upper="3.967046742253853"/>
+<text x="76.0" y="467.0" class="row-label">Session 2</text>
+<line x1="268.9" y1="462" x2="448.4" y2="462" stroke="#d8b35b" stroke-width="5"/>
+<path d="M 268.9 454 V 470 M 448.4 454 V 470" stroke="#d8b35b" stroke-width="2"/>
+<circle cx="373.3" cy="462" r="6" fill="#6ee7a8" stroke="#0d0d0f" stroke-width="2"/>
+<text x="470.0" y="449.0" class="value green">3.96176×</text>
+<g id="g1-session-02" data-lower="3.9508498238120855" data-point="3.961759330174842" data-upper="3.9695993893215005"/>
+<text x="76.0" y="539.0" class="row-label">Session 3</text>
+<line x1="294.4" y1="534" x2="356.2" y2="534" stroke="#d8b35b" stroke-width="5"/>
+<path d="M 294.4 526 V 542 M 356.2 526 V 542" stroke="#d8b35b" stroke-width="2"/>
+<circle cx="322.8" cy="534" r="6" fill="#6ee7a8" stroke="#0d0d0f" stroke-width="2"/>
+<text x="470.0" y="521.0" class="value green">3.95648×</text>
+<g id="g1-session-03" data-lower="3.9535116289620773" data-point="3.9564809376028927" data-upper="3.9599736131455963"/>
+<text x="76.0" y="632.0" class="row-label green">Claim gate: every session's lower bound &gt; 1.0</text>
+<text x="76.0" y="660.0" class="axis muted">Same Q8 projection · same prepared-call boundary</text>
+<text x="76.0" y="682.0" class="axis muted">Not a whole-model or stock-PyTorch speedup</text>
+<rect x="616" y="270" width="612" height="430" rx="18" fill="#19181c" stroke="#3a373f"/>
+<text x="640.0" y="307.0" class="panel-title">Integrated decode throughput</text>
+<text x="640.0" y="330.0" class="axis muted">Range of three process medians · tokens/second</text>
+<line x1="790.0" y1="352" x2="790.0" y2="616" stroke="#3a373f"/>
+<text x="790.0" y="636.0" class="axis muted">0</text>
+<line x1="889.5" y1="352" x2="889.5" y2="616" stroke="#3a373f"/>
+<text x="889.5" y="636.0" class="axis muted">4</text>
+<line x1="989.0" y1="352" x2="989.0" y2="616" stroke="#3a373f"/>
+<text x="989.0" y="636.0" class="axis muted">8</text>
+<line x1="1088.5" y1="352" x2="1088.5" y2="616" stroke="#3a373f"/>
+<text x="1088.5" y="636.0" class="axis muted">12</text>
+<line x1="1188.0" y1="352" x2="1188.0" y2="616" stroke="#3a373f"/>
+<text x="1188.0" y="636.0" class="axis muted">16</text>
+<text x="640.0" y="380.0" class="row-label">Short / 16</text>
+<text x="705.0" y="402.0" class="axis muted">FP32</text>
+<line x1="1078.7" y1="398" x2="1174.7" y2="398" stroke="#7dd3fc" stroke-width="5"/>
+<circle cx="1158.9" cy="398" r="4" fill="#7dd3fc"/>
+<g data-case="short-01-16" data-path="fp32" data-min="11.607290161945933" data-median="14.829907163733175" data-max="15.46509866072586"/>
+<text x="705.0" y="421.0" class="axis muted">Native</text>
+<line x1="1070.8" y1="417" x2="1156.7" y2="417" stroke="#d8b35b" stroke-width="5"/>
+<circle cx="1155.6" cy="417" r="4" fill="#d8b35b"/>
+<g data-case="short-01-16" data-path="hybrid_native" data-min="11.28918687023765" data-median="14.698332035926263" data-max="14.740040952747114"/>
+<text x="705.0" y="440.0" class="axis muted">Q8 ref</text>
+<line x1="885.4" y1="436" x2="907.0" y2="436" stroke="#aaa6a0" stroke-width="5"/>
+<circle cx="906.3" cy="436" r="4" fill="#aaa6a0"/>
+<g data-case="short-01-16" data-path="same_q8_reference" data-min="3.8369042427399482" data-median="4.677058347389832" data-max="4.703880651394033"/>
+<text x="640.0" y="466.0" class="row-label">Medium / 32</text>
+<text x="705.0" y="488.0" class="axis muted">FP32</text>
+<line x1="1157.8" y1="484" x2="1159.6" y2="484" stroke="#7dd3fc" stroke-width="5"/>
+<circle cx="1158.0" cy="484" r="4" fill="#7dd3fc"/>
+<g data-case="medium-02-32" data-path="fp32" data-min="14.784156663622014" data-median="14.794997712576425" data-max="14.858148112062375"/>
+<text x="705.0" y="507.0" class="axis muted">Native</text>
+<line x1="1142.6" y1="503" x2="1145.4" y2="503" stroke="#d8b35b" stroke-width="5"/>
+<circle cx="1143.0" cy="503" r="4" fill="#d8b35b"/>
+<g data-case="medium-02-32" data-path="hybrid_native" data-min="14.174826998351278" data-median="14.19201053551868" data-max="14.285715918367533"/>
+<text x="705.0" y="526.0" class="axis muted">Q8 ref</text>
+<line x1="896.3" y1="522" x2="902.6" y2="522" stroke="#aaa6a0" stroke-width="5"/>
+<circle cx="898.2" cy="522" r="4" fill="#aaa6a0"/>
+<g data-case="medium-02-32" data-path="same_q8_reference" data-min="4.273437605167706" data-median="4.348502682259697" data-max="4.525793473334983"/>
+<text x="640.0" y="552.0" class="row-label">Long / 64</text>
+<text x="705.0" y="574.0" class="axis muted">FP32</text>
+<line x1="1094.2" y1="570" x2="1131.9" y2="570" stroke="#7dd3fc" stroke-width="5"/>
+<circle cx="1120.2" cy="570" r="4" fill="#7dd3fc"/>
+<g data-case="long-03-64" data-path="fp32" data-min="12.22826751298928" data-median="13.273924785923745" data-max="13.742831394755685"/>
+<text x="705.0" y="593.0" class="axis muted">Native</text>
+<line x1="1060.0" y1="589" x2="1119.2" y2="589" stroke="#d8b35b" stroke-width="5"/>
+<circle cx="1104.7" cy="589" r="4" fill="#d8b35b"/>
+<g data-case="long-03-64" data-path="hybrid_native" data-min="10.85260179190099" data-median="12.65224904904004" data-max="13.232905161262137"/>
+<text x="705.0" y="612.0" class="axis muted">Q8 ref</text>
+<line x1="898.8" y1="608" x2="901.3" y2="608" stroke="#aaa6a0" stroke-width="5"/>
+<circle cx="900.4" cy="608" r="4" fill="#aaa6a0"/>
+<g data-case="long-03-64" data-path="same_q8_reference" data-min="4.37219356030541" data-median="4.437121198622994" data-max="4.473589127117673"/>
+<text x="640.0" y="660.0" class="row-label green">Native beats the guarded Q8 reference</text>
+<text x="640.0" y="682.0" class="axis muted">No consistent advantage over original FP32</text>
+<text x="52.0" y="733.0" class="axis muted">Maximum native/reference logit difference: 0.0000171661 · Sources: G1 report.json + evaluation summary.json</text>
+</svg>

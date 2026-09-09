@@ -1,4 +1,8 @@
-name: foundation
+name: DecodeForge CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
@@ -9,7 +13,7 @@ permissions:
 
 jobs:
   portable:
-    name: ${{ matrix.name }}
+    name: Verify · ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -48,7 +52,7 @@ jobs:
         run: |
           make repair-rust-toolchain-apply
           make check-rust-toolchain
-      - name: Run foundation checks
+      - name: Run development checks
         run: make check
       - name: Verify checked-in G0 evidence
         run: make verify-g0-result

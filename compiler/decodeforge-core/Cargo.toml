@@ -3,8 +3,10 @@ name = "decodeforge-core"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
-description = "Target-independent DecodeForge compiler contract."
+description = "Exact Q8 semantics, identities, and fixtures shared across DecodeForge compiler layers."
 
 [lib]
 path = "src/lib.rs"

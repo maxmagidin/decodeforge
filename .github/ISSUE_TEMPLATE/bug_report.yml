@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible correctness, build, runtime, or evidence-validation problem.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not include private model files, secrets, hostnames, usernames, or absolute developer paths.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Q8 semantics or fixtures
+        - Compiler, packing, or generated code
+        - Native runtime or C ABI
+        - PyTorch/model integration
+        - Benchmark or evidence validation
+        - Build, CI, or documentation
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include the exact failure, diagnostic code, or incorrect result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide commands and sanitized inputs needed to reproduce the problem.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Source revision
+      placeholder: git rev-parse HEAD
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Rust/Python/uv/Clang versions, and relevant CPU features. Omit unique host identifiers.
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Validation already run
+      description: Paste the relevant make targets and outcomes.

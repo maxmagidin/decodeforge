@@ -1,0 +1,479 @@
+# DecodeForge: a reader's primer
+
+This is the walkthrough I'd give someone opening the repo for the first time.
+You don't need to know the internal gate names to follow it. Pick a starting
+point: [the system](#how-the-pieces-fit-together),
+[the findings](#what-did-the-benchmarks-show),
+[the experimental method](#experimental-method-step-by-step),
+[the testing strategy](#testing-the-system-and-the-measurement-code), and
+[reproduction](#what-can-a-visitor-run).
+
+## The project in one paragraph
+
+DecodeForge is my project for taking a piece of a language model all the way
+from a mathematical operation to generated CPU code running inside PyTorch.
+The compiler checks fixed, quantized weight matrices, generates scalar or
+ARM64 NEON code, and uses Clang/LLVM to build the machine code. A native bridge
+connects it to the model. The working demo runs all **22 query projections in
+TinyLlama-1.1B during cached single-token decoding** on an Apple M4.
+Generated NEON measured approximately **3.96× faster than generated scalar** at
+the same-Q8 kernel boundary, and the integrated path matched the same-Q8 model
+across **1,070 generated tokens**. Of those, 1,040 were cached steps that sent
+22,880 query-projection calls through native code; the first prediction for each
+of 30 prompts came from prefill. PyTorch and Transformers remain responsible
+for everything around those projections; DecodeForge is a focused
+compiler/runtime path rather than a new model or full inference engine.
+
+## Why build it if TinyLlama already runs locally?
+
+It does already run locally. That's an important distinction: local execution
+isn't the contribution. What I wanted to build was a compiler that takes over
+a real computation inside that model, with enough checks to tell whether it
+runs correctly and enough measurement to tell whether it helps.
+
+A query projection transforms a token's internal representation into the
+"query" used by attention. During single-token decoding, this projection is a
+matrix-vector product: multiply a fixed weight matrix by the current token's
+activation vector. Fixed dimensions and weights make specialization possible.
+DecodeForge targets bias-free query projections with a `[2048, 2048]` weight
+matrix. Other shapes and the remaining 133 linear modules are outside the
+completed scope.
+
+## How the pieces fit together
+
+```text
+Fixed model weights + shape + CPU target
+                  |
+          Typed Q8 linear representation
+                  |
+          Quantize and pack weights
+                  |
+       Lower to explicit regions and loops
+                  |
+       Generate scalar / ARM64 NEON C
+                  |
+       Clang/LLVM builds machine code
+                  |
+     Validate machine code; load native bridge
+                  |
+       Guarded eager PyTorch adapters
+                  |
+    +-------------+---------------------+
+    |                                   |
+Prompt prefill                 Cached single-token decode
+Same-Q8 reference              Native query projections
+    |                                   |
+    +--------- Rest of model: PyTorch --+
+```
+
+This is where the compiler work lives. Operations, reduction order, vector
+width, and packed addressing are explicit in the intermediate representations;
+the implementation isn't just a call to an existing matrix-multiplication
+library. You can inspect the generated source, machine-code validation,
+artifact identities, and timing samples rather than taking the diagram on
+trust.
+
+The bridge is also part of the work. It checks shapes, data types, buffers,
+and artifact identities before native execution. Installation is transactional:
+if it fails halfway through, it must not leave half the model modified.
+Closing the adapters restores the original PyTorch modules and releases
+native resources. Getting the right answer once wouldn't be enough if the
+next run inherited broken state.
+
+Follow the implementation in order: [typed IR](../compiler/decodeforge-compiler/src/ir.rs)
+→ [weight packing](../compiler/decodeforge-compiler/src/pack.rs)
+→ [lowering](../compiler/decodeforge-compiler/src/lower.rs)
+→ [NEON code generation](../compiler/decodeforge-compiler/src/codegen/neon_c.rs)
+→ [artifact audit](../compiler/decodeforge-compiler/src/native/audit.rs)
+→ [native bridge](../compiler/decodeforge-bridge/src/lib.rs)
+→ [PyTorch model adapters](../python/decodeforge/qproj_model.py).
+
+### A short code tour
+
+| Stop | Look for | Why it matters |
+| --- | --- | --- |
+| [IR](../compiler/decodeforge-compiler/src/ir.rs) | `LoopKernelV1` | The loop order, vector width, reduction order, and tail policy are data rather than hidden control flow. |
+| [Lowering](../compiler/decodeforge-compiler/src/lower.rs) | `lower_q8_linear` | This is where the typed operation becomes one concrete scalar or NEON schedule. |
+| [NEON generator](../compiler/decodeforge-compiler/src/codegen/neon_c.rs) | `emit_neon_c` | The compiler writes the C/intrinsics module; it does not call a prebuilt GEMM kernel. |
+| [Artifact validator](../compiler/decodeforge-compiler/src/native/audit.rs) | architecture, symbol, relocation, stack, and instruction checks | The compiled library must match its expected contract before loading. This is automated validation, not a security audit or formal proof. |
+| [Model installation](../python/decodeforge/qproj_model.py) | `install_tinyllama_qproj` | All 22 adapters install together, roll back together, and restore the original modules on close. |
+
+OI4 packing groups four output rows together. For one input value `x[k]`, the
+kernel reads four neighboring quantized weights and updates four independent
+FP32 sums:
+
+```text
+x[k] × [q[row 0,k], q[row 1,k], q[row 2,k], q[row 3,k]]
+                    ↓
+        [sum row 0, sum row 1, sum row 2, sum row 3]
+```
+
+That layout matches NEON's four lanes while preserving the K-axis reduction
+order for each output. The generated module specializes the shape and schedule;
+the packed weights remain separate runtime data. DecodeForge chooses the loops,
+layout, and numerical contract, while Clang handles instruction selection and
+register allocation.
+
+## Four terms worth knowing
+
+| Term | Meaning here |
+| --- | --- |
+| Q8 / weight-only quantization | Store weights as signed 8-bit values with scales. Activations and arithmetic remain FP32; this is not an integer dot-product kernel. |
+| NEON / SIMD | ARM vector instructions that operate on several values at once, rather than one scalar value at a time. |
+| Prefill vs decode | Prefill processes the input prompt. Cached decode processes one new token at a time while reusing the model's attention cache. |
+| Same-Q8 reference | A comparison path reconstructed from the identical quantized weights. It isolates compiler differences from changes caused by quantization. |
+
+## What the project demonstrates
+
+| Engineering area | Concrete implementation |
+| --- | --- |
+| Compiler construction | Typed Region/Loop IR, deterministic lowering, strict scalar/NEON generation, and explicit tail behavior |
+| Data layout and SIMD | Output-interleaved OI4 packing, activation broadcast, signed widening, vector accumulation, and scalar cleanup |
+| Native systems | Mach-O/disassembly validation, versioned C ABIs, opaque ownership, buffer/feature guards, and bounded diagnostics |
+| ML integration | Transactional eager PyTorch adapters across all 22 TinyLlama query projections with observable native/fallback dispatch |
+| Performance engineering | Balanced paired trials, rules fixed before measurement, BCa intervals, drift rejection, and retained raw samples |
+| Reproducibility | Pinned tools and artifacts, clean-process captures, validated result files, tamper tests, and offline verification |
+
+## What did the benchmarks show?
+
+Here's the distinction I want to make up front: the kernel got faster than
+the generated scalar baseline. That doesn't mean the whole model got faster
+than PyTorch. Those are two different experiments.
+
+**The kernel result:** generated NEON code was approximately **3.96× faster
+than generated scalar code** across three independent Apple M4 sessions. Both
+used the same Q8 projection and complete prepared-call boundary, including
+output checks. Packing, compilation, loading, and allocation were outside the
+timed boundary. This is not a 3.96× speedup over PyTorch or over the whole model.
+The [G1 report](../results/g1/apple-m4-primary/README.md) retains the exact
+speedups, confidence intervals, and raw observations.
+
+**The model result:** a separate evaluation ran **81 measured generations and
+27 warmups across three fresh processes**, comparing original FP32 PyTorch,
+the guarded same-Q8 reference, and hybrid native execution. Native decode
+delivered roughly **11–15 tokens/s**, versus **4–5 tokens/s** for the guarded
+Q8 reference. Original FP32 was around **12–15 tokens/s**: native execution
+did **not consistently beat FP32**. The
+[README chart and exact table](../README.md#measured-apple-m4-behavior) show all
+three cases and their run-to-run ranges.
+
+The model benchmark excludes correctness-comparison hooks, but retains
+production guards, reference fallback weight cloning/hashing, and outer
+finite-logit checks in decode timing. Those costs matter. Most of the model
+also remains in PyTorch, so a faster query-projection kernel does not translate
+directly into the same whole-model speedup. No comparison with llama.cpp, MLX,
+or a GPU inference engine was established.
+
+## How do we know it works?
+
+- **30/30 fixed prompts and 1,070 generated tokens:** native and same-Q8
+  reference token sequences agreed exactly. Maximum absolute logit difference
+  was about **0.00001717**, within the declared tolerance.
+- **Actual native execution:** counters reconciled 1,040 cached steps and 22,880
+  native calls across all 22 query projections; matching outputs alone would
+  not prove the native path ran.
+- **Clean restoration:** all 22 original modules were restored, with no live
+  adapters or in-flight calls remaining.
+- **Quantization sensitivity:** all 30 greedy sequences also matched FP32 on
+  this synthetic corpus. A separate fixed-reference probe showed **99.7099%**
+  next-token argmax agreement over 1,034 tokens. This is not a general quality
+  guarantee or proof that quantization improves the model.
+
+The model can agree with the reference and still give an unfinished answer.
+In fact, **29/30 generations reached their token cap** rather than stopping
+naturally. That's why I describe these as correctness and integration results,
+not a broad capability score. The separate sentence-formatted demo doesn't
+change that conclusion. Clean-checkout evaluation worked on the same M4;
+another physical Mac remains untested.
+
+## What did not go according to plan?
+
+Three failures changed how I describe and test the project:
+
+- **A faster kernel was not automatically a faster model.** Generated NEON beat
+  generated scalar at the isolated boundary, but the integrated path did not
+  consistently beat original FP32 PyTorch. The honest next step is profiling
+  the full path, not relabeling the kernel number as model speedup.
+- **Correct tokens did not guarantee a useful answer.** The frozen G3 prompt
+  produced identical control-token text on both paths. That proved agreement,
+  not output quality. A separate chat-template experiment later produced a
+  readable answer without rewriting the accepted result. See the
+  [G3 interpretation](G3_RESULT_2026_09_05.md) and
+  [presentation experiment](PRESENTATION_DEMO.md).
+- **A test double hid a real lifecycle bug.** It reported 22 installed adapters
+  after cleanup even though the live count should have been zero. The first
+  capture was rejected, the double was fixed to mirror the real lifecycle, and
+  all evidence was recaptured from a fresh revision. See the
+  [capture audit](G3_CAPTURE_AUDIT_2026_09_05.md).
+
+Those outcomes are useful engineering evidence: they show where an isolated
+benchmark, an exact-match check, or a mock can tell an incomplete story.
+
+## Experimental method, step by step
+
+This is the longer version of how I tested it. The three questions are:
+**did compilation preserve the computation, what changed because of
+quantization, and how fast is the resulting implementation?** Keeping them
+separate matters more than getting one impressive-looking number.
+
+### 1. Fix the experiment before inspecting outputs
+
+The first thing to fix is what will be measured. The broader evaluation uses
+a committed specification: 30 unique, original synthetic prompts, ten in each
+input-length class, with output caps of 16,
+32, and 64 occurring ten times each. Three performance cases are named in
+advance, not chosen because they produced favorable timings. These are
+sensitivity probes, not a representative sample of real user tasks or an
+external benchmark dataset.
+
+The runner requires the supplied specification to byte-match the committed
+copy. It pins the model artifacts, uses a clean source revision, and records
+model/tokenizer, Q8 pack, and native-library identities. CPU FP32 execution,
+one Torch thread, one inter-op thread, seed 0, the local chat template, and
+greedy decoding keep these choices fixed. A seed alone would not establish
+reproducibility; the artifact and execution settings matter too.
+
+Read: [fixed cases and settings](../benchmarks/evaluation-v1/spec.json),
+[input protocol](EVALUATION_V1.md#frozen-inputs-and-decoding), and
+[specification tests](../python/tests/test_evaluation_spec.py).
+
+### 2. Choose controls that isolate different causes
+
+| Comparison | What stays fixed | What changes | Question answered |
+| --- | --- | --- | --- |
+| Generated scalar vs generated NEON | Q8 projection, inputs, prepared-call boundary | Generated execution schedule | Does vectorization improve this kernel boundary? |
+| Same-Q8 reference vs hybrid native | Quantized weight identities, prompts, greedy settings | Query-projection execution path | Does native execution preserve model behavior? |
+| Original FP32 vs same-Q8 reference | Prompts or fixed teacher-forced tokens | Query-projection weight representation and reference path | How sensitive is this probe to quantization? |
+| Original FP32 vs hybrid native timing | Named prompt/cap and measurement boundaries | Combined quantization, adapters, and generated execution | How does the integrated implementation compare in practice? |
+
+The last row is the practical question: how does the integrated version run
+against FP32? It's useful, but several things change at once. It can't tell
+us the compiler's isolated contribution. The guarded Q8 fallback also does
+production work that original FP32 doesn't. I keep both baselines in the
+report so those costs don't disappear into a speedup headline.
+
+Read: [numerical comparison policy](BENCHMARKS.md#numeric-policy),
+[reference/native paths](../python/decodeforge/qproj_adapter.py), and
+[model observations](../results/evaluation/apple-m4-v1/README.md#practical-performance).
+
+### 3. Require numerical agreement and observable execution
+
+During correctness capture, compare model logits at every shared input
+prefix. Every compared value must be finite and satisfy the rule fixed before
+measurement:
+
+```text
+abs(native - reference) <= 0.001 + 0.001 * abs(reference)
+```
+
+In plain terms, every compared value has to pass. A small average error
+can't hide one bad output. Exact generated token-ID equality is a separate
+requirement. If tokens diverge, the runner doesn't compare unrelated
+continuations and call them equivalent. The same text isn't enough, and
+even the same tokens can't excuse a failed logit check.
+
+Per-layer counters independently establish execution: all 22 layers must
+show the expected prefill/reference and cached/native calls without errors.
+Installation and cleanup checks verify module ownership and restoration.
+An early EOS that prevents any cached decode is retained as a coverage
+failure, not suppressed to force a pass.
+
+Read: [correctness and lifecycle rules](EVALUATION_V1.md#correctness-and-lifecycle),
+[generation/comparison code](../python/decodeforge/evaluation.py),
+[cached-loop tests](../python/tests/test_evaluation.py), and
+[installation/rollback tests](../python/tests/test_qproj_model.py).
+
+### 4. Measure quantization sensitivity on identical target sequences
+
+There's a catch with comparing free-running generations: once they disagree,
+they start receiving different future inputs. The teacher-forced probe keeps
+that from changing the comparison: both FP32 and same-Q8 receive the same
+fixed token sequence, including the same previous target tokens at each
+prediction position. No extra EOS is appended. The
+project-authored reference text is a fixed stimulus, not a ground-truth answer.
+
+For each target token, negative log-likelihood (NLL) is
+`-ln(probability assigned to that target token)`. Lower NLL means more
+probability assigned to these particular fixed targets, not necessarily
+better answers. The analyzer sums per-token NLL and divides by the total
+number of target tokens; it does not give short and long prompts equal weight
+by averaging their averages. Argmax agreement separately asks whether the
+two paths prefer the same next token.
+
+Across 1,034 target tokens, mean NLL was **3.4827915980 FP32** and
+**3.4825643588 Q8**, a difference of **−0.0002272392 nats/token**. This tiny
+descriptive difference is not evidence of a general quality improvement.
+Teacher forcing uses a multi-token forward and therefore tests the same-Q8
+fallback, not native cached decode; step 3 tests the native path separately.
+
+Read: [fixed-sequence protocol](EVALUATION_V1.md#original-fp32-context-and-fixed-sequence-probe),
+[metric implementation](../python/decodeforge/evaluation_metrics.py), and
+[known-answer metric tests](../python/tests/test_evaluation_metrics.py).
+
+### 5. Benchmark the kernel with paired trials and a declared decision rule
+
+G1 uses **40 paired rounds per process**, balanced between 20 scalar-first
+and 20 NEON-first orders. Each backend warms for at least 16 calls and 500 ms;
+calibration increases repetitions until a batch reaches at least 25 ms.
+There are three fresh processes, yielding 120 pairs and 240 raw observations.
+The measured boundary includes the native call, output sentinel fill, status
+decoding, and finite-output scan; it excludes packing, compilation, loading,
+and allocation.
+
+The speedup estimator is the exponentiated median of paired log latency
+ratios. A deterministic 10,000-resample paired BCa (bias-corrected and
+accelerated bootstrap) produces a 95% interval for each session. The declared
+claim rule requires **all three lower confidence bounds to exceed 1.0**.
+All three passed. That's the basis for the kernel speedup claim. The pooled
+result is descriptive; it doesn't replace the per-session rule, and repeating
+an experiment on one machine doesn't turn it into several machines.
+
+A session is rejected if the geometric center of paired backend latencies
+drifts by more than 10% between the first and last ten pairs. That detects
+timing drift; it is not a direct measurement or elimination of thermal effects.
+The protocol rejects a compromised session rather than deleting individual
+inconvenient samples.
+
+Read: [frozen G1 specification](../benchmarks/g1/spec.json),
+[timing method](BENCHMARKS.md#timing-protocol),
+[analyzer](../scripts/analyze_g1_benchmark.py), and
+[retained report and intervals](../results/g1/apple-m4-primary/report.md).
+
+### 6. Measure model performance separately from correctness capture
+
+For the model benchmark, the design is smaller and the conclusion is
+descriptive. Here's exactly where the sample count comes from:
+**3 processes × 3 fixed cases × 3 paths × 3 measured repetitions = 81
+generations**, plus one warmup per process/case/path, or 27 warmups.
+Correctness-comparison hooks and teacher-forced scoring are outside performance
+timers. Production guards, finite-output checks, and the fallback's own
+clone/hash work remain included and disclosed.
+
+Raw nanosecond samples support per-process median/min/max summaries of prefill,
+cached decode, and total generation. Setup components and process-lifetime
+peak RSS are reported separately. The README chart shows the minimum and
+maximum of the **three process medians**, not a confidence interval. The 81
+generations are not 81 independent process samples.
+
+FP32 runs first, before adapter installation; the two Q8 paths reverse order
+in the middle process. This is only partial order balancing. No concurrent
+builds or other evaluation processes are permitted during capture, but order,
+cache, scheduling, and thermal effects are not eliminated. The slow native
+short-prompt observation in process 2 is retained. No model-level confidence
+interval or statistically significant FP32 speedup is claimed, and the G1
+bootstrap/drift protocol must not be implied to apply to this separate study.
+
+Read: [timing inclusions and exclusions](EVALUATION_V1.md#practical-performance-protocol),
+[raw process 0](../results/evaluation/apple-m4-v1/performance-0.json),
+[process 1](../results/evaluation/apple-m4-v1/performance-1.json),
+[process 2](../results/evaluation/apple-m4-v1/performance-2.json), and
+[recomputed summary](../results/evaluation/apple-m4-v1/summary.json).
+
+### 7. Preserve evidence and make rejection behavior testable
+
+The broader runner refuses a checkout with uncommitted changes or an unrecorded
+revision, an altered
+specification, invalid model outputs, and existing output paths. Acceptance
+requires consistent identities, exact native/reference tokens, numerical
+checks, all-layer counters, clean teardown, and complete timing samples.
+Rejected attempts and their reasons remain separate from accepted summaries;
+a failure must not become a report marked successful.
+
+You shouldn't need to load a model just to check the arithmetic in the report.
+The analyzer reads the saved records and recomputes the token-weighted metrics
+and timing summaries. But checking a report isn't the same as rerunning its
+experiment: full-vocabulary logits were transient, so the verifier can't
+reconstruct them from saved error metrics. Clean source and hashes make the
+evidence traceable. They don't make it externally certified or rule out every
+measurement error.
+
+Read: [acceptance policy](EVALUATION_V1.md#result-acceptance-and-retention),
+[raw correctness capture](../results/evaluation/apple-m4-v1/correctness-v1.json),
+[summary analyzer](../scripts/analyze_evaluation.py),
+[runner rejection tests](../python/tests/test_evaluation_rejections.py), and
+[tampered-evidence tests](../python/tests/test_evaluation_analysis.py).
+
+## Testing the system and the measurement code
+
+I don't want "the tests passed" to hide what was actually tested. Small
+fixtures are good at catching specific mistakes. Compiled-library checks
+cross the real native boundary. Model captures exercise the combined system.
+All three are useful, and none can stand in for the others. The measurement
+code needs tests too: a broken metric can make correct model code look wrong,
+or the other way around.
+
+| Layer | Strategy and examples | Inspect the tests |
+| --- | --- | --- |
+| Q8 semantics | Python/Rust fixture parity; rounding, zero blocks, boundaries, and numerical comparison behavior | [Q8 tests](../python/tests/test_q8.py), [IEEE cases](../python/tests/test_q8_ieee.py), [fixture parity](../python/tests/test_fixtures.py) |
+| Compiler and native artifacts | Verify lowering/packing contracts and generated artifacts, including vector/tail behavior | [Compiler tests and implementation](../compiler/decodeforge-compiler/src/lib.rs), [asset validation tests](../compiler/decodeforge-compiler/src/model_assets/tests.rs) |
+| Actual FFI integration | Execute the release shared library using real tensor buffers; check ABI behavior, not only mocks | [Release-library check](../scripts/check_bridge_cdylib.py), [PyTorch bridge tests](../python/tests/test_torch_bridge.py) |
+| Model lifecycle | Detect missing/swapped assets, partial-install failures, incorrect dispatch, and repeated teardown | [Adapter tests](../python/tests/test_qproj_adapter.py), [all-layer tests](../python/tests/test_qproj_model.py) |
+| Measurement mathematics | Known NLL for uniform logits; target-vs-argmax distinction; exact tolerance boundary; NaN/Inf and shape rejection | [Metric tests](../python/tests/test_evaluation_metrics.py) |
+| Experiment control | Reject altered specs; verify cache/EOS behavior; ensure one timing sample per cached forward | [Specification tests](../python/tests/test_evaluation_spec.py), [runner tests](../python/tests/test_evaluation.py) |
+| Evidence integrity | Mutate tokens, digests, counters, session count, and source cleanliness; require rejection | [Analyzer tests](../python/tests/test_evaluation_analysis.py), [CLI failure tests](../python/tests/test_evaluation_rejections.py) |
+
+Linux x86-64 and macOS ARM64 CI exercise their supported checks, including
+offline operation. Linux CI is not evidence of an implemented AVX2 backend,
+and macOS CI is not a second-host TinyLlama evaluation. See the
+[workflow](../.github/workflows/ci.yml) and [aggregate commands](../Makefile)
+for what actually runs. Unit tests use small fixtures and test doubles where
+appropriate; only the retained model captures support the model-level claims.
+
+## Limits and threats to validity
+
+- **External validity:** one physical M4, one model, 22 query projections,
+  and 30 synthetic prompts do not establish results on other machines,
+  models, workloads, or all-model quantization.
+- **Measurement attribution:** guards and fallback overhead remain. FP32 runs
+  first, caches are reused, and only three process clusters are observed.
+  The model timings are descriptive, not a causal estimate of compiler-only
+  acceleration or a cold-storage startup benchmark.
+- **Quality measurement:** exact tokens and small logit differences establish
+  implementation agreement on the probe, not helpfulness. Most generations
+  hit their cap, and fixed reference texts are not task-answer labels.
+- **Reproducibility:** a clean same-host checkout and retained analyses were
+  verified. New model execution on another physical host is still needed for
+  a cross-host claim.
+
+My next steps would follow those limits: reproduce on another compatible Mac,
+test a broader set of meaningful tasks, and profile the guarded boundary and
+prefill costs before choosing another optimization. Those are follow-up
+experiments. They aren't part of the results reported here.
+
+## What can a visitor run?
+
+If you want to try it, start with [CONTRIBUTING.md](../CONTRIBUTING.md) for the
+pinned tools and setup. You don't have to begin with a full model capture:
+
+```sh
+# Recompute retained benchmark analyses; no model execution or download.
+make verify-g1-result verify-evaluation-result
+
+# Run code checks, tests, fixtures, and retained evidence verification.
+make check
+```
+
+The analysis commands verify the saved observations; they do not independently
+rerun the model. For a new local generation, follow the artifact prerequisites
+and command in the [presentation guide](PRESENTATION_DEMO.md), with the optional
+[explicit sentence-stopping mode](PRESENTATION_POLISH.md). For new model
+measurements, use the separate [evaluation protocol](EVALUATION_V1.md).
+These require the pinned local model files, prepared Q8 assets, and verified
+native library; the model weights are not committed to this repository.
+
+## Where to go next
+
+| Interest | Start here |
+| --- | --- |
+| Exact model results, setup, memory, and limitations | [Apple M4 evaluation](../results/evaluation/apple-m4-v1/README.md) |
+| Compiler architecture and design choices | [Design](DESIGN.md) |
+| Quantization mathematics and numerical contract | [Q8 format](Q8_FORMAT_V1.md) |
+| Benchmark methodology | [Benchmarks](BENCHMARKS.md) |
+| Compiler implementation | [Rust compiler crate](../compiler/decodeforge-compiler/src/lib.rs) |
+| PyTorch model integration | [Query-projection model adapters](../python/decodeforge/qproj_model.py) |
+
+That's the project as it stands: the original G0–G3 compiler/demo scope is
+complete. There's room to explore broader layer coverage, less boundary
+overhead, native prefill, more CPU targets, and multicore execution. I keep
+those separate from what the repo already demonstrates. Original project code
+is under [Apache 2.0](../LICENSE); model and dependency terms remain separate.

@@ -1,10 +1,13 @@
-.PHONY: setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
+.DEFAULT_GOAL := help
+
+.PHONY: help setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	check-rust-toolchain repair-rust-toolchain repair-rust-toolchain-apply \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
 	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session run-g3-demo analyze-g3 verify-g3-result \
-	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets verify-evaluation-result
+	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets verify-evaluation-result \
+	render-results-visual verify-results-visual
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -46,6 +49,23 @@ G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e
 G1_RESULT := results/g1/apple-m4-primary
 G3_RESULT := results/g3/apple-m4-primary
 
+help:
+	@printf '%s\n' \
+		'DecodeForge commands' \
+		'' \
+		'Setup and development:' \
+		'  make setup                     Install pinned tools and dependencies' \
+		'  make check                     Run the complete development suite' \
+		'  make format                    Format Rust and Python sources' \
+		'  make lint                      Run static, docs, and schema checks' \
+		'' \
+		'Checked-in results (no model download):' \
+		'  make verify-g1-result          Recompute the Apple M4 kernel report' \
+		'  make verify-g3-result          Validate the saved model-integration bundle' \
+		'  make verify-evaluation-result  Recompute the broader evaluation summary' \
+		'' \
+		'Run `make -n <target>` to preview a recipe.'
+
 setup:
 	@command -v rustup >/dev/null 2>&1 || { echo "setup: rustup is required" >&2; exit 2; }
 	@command -v $(UV) >/dev/null 2>&1 || { echo "setup: uv is required" >&2; exit 2; }
@@ -80,6 +100,8 @@ format:
 	$(UV) run --frozen ruff format python scripts
 
 lint:
+	$(UV) run --frozen python scripts/check_docs.py
+	$(UV) run --frozen python scripts/render_results_visual.py --verify
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy --workspace --all-targets --all-features --locked -- -D warnings
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --workspace --no-deps --locked
@@ -112,6 +134,12 @@ verify-evaluation-result:
 			results/evaluation/apple-m4-v1/performance-2.json \
 		--spec benchmarks/evaluation-v1/spec.json \
 		--verify-summary results/evaluation/apple-m4-v1/summary.json
+
+render-results-visual:
+	$(UV) run --frozen python scripts/render_results_visual.py
+
+verify-results-visual:
+	$(UV) run --frozen python scripts/render_results_visual.py --verify
 
 check-pytorch-pin:
 	$(UV) run --frozen --extra pytorch-cpu python -c 'import platform, torch; assert torch.__version__.split("+")[0] == "2.13.0"; print(f"pytorch-pin: ok (torch={torch.__version__}, host={platform.system()}:{platform.machine()})")'
@@ -259,8 +287,7 @@ analyze-g3:
 		--output-dir "$${OUTPUT_DIR}"
 
 verify-g3-result:
-	@test -n "$${BUNDLE}" || { echo "verify-g3-result: BUNDLE=<result directory> is required" >&2; exit 2; }
-	$(UV) run --frozen python scripts/verify_g3_result.py --bundle "$${BUNDLE}"
+	$(UV) run --frozen python scripts/verify_g3_result.py --bundle "$${BUNDLE:-$(G3_RESULT)}"
 
 validate-contracts:
 	$(UV) run --frozen python scripts/validate_schemas.py --all

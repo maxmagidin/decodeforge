@@ -1,341 +1,253 @@
 # DecodeForge
 
-**A shape-specializing compiler for quantized LLM linear layers on commodity CPUs.**
+[![CI](https://github.com/maxmagidin/decodeforge/actions/workflows/ci.yml/badge.svg)](https://github.com/maxmagidin/decodeforge/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
+[![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-blue.svg)](pyproject.toml)
 
-DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
-Third-party dependencies, model artifacts, and separately attributed material
-retain their own licenses.
+**A Rust compiler that turns quantized LLM projections into ARM64 NEON kernels
+and runs them inside PyTorch.**
 
-DecodeForge compiles the dominant operation in autoregressive LLM decode—large
-matrix-vector products with frozen weights—into guarded ARM64 NEON kernels on
-an Apple M4. Its completed compiler path lowers a typed Q8 linear operation,
-packs weights into an output-interleaved layout, emits scalar and NEON C, asks
-Clang/LLVM to build the machine code, audits the artifact, and executes it
-through a versioned native ABI. The completed G2 boundary exposes that artifact
-as a guarded eager PyTorch operator, and the G3 implementation installs it for
-all 22 TinyLlama query projections during cached single-token decode. Three
-accepted model sessions and their independently verified result bundle complete
-the frozen G3 technical gate. A separate chat-formatted presentation demo now
-produces useful text with identical reference/native tokens; it does not replace
-that accepted evidence.
+DecodeForge compiles one operation inside TinyLlama: the query projection that
+helps attention process each new token. It specializes a fixed shape and loop
+schedule for Apple M4, generates scalar or ARM64 NEON C, checks the compiled
+library, and calls it from PyTorch.
+
+During cached single-token decode, generated code handles the `q_proj` module
+in every one of TinyLlama's 22 transformer layers. The repository keeps the
+generated source, machine-code checks, raw timing samples, model results, and
+offline verifiers behind that claim.
+
+> **Headline result:** generated NEON was approximately **3.96× faster** than
+> generated scalar across three independent Apple M4 sessions at the same-Q8
+> prepared-call boundary. This is a kernel result—not a 3.96× whole-model or
+> stock-PyTorch speedup.
+
+[Read the plain-language primer](docs/PRIMER.md) ·
+[Inspect the results](results/README.md) ·
+[Understand the design](docs/DESIGN.md) ·
+[Try it](#try-it)
+
+## Results at a glance
+
+| Measurement | Result | Evidence |
+| --- | ---: | --- |
+| Generated NEON vs generated scalar | **3.956×–3.962×** across 3 independent sessions | [G1 kernel result](results/g1/apple-m4-primary/README.md) |
+| Native vs same-Q8 model behavior | **30/30 prompts**, **1,070 generated tokens**, exact token agreement | [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md) |
+| Maximum native/reference logit difference | **0.0000171661** | [Correctness capture](results/evaluation/apple-m4-v1/correctness-v1.json) |
+| Native execution coverage | **22/22** query projections across **1,040 cached steps** and **22,880 native calls** | [Correctness capture](results/evaluation/apple-m4-v1/correctness-v1.json) |
+| Q8 vs original FP32 sensitivity | **99.7099%** next-token argmax agreement on 1,034 fixed tokens | [Evaluation summary](results/evaluation/apple-m4-v1/summary.json) |
+| Reproducible model benchmark | **81 measured generations + 27 warmups** across 3 fresh processes | [Evaluation protocol](docs/EVALUATION_V1.md) |
+
+The kernel improvement did not produce a consistent model speedup over original
+FP32 PyTorch. Model timing also includes the adapters, runtime checks, and all
+the operations that remain in PyTorch.
+
+![DecodeForge Apple M4 results overview: three generated-kernel confidence intervals, all-22 projection coverage, exact-token correctness, and model throughput ranges.](docs/assets/decodeforge-results-overview.svg)
+
+## Try it
+
+You do not need TinyLlama weights to verify the saved results. After installing
+the [prerequisites](CONTRIBUTING.md#prerequisites):
+
+```sh
+git clone https://github.com/maxmagidin/decodeforge.git
+cd decodeforge
+make setup
+make verify-g1-result verify-g3-result verify-evaluation-result
+```
+
+The three commands end with `verify-g1-result: ok`, `g3-verification: ok`, and
+`evaluation-summary-verification: ok`. They recompute or validate the retained
+evidence; they do not rerun the model.
+
+Run the complete development suite with `make check`. A new local generation
+needs the pinned TinyLlama/tokenizer files and prepared Q8 assets; follow the
+[presentation guide](docs/PRESENTATION_DEMO.md) when you want to cross that
+heavier boundary.
+
+## What DecodeForge builds
+
+```text
+fixed TinyLlama q_proj weights + static [N,K] + Apple M4 target
+                              │
+                              ▼
+                    exact DFQ8_B32_V1 semantics
+                              │
+                              ▼
+                     typed Region IR + Loop IR
+                              │
+                              ▼
+                   output-interleaved OI4 packing
+                              │
+                              ▼
+              deterministic scalar / ARM64 NEON C
+                              │
+                              ▼
+             Clang build + machine-code validation
+                              │
+                              ▼
+              versioned runtime ABI + guarded ownership
+                              │
+                              ▼
+                   eager PyTorch q_proj adapters
+                       ┌──────┴────────┐
+                       ▼               ▼
+             same-Q8 prefill     native M=1 decode
+                       └──────┬────────┘
+                              ▼
+               correctness + timing + lifecycle evidence
+```
 
 PyTorch and Transformers still own model loading, tokenization, attention, KV
-state, sampling, and unsupported operations. Prompt prefill uses a reference
-path reconstructed from the same Q8 weights; only eligible `M=1` decode calls
-enter generated native code. General `torch.compile`/FX integration, schedule
-search, all-model linear coverage, fusion, multicore execution, and x86-64 AVX2
-are evidence-selected extensions rather than prerequisites for a usable demo.
+state, sampling, and every unsupported operation. DecodeForge replaces only the
+eligible query-projection work it can guard and verify.
 
-The project asks one question:
+## What “22 query projections” means
 
-> Can one small compiler own a real hot path in CPU text generation—Q8 lowering,
-> packing, ARM64 NEON code generation, and native execution across all 22 query
-> projections—while producing evidence strong enough to defend every claim?
+TinyLlama has 22 transformer layers, and each layer has one `q_proj` linear
+operation that builds the attention query for the current token. DecodeForge
+replaces that one operation in all 22 layers during cached decode. It does not
+replace an entire transformer layer: key, value, and output projections, the
+MLP, attention, and prompt prefill remain in PyTorch or the same-Q8 reference.
 
-The Mac-first target choice is recorded in
-[ADR 0001](docs/decisions/0001-mac-first-required-path.md). The shorter path
-from the completed compiler to an eager query-projection generation demo is
-recorded in
-[ADR 0005](docs/decisions/0005-prioritize-eager-q-projection-demo.md).
+## Inside the compiler
 
-This is deliberately not an inference server, work-stealing runtime, KV-cache
-manager, general tensor framework, or GPU compiler. PyTorch/Transformers owns
-model loading, tokenization, attention, KV state, and generation. DecodeForge
-owns the compiler path for a narrow set of hot CPU operators.
+The compiler represents the operation, chooses its memory layout and loop
+structure, and generates the code:
 
-## Why this scope
+- **Typed IR:** Region and Loop IR keep operator semantics separate from the
+  execution schedule, vector width, reduction order, tails, and packed offsets.
+- **Deterministic lowering:** the same versioned request and weights produce
+  byte-stable source and artifacts tied to their inputs by hashes.
+- **Generated code:** the compiler emits strict scalar and ARM64 NEON C rather
+  than calling an existing matrix-multiplication primitive.
+- **Verified packing:** OI4 packing aligns memory with output-lane
+  vectorization while preserving the same quantized weights.
+- **Machine-code validation:** compiled modules are checked for architecture,
+  symbols, relocations, helpers, stack behavior, and expected instruction forms
+  before loading. This is an automated contract check, not a third-party
+  security audit or a formal proof.
+- **Guarded execution:** versioned C ABIs validate shapes, buffer extents,
+  features, artifact identities, ownership, and lifecycle state.
+- **Reproducible measurements:** correctness gates run before timing; raw
+  observations, failed runs and their reasons, specifications, and analyzers
+  remain checked in.
 
-The original all-in-one engine concept packages several independent systems
-questions. That makes a result hard to attribute and leaves too many components
-half-finished. DecodeForge has one measurable contribution:
+The generated module specializes the shape and schedule; separately identified
+weight packs supply the actual values. DecodeForge controls the loops, layout,
+and numerical contract, while Clang performs instruction selection and register
+allocation.
 
-```text
-frozen q_proj weight + static [N,K] + CPU target
-                         |
-                         v
-                  typed Q8Linear IR
-                         |
-                         v
-               quantize + OI4 weight pack
-                         |
-                         v
-             generated scalar / NEON source
-                         |
-                   Clang + artifact audit
-                         |
-                         v
-              versioned native runtime bridge
-                         |
-                         v
-          guarded eager PyTorch operator (G2)
-                         |
-                         v
-  22 q_proj adapters: same-Q8 prefill / native decode (G3)
-```
+Follow the implementation from [IR](compiler/decodeforge-compiler/src/ir.rs)
+to [packing](compiler/decodeforge-compiler/src/pack.rs),
+[NEON generation](compiler/decodeforge-compiler/src/codegen/neon_c.rs),
+[artifact validation](compiler/decodeforge-compiler/src/native/audit.rs), the
+[native bridge](compiler/decodeforge-bridge/src/lib.rs), and the
+[PyTorch model adapter](python/decodeforge/qproj_model.py).
 
-The required development host is:
+## Measured Apple M4 behavior
 
-- Apple M4 MacBook Air: ARM64 NEON, 10 physical cores.
+### Generated kernel
 
-The compiler/runtime contract targets 64-bit little-endian hosts. In schedule
-records, `portable` means the scalar baseline across those supported hosts; it
-does not claim 32-bit or big-endian portability.
+G1 compares generated scalar and generated NEON code for the same
+`M=1, N=2048, K=2048` Q8 projection through the same allocation-free
+prepared-call boundary. Each of three processes ran 40 balanced scalar/NEON
+pairs after warmup and calibration. A deterministic 10,000-resample paired BCa
+bootstrap produced one 95% interval per session; every lower bound exceeded the
+predeclared 1.0 gate.
 
-The deferred portability host is:
+| Session | Paired speedup | 95% paired-BCa interval |
+| --- | ---: | ---: |
+| 1 | 3.95671× | [3.95103, 3.96705] |
+| 2 | 3.96176× | [3.95085, 3.96960] |
+| 3 | 3.95648× | [3.95351, 3.95997] |
 
-- Ryzen 5 3600: x86-64 AVX2 hardware, 6 cores / 12 threads (the strict-f32
-  compiler contract still requires separate multiply and add).
-- Radeon RX 5700 XT: intentionally out of scope.
+The timed boundary includes output-sentinel fill, the generated-module ABI
+call, status decoding, and a finite-output scan. It excludes packing,
+compilation, dynamic loading, and allocation.
 
-The initial weight-only format keeps activations in FP32, so its vector kernels
-use widening/conversion plus FP32 arithmetic. Integer dot-product instructions
-are not an MVP claim; using them would require a separately specified activation
-quantization path.
+### Integrated model
 
-## Initial compiler surface
+Decode throughput is reported in tokens/second. Each range spans the three
+per-process medians, not a confidence interval or selected best runs.
 
-The required vertical slice is deliberately narrower than a general graph
-compiler: frozen, bias-free weight-only Q8 query projections with
-`[N,K]=[2048,2048]`. TinyLlama contains 22 of them. Prompt prefill has `M>1`
-and therefore uses the identity-bound same-Q8 reference path; cached decode has
-`M=1` and is eligible for generated NEON execution.
+![Apple M4 decode throughput: native execution is faster than the guarded same-Q8 reference but does not consistently beat FP32 PyTorch.](docs/assets/apple-m4-decode-throughput.svg)
 
-The remaining 133 TinyLlama linear modules, additional shapes, `M>1` native
-kernels, RMSNorm or SwiGLU fusion, general FX matching, predictive scheduling,
-and AVX2 stay outside G0–G3. This yields repeated real-model coverage without
-pretending that one fixed kernel is already a whole-model inference engine.
+| Case / output cap | Original FP32 PyTorch | Hybrid native | Guarded same-Q8 reference |
+| --- | ---: | ---: | ---: |
+| Short / 16 | 11.61–15.47 | 11.29–14.74 | 3.84–4.70 |
+| Medium / 32 | 14.78–14.86 | 14.17–14.29 | 4.27–4.53 |
+| Long / 64 | 12.23–13.74 | 10.85–13.23 | 4.37–4.47 |
 
-The first reference model is
-[`TinyLlama/TinyLlama-1.1B-Chat-v1.0`](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0),
-an Apache-2.0 Llama-compatible 1.1B model with realistic decode projection
-shapes. The compiler is shape-driven rather than hard-coded to that model, but
-only those shapes are required for the first complete result.
+Production guards remained enabled. Correctness-comparison hooks were excluded
+from performance timing, but the guarded reference path still includes its own
+weight clone/hash work, and outer finite-logit checks remain. Only query
+projections use native decode; the rest of the model stays in PyTorch.
 
-## What makes it a compiler
+For the full numerical, lifecycle, setup, memory, and limitations record, read
+the [Apple M4 evaluation](results/evaluation/apple-m4-v1/README.md).
 
-- A typed IR represents contraction, quantization, scale, epilogue, layout, and
-  reduction semantics independently of the M4 target; future targets reuse it.
-- Region and Loop IR make the fixed G1 schedule, reduction order, vector width,
-  tail behavior, and packed addressing explicit and verifiable.
-- The existing lowering is structured so a later legality layer and bounded
-  schedule selector can vary those decisions without changing Q8 semantics.
-- Code generation emits inspectable C/intrinsics plus a stable C ABI, then uses
-  the host toolchain to build a loadable native module.
-- Guards bind a kernel to the shapes, strides, dtype, alignment, quantization
-  format, and CPU features for which it was compiled.
-- Content identities bind the logical weight, physical pack, module, shape,
-  numeric mode, and ABI at the native boundary.
-- Every optimization is benchmarked against the same quantized scalar semantics,
-  not only against a different precision or framework.
+## Repository guide
 
-## Evidence, not architecture alone
+| Path | Responsibility |
+| --- | --- |
+| [`compiler/decodeforge-core`](compiler/decodeforge-core) | Exact Q8 semantics, identities, and fixture contracts |
+| [`compiler/decodeforge-compiler`](compiler/decodeforge-compiler) | Typed IR, lowering, OI4 packing, source generation, toolchain and artifact validation |
+| [`compiler/decodeforge-runtime`](compiler/decodeforge-runtime) | Generated-module validation, ownership, loading, and execution |
+| [`compiler/decodeforge-bridge`](compiler/decodeforge-bridge) | Hardened process-local C ABI over verified modules and packs |
+| [`python/decodeforge`](python/decodeforge) | Evidence tooling, eager PyTorch binding, query-projection adapters, evaluation |
+| [`benchmarks`](benchmarks) | Frozen experiment specifications and capture inputs |
+| [`results`](results) | Checked-in raw observations, summaries, generated source, and audits |
+| [`schemas`](schemas) | Closed JSON contracts and stable diagnostics |
+| [`docs`](docs) | Design, methods, decisions, project narrative, and reproduction guides |
 
-The primary project artifact is a reproducible compiler run, not this design.
-For each published generated kernel, DecodeForge retains:
+Additional navigation is available in the
+[compiler](compiler/README.md), [Python](python/README.md),
+[benchmark](benchmarks/README.md), [results](results/README.md), and
+[documentation](docs/README.md) indexes.
 
-- canonical Region IR and Loop IR;
-- generated C/intrinsics and the exact compiler invocation;
-- disassembly with the hot loop identified, vector instructions checked, and
-  stack spills or scalarized paths called out;
-- the logical and physical weight-layout manifests;
-- correctness results against the Q8 oracle;
-- raw timing samples, host state, and available hardware-counter measurements;
-- the fixed schedule, plus selected and rejected candidates once schedule search
-  is implemented;
-- compile/pack time, code size, and—where applicable—tuning time, cache-hit
-  latency, and break-even calls.
+## Scope and limitations
 
-Every performance claim must be reconstructible from a checked-in result bundle.
-If a counter is unavailable on a host, the manifest records that fact instead of
-substituting an estimate.
+The completed G0–G3 path is intentionally narrow:
 
-| Skill signal | Required proof |
-|---|---|
-| compiler construction | typed/verified IR, explicit schedule representation, deterministic lowering and code generation |
-| SIMD and machine code | retained M4 NEON source, disassembly audit, scalarization/spill checks; AVX2 only if selected as G4 extension |
-| memory-system reasoning | packed-layout accounting, bandwidth calibration, cache counters when available |
-| ABI and FFI safety | versioned C ABI, pointer/shape guards, negative tests, corrupt-artifact recovery |
-| performance engineering | raw randomized samples, uncertainty, same-semantics baselines, break-even analysis |
-| target judgment | one measured schedule tradeoff explained on M4; a cross-target comparison is optional G4 evidence |
+- Apple M4 / ARM64 NEON;
+- one thread;
+- frozen, bias-free `DFQ8_B32_V1` weights;
+- static `M=1, N=2048, K=2048` native query projections;
+- all 22 TinyLlama `q_proj` modules during cached decode;
+- eager PyTorch integration rather than a general FX or `torch.compile`
+  backend.
 
-## Delivery gates
+The remaining 133 TinyLlama linear modules, native prefill, schedule search,
+x86-64 AVX2, fusion, multicore execution, and general graph compilation are
+not implemented. The current evidence comes from one physical M4 and a
+synthetic 30-prompt corpus; it establishes implementation agreement and a
+repeatable kernel result, not general model quality or cross-host performance.
 
-| Gate | Required result | Scope unlocked |
-|---|---|---|
-| G0: semantics — complete | `DFQ8_B32_V1` Python and Rust scalar semantics, fixtures, schema, and checked-in provenance bundle agree | generated code |
-| G1: M4 compiler/kernel — complete | A real TinyLlama `M=1` query projection lowers to generated scalar and ARM64 NEON with retained source, disassembly, correctness, and timings | framework boundary |
-| G2: native eager PyTorch boundary — complete | The hardened versioned C ABI and guarded eager `q8_linear_v1` operator execute the real release library with observable native, fallback, error, and lifecycle paths | model adapter |
-| G3: 22-projection generation proof — complete under the frozen protocol | Three accepted fresh-process sessions and the verified ten-file bundle establish all-22 native coverage, numerical/token agreement, and clean restoration; text quality is a separate presentation limitation | evidence-selected extension |
-| G4: evidence-selected extension | One measured next step—schedule selection, broader linear coverage, FX/`torch.compile`, fusion, AVX2, or multicore—wins or yields an honest negative result | — |
+This scope lets each benchmark measure a specific part of the system.
 
-Failure at a gate causes investigation or a scope cut; it does not unlock more
-surface area. In particular, the G1 kernel result cannot be relabeled as a
-model speedup, and a text demo without same-Q8 comparison and coverage counters
-does not complete G3.
+## Documentation
 
-## Repository plan
+The [documentation map](docs/README.md) separates the plain-language tour,
+current technical contracts, reproduction guides, and historical project
+record.
 
-```text
-compiler/                 Rust workspace
-  decodeforge-core/       G0 Q8 semantic oracle, identities, fixture gates
-  decodeforge-compiler/   G1 IR, OI4 packing, scalar codegen, and Apple artifact audit
-  decodeforge-runtime/    generated-module ownership, validation, loading, ABI
-  decodeforge-bridge/     hardened process-local C ABI for native modules and packs
-python/decodeforge/       eager PyTorch binding, q_proj adapter, test harness
-benchmarks/               kernel, layer, and TinyLlama suites
-results/                  reproducible run manifests, raw data, assembly, reports
-dashboard/                optional post-G3 compiler report viewer
-docs/                     design, implementation gates, benchmark methodology
-```
+## Status and next work
 
-The AVX2 code-generation entry is retained for the deferred G4 portability
-extension; it is not part of the required Mac-first G0–G3 path.
+The original G0–G3 path is complete:
 
-## Credible success
+- **G0:** independent Python/Rust Q8 semantics and a provenance-bound corpus;
+- **G1:** typed IR, OI4 packing, deterministic scalar/NEON generation, validated
+  native artifacts, and the retained M4 kernel result;
+- **G2:** a hardened native ABI and guarded eager PyTorch operator;
+- **G3:** all-22 TinyLlama query-projection execution with retained model
+  correctness, dispatch, lifecycle, and timing evidence.
 
-The project is résumé-ready when it can demonstrate all of the following:
+The next optimization should be selected from profiling rather than feature
+count: reduce guard/prefill overhead, broaden native linear coverage, add
+schedule selection, reproduce on another physical Mac, or implement the
+deferred AVX2 target.
 
-- scalar and NEON kernels agree with a dequantize-then-matmul oracle within a
-  documented numeric tolerance on the M4; AVX2 is required only if selected as
-  the G4 portability extension;
-- the eager operator passes real tensor storage to the release bridge, preserves
-  the PyTorch callable contract, and rejects guard violations safely;
-- all 22 TinyLlama query projections use packs prepared by the compiler path;
-  prefill uses the same Q8 identity and cached `M=1` decode enters native code;
-- compiler/pack time, library and model load time, packed-weight size, bridge
-  dispatch, prefill, per-token decode, total latency, and quantization quality
-  are reported separately;
-- a pinned prompt generates text with native coverage proven by counters and
-  agrees with an all-same-Q8-fallback run under a predeclared policy;
-- any optional G4 cross-target result is explained—for example, a tile that
-  helps the M4 but hurts Zen 2;
-- the completed G1 optimization is supported by retained source, annotated
-  disassembly, and raw paired measurements;
-- comparisons to PyTorch Inductor, llama.cpp, or vendor libraries are labeled as
-  contextual rather than falsely identical when formats/semantics differ.
-
-No target speedup is assumed in advance.
-
-Hand-written assembly, a custom thread runtime, and operating-system internals
-are not required claims. The low-level contribution is CPU-kernel generation,
-data layout, native ABI integration, and evidence-based microarchitectural
-analysis.
-
-## Documents
-
-- [Design and technical specification](docs/DESIGN.md)
-- [Benchmark and experimental methodology](docs/BENCHMARKS.md)
-- [Implementation plan and decision gates](docs/IMPLEMENTATION_PLAN.md)
-- [Delivery progress and remaining issues](docs/PROGRESS_2026_09_05.md)
-- [G0 evidence contract](docs/G0_EVIDENCE_V1.md)
-- [ADR 0001: Mac-first required path](docs/decisions/0001-mac-first-required-path.md)
-- [ADR 0004: Strict output-vector NEON lowering](docs/decisions/0004-strict-output-vector-neon.md)
-- [ADR 0005: Eager Q-projection generation demo](docs/decisions/0005-prioritize-eager-q-projection-demo.md)
-
-## Status
-
-G0 is complete. The independent Python and Rust scalar oracles, closed fixture
-schemas, and 16-case corpus pass byte-for-byte parity gates. The checked-in
-[Apple M4 correctness bundle](results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86/report.md)
-binds those checks to source revision `cc838b0`, the exact toolchain and host
-profile, and hashed artifacts; CI verifies both its portable contents and Git
-provenance. G1 is also complete. Its compiler path implements verified
-Region/Loop lowering, one shared
-OI4 pack, the frozen generated-module ABI, deterministic strict scalar and
-output-vector NEON C, and separately identified Apple-arm64 dylibs whose
-Mach-O structure and hidden helpers are audited before loading. The NEON
-source expresses signed `int8 -> int16 -> int32` widening; the retained machine
-code contains the corresponding `sshll.8h -> sshll.4s -> scvtf.4s` path,
-lane-form activation multiply, separate adds, a raw vector scale load, and
-guarded vector/tail stores. Direct Q-word and 16-byte scale loads removed
-unnecessary byte reconstruction and a temporary stack-array/canary path
-without disabling stack protection. A backend-neutral checked runtime executes
-scalar and NEON modules through the same ABI: all 16 frozen fixtures are
-bit-exact, and dedicated `N=4` and `N=5` cases prove vector-only and
-vector-plus-tail execution. This is correctness and machine-code evidence
-for the generated path. A backend-neutral prepared-call API
-now validates buffer extents once, reuses caller-owned output storage, and
-includes deterministic output scrubbing and validation around every native
-invocation. See [the normative Q8 contract](docs/Q8_FORMAT_V1.md).
-
-The checked-in
-[Apple M4 G1 result](results/g1/apple-m4-primary/README.md) prepares one
-byte-stable, provenance-pinned
-TinyLlama tensor; independently reconstructs the canonical Q8 pack and oracle;
-and runs generated scalar and NEON artifacts through the same allocation-free
-prepared-call boundary. Each raw session retains the Region/Loop IR, pack
-manifest, generated source, disassembly audit, exact toolchain, host and Git
-state, correctness gates, calibration, and all 80 balanced observations. The
-portable analyzer accepts exactly three clean-checkout processes, rejects
-thermal drift above the declared 10% policy, and computes deterministic paired
-BCa intervals. The three session speedups are `3.95671x`, `3.96176x`, and
-`3.95648x`; their respective 95% paired-BCa intervals are
-`[3.95103, 3.96705]`, `[3.95085, 3.96960]`, and `[3.95351, 3.95997]`.
-All three lower bounds exceed `1.0`, so the predeclared G1 speedup gate passes.
-This is a generated scalar-versus-NEON kernel result at the complete prepared
-call boundary, not an end-to-end model speedup.
-
-G2 is also complete. `decodeforge-bridge` exports the versioned six-function C
-ABI in
-[`include/decodeforge/runtime_v1.h`](include/decodeforge/runtime_v1.h). It owns
-verified generated modules and exact aligned OI4 payloads behind opaque,
-process-local handles; enforces per-pack, aggregate-byte, and live-handle
-limits; linearizes run/destroy; contains panics; and exposes bounded
-thread-local diagnostics. `make test-bridge-cdylib` builds the actual release
-library and verifies the frozen `N=255,K=2` fixture through that C boundary
-(bit-exact with real Torch buffers on Apple ARM64, explicit unsupported-host
-behavior on Linux). The guarded eager PyTorch operator adds verified private
-library snapshots, exact tensor guards, observable fallback/error counters, and
-tested lifecycle ownership around that release boundary.
-
-G3 is complete under its frozen execution/correctness protocol. The checked-in
-[ten-file M4 result](results/g3/apple-m4-primary/README.md) retains three
-accepted fresh-process sessions from clean revision `ad15f5d`, with all 22
-query projections exercising native cached decode, exact token agreement,
-numerical checks and clean restoration. `make check` now independently
-regenerates and verifies this bundle as well as the G1 result.
-
-The pooled median total-generation times are 1.732 seconds for the guarded
-same-Q8 reference and 0.751 seconds for hybrid native execution. The reference
-includes per-call fallback-weight cloning and hashing; both paths include hook
-instrumentation. These are not isolated kernel timings or a stock-PyTorch
-comparison. The frozen prompt produced control-token text rather than a useful
-sentence. A separate [chat-template presentation demo](docs/PRESENTATION_DEMO.md)
-now produces a meaningful answer with identical tokens, all-22 native coverage,
-and clean restoration; it gives two sentences rather than the requested one.
-See the [original result interpretation](docs/G3_RESULT_2026_09_05.md).
-
-A separate [30-prompt M4 evaluation](results/evaluation/apple-m4-v1/README.md)
-passed native/reference correctness and preserved all 30 greedy FP32 sequences
-on its synthetic corpus. Three fresh performance processes show an advantage
-over the guarded same-Q8 fallback, but not a consistent advantage over original
-FP32. Most generations reached their token cap, and a second physical Mac is
-still untested. Run `make verify-evaluation-result` to check the retained
-observations and summary; this verification is included in `make check`.
-
-Reproduce the checked-in analysis with `make verify-g1-result`.
-
-Run the closed G1 path with explicit artifacts and session IDs:
-
-```sh
-make prepare-g1-input WEIGHTS=/path/to/model.safetensors OUTPUT=/tmp/g1-weight.safetensors
-make prepare-g1-cases PREPARED_WEIGHTS=/tmp/g1-weight.safetensors OUTPUT=/tmp/g1-cases
-make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-01.json SESSION_ID=session-01
-make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-02.json SESSION_ID=session-02
-make run-g1-session CASES=/tmp/g1-cases/manifest.json OUTPUT=/tmp/session-03.json SESSION_ID=session-03
-make analyze-g1 SESSION_1=/tmp/session-01.json SESSION_2=/tmp/session-02.json SESSION_3=/tmp/session-03.json OUTPUT_DIR=/tmp/g1-report
-```
-
-Rust independently generates the expected fixture documents in memory, and
-`q8 verify` only reads and verifies an existing fixture tree. Run the read-only
-Rust gate with `make rust-fixture-check`, or directly:
-
-```sh
-PATH="$(dirname "$(rustup which --toolchain 1.98.0 cargo)"):$PATH" cargo run --offline --locked -p decodeforge -- q8 verify
-```
-
-The Python generator is the sole explicit fixture writer:
-
-```sh
-uv run --frozen python scripts/generate_q8_fixtures.py --write
-```
+DecodeForge's original code is licensed under [Apache 2.0](LICENSE).
+Third-party dependencies and model artifacts retain their own licenses.

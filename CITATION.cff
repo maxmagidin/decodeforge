@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use DecodeForge or its retained results, please cite this repository."
+title: "DecodeForge: Evidence-backed Q8 kernel compilation for TinyLlama decode"
+authors:
+  - family-names: Magidin
+    given-names: Max
+repository-code: "https://github.com/maxmagidin/decodeforge"
+url: "https://github.com/maxmagidin/decodeforge"
+license: Apache-2.0
+version: 0.1.0
+abstract: >-
+  DecodeForge is a Rust compiler and guarded PyTorch runtime that lowers typed
+  blockwise-Q8 linear operations into deterministic scalar and ARM64 NEON
+  kernels, audits native artifacts, and retains reproducible correctness,
+  machine-code, and performance evidence for TinyLlama query projections on an
+  Apple M4.

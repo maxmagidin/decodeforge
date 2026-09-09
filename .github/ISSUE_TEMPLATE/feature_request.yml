@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an improvement to the compiler, runtime, model path, docs, or tooling.
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve DecodeForge. Explain the user or engineering problem first; a complete implementation plan is welcome but not required.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What is difficult, missing, slow, or unclear today? Include an example if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope
+      description: What would you change, and what should stay out of scope?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How would we know it works?
+      description: For compiler or performance changes, describe correctness and measurement evidence. For docs or usability, describe the expected reader or user outcome.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: I have called out any intended change to the Q8 numeric contract, public ABI, or saved-result format.
+          required: true
+        - label: Any performance claim will name its baseline and be measured before it is presented as a result.
+          required: true
