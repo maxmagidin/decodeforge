@@ -5,12 +5,11 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](Cargo.toml)
 [![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.14-blue.svg)](pyproject.toml)
 
-**A Rust compiler that turns quantized LLM projections into ARM64 NEON kernels
-and runs them inside PyTorch.**
+I built (with a lot of help from AI) a Rust compiler that turns quantized LLM projections into ARM64 NEON kernels
+and runs them inside PyTorch.
 
-DecodeForge compiles one operation inside TinyLlama: the query projection that
-helps attention process each new token. It specializes a fixed shape and loop
-schedule for Apple M4, generates scalar or ARM64 NEON C, checks the compiled
+DecodeForge compiles the query projection that helps attention process each new token inside TinyLlama. 
+It specializes a fixed shape and loop schedule for Apple M4, generates scalar or ARM64 NEON C, checks the compiled
 library, and calls it from PyTorch.
 
 During cached single-token decode, generated code handles the `q_proj` module
@@ -18,10 +17,12 @@ in every one of TinyLlama's 22 transformer layers. The repository keeps the
 generated source, machine-code checks, raw timing samples, model results, and
 offline verifiers behind that claim.
 
-> **Headline result:** generated NEON was approximately **3.96× faster** than
-> generated scalar across three independent Apple M4 sessions at the same-Q8
-> prepared-call boundary. This is a kernel result—not a 3.96× whole-model or
-> stock-PyTorch speedup.
+ **Results:** generated NEON was approximately **3.96× faster** than
+generated scalar across three independent Apple M4 sessions at the same-Q8
+prepared-call boundary. This is a kernel result—not a 3.96× whole-model or
+stock-PyTorch speedup.
+
+To learn a little more before hopping into results and technicalities:
 
 [Read the plain-language primer](docs/PRIMER.md) ·
 [Inspect the results](results/README.md) ·
@@ -102,14 +103,6 @@ fixed TinyLlama q_proj weights + static [N,K] + Apple M4 target
 PyTorch and Transformers still own model loading, tokenization, attention, KV
 state, sampling, and every unsupported operation. DecodeForge replaces only the
 eligible query-projection work it can guard and verify.
-
-## What “22 query projections” means
-
-TinyLlama has 22 transformer layers, and each layer has one `q_proj` linear
-operation that builds the attention query for the current token. DecodeForge
-replaces that one operation in all 22 layers during cached decode. It does not
-replace an entire transformer layer: key, value, and output projections, the
-MLP, attention, and prompt prefill remain in PyTorch or the same-Q8 reference.
 
 ## Inside the compiler
 
