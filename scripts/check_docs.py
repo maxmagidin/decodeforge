@@ -13,7 +13,6 @@ REQUIRED = {
     ROOT / "README.md",
     ROOT / "CONTRIBUTING.md",
     ROOT / "SECURITY.md",
-    ROOT / "docs" / "README.md",
     ROOT / "docs" / "PRIMER.md",
     ROOT / "docs" / "DESIGN.md",
     ROOT / "docs" / "BENCHMARKS.md",

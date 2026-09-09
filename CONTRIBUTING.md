@@ -5,10 +5,12 @@ project is developed in small, independently testable changes. Its first target
 is Apple Silicon; portable workspace checks also run on Linux.
 
 Before changing numerical behavior, ABI surfaces, benchmark claims, or retained
-evidence, read the [documentation map](docs/README.md) and the relevant
-normative contract. For a first contribution, documentation, diagnostics,
-rejection tests, and small reproducibility fixes are safer entry points than
-expanding compiler scope.
+evidence, read the [technical design](docs/DESIGN.md) and the relevant contract:
+[Q8 format](docs/Q8_FORMAT_V1.md),
+[benchmark methodology](docs/BENCHMARKS.md), or
+[model evaluation](docs/EVALUATION_V1.md). For a first contribution,
+documentation, diagnostics, rejection tests, and small reproducibility fixes
+are safer entry points than expanding compiler scope.
 
 ## Prerequisites
 
