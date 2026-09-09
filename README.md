@@ -241,11 +241,13 @@ model benchmark.
 > **P0 is in progress.** The new opt-in [decode profiler](docs/PROFILING.md)
 > separates input preparation, model execution, output validation, token
 > selection, bookkeeping, and 157 nonoverlapping TinyLlama components. It also
-> labels query-projection dispatch from real counter deltas. Separating adapter
-> guards, fallback cloning/hashing, and native bridge work—and then producing a
-> three-session capture with a stable cost ranking—still remain before any
-> optimization is selected. The session runner launches one diagnostic capture
-> per fresh CLI process; it never reuses the frozen benchmark runners.
+> labels query-projection dispatch from real counter deltas and, in detailed
+> captures, separates fallback storage checks, cloning, hashing, matrix work,
+> the guarded native operator, and the binding call. The outer native eligibility
+> check remains in the adapter remainder. A stable cross-session cost ranking
+> still remains before any optimization is selected. The session runner launches
+> one diagnostic capture per fresh CLI process; it never reuses the frozen
+> benchmark runners.
 
 | Priority | Work | Why it matters | Evidence required before calling it complete |
 | --- | --- | --- | --- |

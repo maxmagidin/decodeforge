@@ -14,7 +14,7 @@ model after use.
 | Query-projection adapter | [`qproj_adapter.py`](decodeforge/qproj_adapter.py) |
 | Transactional model installation | [`qproj_model.py`](decodeforge/qproj_model.py) |
 | Broader evaluation | [`evaluation.py`](decodeforge/evaluation.py), [`evaluation_metrics.py`](decodeforge/evaluation_metrics.py) |
-| Opt-in decode diagnostics | [`decode_profile.py`](decodeforge/decode_profile.py), [`profile_capture.py`](decodeforge/profile_capture.py), [profiling guide](../docs/PROFILING.md) |
+| Opt-in decode diagnostics | [`decode_profile.py`](decodeforge/decode_profile.py), [`qproj_profile.py`](decodeforge/qproj_profile.py), [`profile_capture.py`](decodeforge/profile_capture.py), [profiling guide](../docs/PROFILING.md) |
 
 The completed integration replaces the query projection in all 22 TinyLlama
 layers. Multi-token prompt processing uses a reference reconstructed from the

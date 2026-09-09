@@ -38,6 +38,16 @@ before/after counter delta. It is not guessed from tensor shape. Events can be
 labelled `native`, `fallback`, an error path, or `ambiguous` when the observed
 counters do not describe exactly one forward.
 
+Detailed query-projection profiling adds nested diagnostic spans without
+changing the normal adapter or bridge implementations. The spans cover the
+adapter's fallback-storage checks, the existing fallback clone, identity hash,
+and linear operation, the guarded native operator, and the runtime binding
+call. The guarded native operator includes PyTorch dispatch, its internal input
+guard, output allocation, and binding execution. The binding span includes
+locking, pointer checks, the C ABI call, and status handling. Neither boundary
+is kernel-only timing. The outer native eligibility check remains in the
+query-projection event's exclusive remainder.
+
 ## Programmatic use
 
 ```python
@@ -53,6 +63,7 @@ profile = profile_cached_generation(
     attention_mask,
     max_new_tokens=16,
     module_paths=tinyllama_component_paths(),
+    qproj_details=True,
 )
 document = profile.to_wire()
 ```
@@ -115,15 +126,17 @@ claim.
 
 ## Completing P0
 
-The instrumentation is the foundation, not the conclusion. Completing P0 also
-requires separate spans for adapter guards, fallback weight cloning and
-hashing, and guarded native bridge execution. Only after those sub-boundaries
-exist should the capture run in fresh processes and include:
+The instrumentation and fresh-process runner are the foundation, not the
+conclusion. A detailed capture now separates fallback storage checks, cloning,
+hashing, linear work, the guarded native operator, and the binding call. It does
+not claim to isolate every guard: the outer native eligibility check remains in
+the adapter remainder. Completing P0 now requires a strict analyzer over three
+fresh-process captures that includes:
 
-1. an uninstrumented control to verify tokens and estimate observer impact;
-2. three profiled runs for same-Q8 reference and hybrid-native execution;
-3. raw traces plus environment, model, asset, and bridge identities; and
-4. a cost ranking that remains stable across the three runs.
+1. matched uninstrumented controls to verify tokens and expose observer impact;
+2. both same-Q8 reference and hybrid-native execution in each session;
+3. raw traces plus environment, model, asset, bridge, and source identities; and
+4. a cost ranking whose ordering remains stable across all three sessions.
 
 Only then should the largest stable, actionable cost determine the first
 optimization. The acceptance rule and baseline must be fixed before that
