@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup format lint test check check-pytorch-pin test-native test-bridge-cdylib \
+.PHONY: help setup format lint test test-profile check check-pytorch-pin test-native test-bridge-cdylib \
 	validate-contracts verify-bundle fixture-check rust-fixture-check \
 	check-rust-toolchain repair-rust-toolchain repair-rust-toolchain-apply \
 	capture-g0-evidence verify-g0-repository verify-g0-result test-g1-tools \
@@ -58,6 +58,7 @@ help:
 		'  make check                     Run the complete development suite' \
 		'  make format                    Format Rust and Python sources' \
 		'  make lint                      Run static, docs, and schema checks' \
+		'  make test-profile              Run the decode-profiler tests' \
 		'' \
 		'Checked-in results (no model download):' \
 		'  make verify-g1-result          Recompute the Apple M4 kernel report' \
@@ -121,6 +122,9 @@ test: test-bridge-cdylib
 	$(UV) run --frozen python scripts/generate_q8_fixtures.py --check
 	$(MAKE) rust-fixture-check
 	$(CARGO) run --quiet --locked -p decodeforge -- --version
+
+test-profile:
+	$(UV) run --frozen --extra g3-generation python -m pytest -q python/tests/test_decode_profile.py
 
 check: lint test verify-g1-result
 	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"

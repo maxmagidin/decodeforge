@@ -238,6 +238,14 @@ is to profile the complete decode boundary, remove measured overhead, extend
 native execution to the next expensive linear family, and then repeat a frozen
 model benchmark.
 
+> **P0 is in progress.** The new opt-in [decode profiler](docs/PROFILING.md)
+> separates input preparation, model execution, output validation, token
+> selection, bookkeeping, and 157 nonoverlapping TinyLlama components. It also
+> labels query-projection dispatch from real counter deltas. Separating adapter
+> guards, fallback cloning/hashing, and native bridge work—and then producing a
+> fresh-process capture with a stable cost ranking—still remain before any
+> optimization is selected.
+
 | Priority | Work | Why it matters | Evidence required before calling it complete |
 | --- | --- | --- | --- |
 | P0 | Profile adapter dispatch, guards, hashing/cloning, each native projection, and the remaining PyTorch decode path | Explains where the 3.96× kernel gain is lost at model level | Raw per-boundary traces from fresh processes with stable cost attribution |
