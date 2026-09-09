@@ -139,6 +139,8 @@ def test_profile_preserves_generation_and_partitions_nested_spans() -> None:
     assert captured.clock_resolution_ns is None
     assert wire["clock"]["name"] == "injected"
     assert clock.calls == 2 * len(events)
+    captured.generation.generated_ids[0] = 6
+    assert wire["generated_token_ids"] == [1, 2, 7]
 
 
 def test_first_token_eos_has_no_cached_step() -> None:
@@ -151,6 +153,37 @@ def test_first_token_eos_has_no_cached_step() -> None:
     )
     assert captured.generation.generated_ids == [7]
     assert not any(event.boundary == "cached_step" for event in captured.events)
+
+
+@pytest.mark.parametrize("tokens", [[7], [1, 2, 7], [1, 2, 3, 4]])
+def test_unprofiled_control_matches_profiled_workload(tokens: list[int]) -> None:
+    maximum = len(tokens)
+    control_model = ProfileModel(tokens)
+    profiled_model = ProfileModel(tokens)
+    tokenizer = SimpleNamespace(eos_token_id=7)
+
+    control = profile.generate_cached_unprofiled(
+        control_model, tokenizer, *_inputs(), maximum
+    )
+    captured = profile.profile_cached_generation(
+        profiled_model,
+        tokenizer,
+        *_inputs(),
+        maximum,
+        module_paths=("component",),
+        clock=TickClock(),
+    )
+
+    assert control == captured.generation
+    assert len(control_model.calls) == len(profiled_model.calls)
+    assert [call["input_ids"].tolist() for call in control_model.calls] == [
+        call["input_ids"].tolist() for call in profiled_model.calls
+    ]
+    assert [call["attention_mask"].tolist() for call in control_model.calls] == [
+        call["attention_mask"].tolist() for call in profiled_model.calls
+    ]
+    assert not control_model.component._forward_pre_hooks
+    assert not control_model.component._forward_hooks
 
 
 def test_hooks_are_removed_and_original_model_error_is_preserved() -> None:

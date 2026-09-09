@@ -499,7 +499,7 @@ class DecodeProfile:
                 "resolution_ns": self.clock_resolution_ns,
                 "overhead_subtracted": False,
             },
-            "generated_token_ids": self.generation.generated_ids,
+            "generated_token_ids": list(self.generation.generated_ids),
             "generated_token_count": len(self.generation.generated_ids),
             "stop_reason": self.generation.stop_reason,
             "module_paths": list(self.module_paths),
@@ -512,18 +512,12 @@ class DecodeProfile:
         }
 
 
-def profile_cached_generation(
-    model: nn.Module,
+def _validate_generation_request(
     tokenizer: Any,
     input_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     max_new_tokens: int,
-    *,
-    module_paths: Sequence[str] = (),
-    clock: Clock = time.perf_counter_ns,
-) -> DecodeProfile:
-    """Profile one greedy CPU generation without touching benchmark protocols."""
-
+) -> set[int]:
     if (
         isinstance(max_new_tokens, bool)
         or not isinstance(max_new_tokens, int)
@@ -544,9 +538,88 @@ def profile_cached_generation(
         )
 
     try:
-        eos = _eos_ids(tokenizer)
+        return _eos_ids(tokenizer)
     except Exception as error:
         raise DecodeProfileError(str(error)) from error
+
+
+def _generation_result(
+    prompt: list[int], generated: list[int], eos: set[int]
+) -> CachedGeneration:
+    stop = "eos" if generated and generated[-1] in eos else "max_new_tokens"
+    return CachedGeneration(
+        prompt + generated,
+        generated,
+        stop,
+        stop == "eos",
+        [],
+        [],
+    )
+
+
+def generate_cached_unprofiled(
+    model: nn.Module,
+    tokenizer: Any,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    max_new_tokens: int,
+) -> CachedGeneration:
+    """Run the diagnostic generation workload with no hooks or timer reads."""
+
+    eos = _validate_generation_request(
+        tokenizer, input_ids, attention_mask, max_new_tokens
+    )
+    generated: list[int] = []
+    with torch.inference_mode():
+        ids = input_ids.detach().clone().contiguous()
+        mask = attention_mask.detach().clone().contiguous()
+        prompt = [int(value) for value in ids[0].tolist()]
+        output = model(
+            input_ids=ids,
+            attention_mask=mask,
+            use_cache=True,
+            return_dict=True,
+        )
+        logits, past = _output_parts(output)
+        token = int(torch.argmax(logits[0, -1, :]).item())
+        generated.append(token)
+
+        for _step_index in range(1, max_new_tokens):
+            if generated[-1] in eos:
+                break
+            ids = torch.tensor([[generated[-1]]], dtype=torch.int64)
+            mask = torch.cat(
+                (mask, torch.ones((1, 1), dtype=torch.int64)),
+                dim=1,
+            )
+            output = model(
+                input_ids=ids,
+                attention_mask=mask,
+                past_key_values=past,
+                use_cache=True,
+                return_dict=True,
+            )
+            logits, past = _output_parts(output)
+            token = int(torch.argmax(logits[0, -1, :]).item())
+            generated.append(token)
+    return _generation_result(prompt, generated, eos)
+
+
+def profile_cached_generation(
+    model: nn.Module,
+    tokenizer: Any,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    max_new_tokens: int,
+    *,
+    module_paths: Sequence[str] = (),
+    clock: Clock = time.perf_counter_ns,
+) -> DecodeProfile:
+    """Profile one greedy CPU generation without touching benchmark protocols."""
+
+    eos = _validate_generation_request(
+        tokenizer, input_ids, attention_mask, max_new_tokens
+    )
     paths = tuple(module_paths)
     collector = _ProfileCollector(clock)
     generated: list[int] = []
@@ -603,15 +676,7 @@ def profile_cached_generation(
                 with collector.span("bookkeeping"):
                     generated.append(token)
 
-    stop = "eos" if generated and generated[-1] in eos else "max_new_tokens"
-    generation = CachedGeneration(
-        prompt + generated,
-        generated,
-        stop,
-        stop == "eos",
-        [],
-        [],
-    )
+    generation = _generation_result(prompt, generated, eos)
     uses_default_clock = clock is time.perf_counter_ns
     resolution = (
         max(1, int(time.get_clock_info("perf_counter").resolution * 1_000_000_000))
@@ -635,6 +700,7 @@ __all__ = [
     "DecodeProfile",
     "DecodeProfileError",
     "ProfileEvent",
+    "generate_cached_unprofiled",
     "profile_cached_generation",
     "tinyllama_component_paths",
 ]

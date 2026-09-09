@@ -63,6 +63,40 @@ preliminary diagnostic document identifies itself as `diagnostic_profile` and
 sets `performance_claim_allowed` to `false`; it is not yet a retained evidence
 contract or independently verifiable schema.
 
+## Fresh-process session capture
+
+[`run_profile_capture.py`](../scripts/run_profile_capture.py) turns the API into
+one reproducible local session. Each invocation verifies the pinned checkpoint,
+loads and installs all 22 query-projection adapters, and then runs both same-Q8
+reference and hybrid-native modes. Each mode gets one warmup, one matched
+unprofiled control, and one profiled generation. Odd session indexes reverse
+both path and observer order to make order effects visible.
+
+Run it three times from three new interpreter processes:
+
+```sh
+uv run --frozen --extra g3-generation python scripts/run_profile_capture.py \
+  --model-dir /absolute/path/to/model \
+  --assets /absolute/path/to/assets \
+  --library /absolute/path/to/libdecodeforge_bridge.dylib \
+  --library-sha256 <64-lowercase-hex-digits> \
+  --prompt "Write one short sentence about a compiler." \
+  --max-new-tokens 16 --session-index 0 \
+  --output /absolute/path/to/profile-0.json
+```
+
+Repeat with session indexes `1` and `2` and distinct output paths. A supplied
+index is only a label; separate CLI launches provide process isolation. Output
+publication refuses existing files, symlinks, and symlinked parent directories.
+
+The control executes the same explicit cached-generation workload without
+hooks or timer reads. The recorded outer ratio is an observer-cost indicator,
+not a corrected timing: hook installation, collection, and cleanup are included
+in the profiled side, and no overhead is subtracted. Every run retains its own
+adapter counter delta, generated IDs, stop reason, and elapsed time. The runner
+rejects missing cached-native coverage, path disagreement, incomplete teardown,
+or a profile whose q-projection dispatch events disagree with the counters.
+
 ## Safety and limitations
 
 Profiling is opt-in: no hooks or timer reads are added to existing G1, G3, or

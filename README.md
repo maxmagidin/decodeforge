@@ -243,8 +243,9 @@ model benchmark.
 > selection, bookkeeping, and 157 nonoverlapping TinyLlama components. It also
 > labels query-projection dispatch from real counter deltas. Separating adapter
 > guards, fallback cloning/hashing, and native bridge work—and then producing a
-> fresh-process capture with a stable cost ranking—still remain before any
-> optimization is selected.
+> three-session capture with a stable cost ranking—still remain before any
+> optimization is selected. The session runner launches one diagnostic capture
+> per fresh CLI process; it never reuses the frozen benchmark runners.
 
 | Priority | Work | Why it matters | Evidence required before calling it complete |
 | --- | --- | --- | --- |
