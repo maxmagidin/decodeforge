@@ -124,20 +124,67 @@ unexpected model behavior cannot grow a trace without bound. The output is not
 a retained benchmark artifact and must not be used for a resume or performance
 claim.
 
+## Comparing three sessions
+
+[`analyze_profile_sessions.py`](../scripts/analyze_profile_sessions.py) reads the
+three captures and recomputes their cost attribution:
+
+```sh
+make analyze-profile \
+  SESSION_1=/absolute/path/to/profile-0.json \
+  SESSION_2=/absolute/path/to/profile-1.json \
+  SESSION_3=/absolute/path/to/profile-2.json \
+  OUTPUT=/absolute/path/to/new-analysis.json
+```
+
+The captures must come from the same clean source revision and have matching
+source hashes, environment, checkpoint, quantized assets, bridge, and workload.
+The analyzer requires indexes `0`, `1`, and `2`, with distinct recorded process
+IDs. Those IDs are a consistency check; the JSON cannot prove process isolation
+or authenticate the producer. Launch the capture command separately each time.
+
+The analyzer revalidates the complete nested traces, token agreement, adapter
+counter continuity, execution order, and final restoration. It recomputes each
+observer ratio from the control and profile durations. Missing fields,
+inconsistent claims, duplicate JSON keys, and oversized input files are rejected.
+An existing output is never replaced. The report includes SHA-256 hashes of the
+exact input files, so keep all three raw captures alongside it.
+
+### Reading the result
+
+For each session and execution mode, the report separates prompt prefill from
+cached decode. Each cost bucket adds **exclusive** event durations: time spent
+in a child is not counted again in its parent. These buckets sum to the measured
+phase duration. The report retains time outside the steps separately as the
+generation remainder.
+
+Query-projection internals have their own buckets. Other module events are
+grouped by component family, such as MLP, key projection, or layer norm. Adapter,
+model-forward, and step remainders remain visible; they include uninstrumented
+work and observer overhead. The native binding bucket still includes locking,
+pointer checks, and status handling, so it is not kernel-only time.
+
+`stability` compares cached-decode rankings separately for the same-Q8 reference
+and hybrid-native paths. It reports agreement across the **entire ordering** and
+agreement on the **top group** separately. Equal totals form an explicit tie
+group. An alphabetical tie-break never turns a tie into a winner, and averaging
+sessions never conceals a changed order. Exact ordering agreement is descriptive,
+not a statistical confidence test; close totals can change order with noise.
+
+`observer` contains outer control/profile call times and their ratio, including
+profile hook setup and restoration outside the generation-root span.
+The control has no per-step timers, so this ratio cannot correct individual
+cached-decode costs. No observer overhead is subtracted, and the report always
+sets `performance_claim_allowed` to `false`.
+
 ## Completing P0
 
-The instrumentation and fresh-process runner are the foundation, not the
-conclusion. A detailed capture now separates fallback storage checks, cloning,
-hashing, linear work, the guarded native operator, and the binding call. It does
-not claim to isolate every guard: the outer native eligibility check remains in
-the adapter remainder. Completing P0 now requires a strict analyzer over three
-fresh-process captures that includes:
+The capture and analysis tools are available. Completing the empirical milestone
+still requires three comparable real captures with stable cost attribution. An
+unstable ordering is a useful result, but does not satisfy that criterion. Keep
+it visible and investigate workload duration and measurement noise before
+selecting an optimization.
 
-1. matched uninstrumented controls to verify tokens and expose observer impact;
-2. both same-Q8 reference and hybrid-native execution in each session;
-3. raw traces plus environment, model, asset, bridge, and source identities; and
-4. a cost ranking whose ordering remains stable across all three sessions.
-
-Only then should the largest stable, actionable cost determine the first
-optimization. The acceptance rule and baseline must be fixed before that
-optimization is measured.
+Once the largest stable, actionable cost is established, fix the optimization's
+acceptance rule and baseline before measuring it. The outer native eligibility
+check remains in the adapter remainder; profiling does not isolate every guard.

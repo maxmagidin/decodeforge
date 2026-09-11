@@ -244,10 +244,11 @@ model benchmark.
 > labels query-projection dispatch from real counter deltas and, in detailed
 > captures, separates fallback storage checks, cloning, hashing, matrix work,
 > the guarded native operator, and the binding call. The outer native eligibility
-> check remains in the adapter remainder. A stable cross-session cost ranking
-> still remains before any optimization is selected. The session runner launches
-> one diagnostic capture per fresh CLI process; it never reuses the frozen
-> benchmark runners.
+> check remains in the adapter remainder. A three-session analyzer now validates
+> saved captures, separates prefill from cached-decode costs, and reports whether
+> their rankings agree. P0 still needs stable attribution from real sessions
+> before an optimization is selected. The session runner launches one diagnostic
+> capture per fresh CLI process; it never reuses the frozen benchmark runners.
 
 | Priority | Work | Why it matters | Evidence required before calling it complete |
 | --- | --- | --- | --- |
