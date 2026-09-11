@@ -282,6 +282,19 @@ def _open_directory(path: Path) -> int:
 def publish_new_json(path: Path, value: object) -> None:
     """Durably publish JSON without following or replacing filesystem objects."""
 
+    encoded = (
+        json.dumps(value, allow_nan=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    _publish_new_bytes(path, encoded)
+
+
+def publish_new_text(path: Path, value: str) -> None:
+    """Durably publish UTF-8 text with the same no-replacement policy as JSON."""
+
+    _publish_new_bytes(path, value.encode("utf-8"))
+
+
+def _publish_new_bytes(path: Path, encoded: bytes) -> None:
     if path.name in {"", ".", ".."} or Path(path.name).name != path.name:
         raise ValueError("output must name one file in an existing directory")
     directory = _open_directory(path.parent)
@@ -291,9 +304,6 @@ def publish_new_json(path: Path, value: object) -> None:
     temporary_exists = False
     linked_identity: tuple[int, int] | None = None
     try:
-        encoded = (
-            json.dumps(value, allow_nan=False, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
         descriptor = os.open(
             temporary_name,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
@@ -333,7 +343,7 @@ def publish_new_json(path: Path, value: object) -> None:
                 rollback_failures.append(rollback_error)
         if len(rollback_failures) > 1:
             raise BaseExceptionGroup(
-                "JSON publication rollback failed", rollback_failures
+                "publication rollback failed", rollback_failures
             ) from error
         raise
     finally:
@@ -2116,6 +2126,7 @@ __all__ = [
     "SessionRequest",
     "default_dependencies",
     "publish_new_json",
+    "publish_new_text",
     "require_external_session_output",
     "run_session",
 ]

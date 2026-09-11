@@ -238,17 +238,13 @@ is to profile the complete decode boundary, remove measured overhead, extend
 native execution to the next expensive linear family, and then repeat a frozen
 model benchmark.
 
-> **P0 is in progress.** The new opt-in [decode profiler](docs/PROFILING.md)
-> separates input preparation, model execution, output validation, token
-> selection, bookkeeping, and 157 nonoverlapping TinyLlama components. It also
-> labels query-projection dispatch from real counter deltas and, in detailed
-> captures, separates fallback storage checks, cloning, hashing, matrix work,
-> the guarded native operator, and the binding call. The outer native eligibility
-> check remains in the adapter remainder. A three-session analyzer now validates
-> saved captures, separates prefill from cached-decode costs, and reports whether
-> their rankings agree. P0 still needs stable attribution from real sessions
-> before an optimization is selected. The session runner launches one diagnostic
-> capture per fresh CLI process; it never reuses the frozen benchmark runners.
+> **P0 is in progress: finding where decode time goes.** The
+> [profiler and analysis guide](docs/PROFILING.md) shows how to compare three
+> separate runs and produce a readable report. It separates prompt processing
+> from token-by-token generation, breaks down model and adapter costs, and checks
+> whether the largest costs stay consistent across runs. The full ranking still
+> needs to be stable before P0 is complete. These diagnostics include measurement
+> overhead and do not establish a speedup.
 
 | Priority | Work | Why it matters | Evidence required before calling it complete |
 | --- | --- | --- | --- |
