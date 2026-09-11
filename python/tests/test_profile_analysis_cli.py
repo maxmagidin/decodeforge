@@ -94,8 +94,9 @@ def test_cli_writes_hashed_inputs_without_overwriting(
     assert output.read_bytes() == saved
 
 
+@pytest.mark.parametrize("output_format", ["json", "markdown"])
 def test_cli_rejection_does_not_publish(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output_format: str
 ) -> None:
     path = tmp_path / "capture.json"
     path.write_text("{}")
@@ -107,9 +108,71 @@ def test_cli_rejection_does_not_publish(
     monkeypatch.setattr(cli, "analyze_profile_sessions", reject)
     monkeypatch.setattr(
         "sys.argv",
-        ["analyze", "--sessions", *([str(path)] * 3), "--output", str(output)],
+        [
+            "analyze",
+            "--sessions",
+            *([str(path)] * 3),
+            "--output",
+            str(output),
+            "--output-format",
+            output_format,
+        ],
     )
     with pytest.raises(SystemExit) as error:
         cli.main()
     assert error.value.code == 2
     assert not output.exists()
+
+
+def test_cli_markdown_runs_analysis_before_rendering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = [tmp_path / f"capture-{index}.json" for index in range(3)]
+    for index, path in enumerate(paths):
+        path.write_text(json.dumps({"session_index": index}))
+    output = tmp_path / "report.md"
+    report = {"performance_claim_allowed": False}
+    monkeypatch.setattr(cli, "analyze_profile_sessions", lambda _: report)
+
+    def render(value: dict[str, Any]) -> str:
+        assert value is report
+        assert [item["session_index"] for item in value["input_captures"]] == [0, 1, 2]
+        return "# Diagnostic profile\n\nNo speedup claim.\n"
+
+    monkeypatch.setattr(cli, "render_profile_report", render)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "analyze",
+            "--sessions",
+            *map(str, paths),
+            "--output",
+            str(output),
+            "--output-format",
+            "markdown",
+        ],
+    )
+    assert cli.main() == 0
+    saved = output.read_bytes()
+    assert saved == b"# Diagnostic profile\n\nNo speedup claim.\n"
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 2
+    assert output.read_bytes() == saved
+
+
+def test_markdown_publication_preserves_existing_files_and_rejects_symlink_parents(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "report.md"
+    cli.publish_new_text(output, "# Timing \u2014 diagnostic only\n")
+    saved = output.read_bytes()
+    with pytest.raises(FileExistsError):
+        cli.publish_new_text(output, "replacement")
+    assert output.read_bytes() == saved
+    linked = tmp_path / "linked"
+    linked.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(cli.G3SessionError):
+        cli.publish_new_text(linked / "unexpected.md", "content")
+    assert not (tmp_path / "unexpected.md").exists()
+    assert not list(tmp_path.glob(".*.tmp"))

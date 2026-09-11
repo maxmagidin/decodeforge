@@ -41,9 +41,11 @@ override BUNDLE := $(value BUNDLE)
 override CASES := $(value CASES)
 override PREPARED_WEIGHTS := $(value PREPARED_WEIGHTS)
 override CHECKOUT := $(value CHECKOUT)
+override REPORT_FORMAT := $(value REPORT_FORMAT)
 export WEIGHTS OUTPUT RECEIPT ASSETS SPEC SESSION_ID SESSION_INDEX MODEL_DIR
 export LIBRARY LIBRARY_SHA256 PREPARATION_RECEIPT SESSION_1 SESSION_2 SESSION_3
 export OUTPUT_DIR BUNDLE CASES PREPARED_WEIGHTS CHECKOUT
+export REPORT_FORMAT
 CARGO := PATH="$$(dirname "$$(rustup which --toolchain $(RUST_VERSION) cargo)"):$$PATH" cargo
 G0_RESULT := results/g0/apple-m4-primary/sha256-311053f53efd9c28ab3e4338ca83e78e53acf8c969d9f8a76c6e56f7c2d79d86
 G1_RESULT := results/g1/apple-m4-primary
@@ -128,14 +130,15 @@ test-profile:
 	$(UV) run --frozen --extra g3-generation python -m pytest -q \
 		python/tests/test_decode_profile.py python/tests/test_qproj_profile.py \
 		python/tests/test_profile_capture.py python/tests/test_profile_analysis.py \
-		python/tests/test_profile_analysis_cli.py
+		python/tests/test_profile_analysis_cli.py python/tests/test_profile_report.py
 
 analyze-profile:
 	@test -n "$${SESSION_1}" -a -n "$${SESSION_2}" -a -n "$${SESSION_3}" || { \
 		echo "analyze-profile: SESSION_1, SESSION_2, and SESSION_3 are required" >&2; exit 2; }
 	@test -n "$${OUTPUT}" || { echo "analyze-profile: OUTPUT=<new absolute JSON path> is required" >&2; exit 2; }
 	$(UV) run --frozen --extra g3-generation python scripts/analyze_profile_sessions.py \
-		--sessions "$${SESSION_1}" "$${SESSION_2}" "$${SESSION_3}" --output "$${OUTPUT}"
+		--sessions "$${SESSION_1}" "$${SESSION_2}" "$${SESSION_3}" --output "$${OUTPUT}" \
+		--output-format "$${REPORT_FORMAT:-json}"
 
 check: lint test verify-g1-result
 	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"

@@ -12,12 +12,14 @@ import stat
 from pathlib import Path
 from typing import Any, NoReturn
 
+from decodeforge.g3_session import G3SessionError, publish_new_text
 from decodeforge.profile_analysis import ProfileAnalysisError, analyze_profile_sessions
 from decodeforge.profile_capture import (
     ProfileCaptureError,
     check_profile_output,
     write_profile_capture,
 )
+from decodeforge.profile_report import render_profile_report
 
 MAX_CAPTURE_BYTES = 32 * 1024 * 1024
 
@@ -67,6 +69,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sessions", required=True, nargs=3, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--output-format", choices=("json", "markdown"), default="json")
     arguments = parser.parse_args()
     try:
         check_profile_output(arguments.output)
@@ -79,13 +82,17 @@ def main() -> int:
             ],
             key=lambda item: item["session_index"],
         )
-        write_profile_capture(arguments.output, report)
+        if arguments.output_format == "markdown":
+            publish_new_text(arguments.output, render_profile_report(report))
+        else:
+            write_profile_capture(arguments.output, report)
     except (
         OSError,
         ValueError,
         RecursionError,
         ProfileAnalysisError,
         ProfileCaptureError,
+        G3SessionError,
     ) as error:
         parser.exit(2, f"profile-analysis: rejected: {error}\n")
     print(f"profile-analysis: wrote {arguments.output} (diagnostic only)")

@@ -152,6 +152,20 @@ exact input files, so keep all three raw captures alongside it.
 
 ### Reading the result
 
+For a readable Markdown report, repeat the same command with
+`REPORT_FORMAT=markdown` and a new `OUTPUT=/absolute/path/to/analysis.md`.
+The direct CLI equivalent is `--output-format markdown`. Both formats validate
+the raw captures before writing; Markdown is a presentation of the same analysis,
+not a separate evidence format.
+
+The Markdown report explains each mode's largest cost and ranking stability,
+then shows a compact cost table. Times are the median across sessions of each
+session's average milliseconds per cached step. The three share columns retain
+each session's own fraction of cached-decode time. This displayed median order
+is descriptive and does not replace the per-session stability checks. Prompt
+text, command lines, process IDs, and developer paths are omitted from the
+readable report; source and input-file hashes identify its inputs.
+
 For each session and execution mode, the report separates prompt prefill from
 cached decode. Each cost bucket adds **exclusive** event durations: time spent
 in a child is not counted again in its parent. These buckets sum to the measured
