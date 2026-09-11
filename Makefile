@@ -7,7 +7,7 @@
 	prepare-g1-input prepare-g1-cases run-g1-session analyze-g1 verify-g1-result \
 	test-g3 test-g3-adapter-real build-g3-bridge run-g3-session run-g3-demo analyze-g3 verify-g3-result \
 	prepare-g3-assets prepare-g3-assets-timed verify-g3-assets verify-evaluation-result \
-	render-results-visual verify-results-visual
+	render-results-visual verify-results-visual analyze-profile
 
 UV := uv
 RUST_VERSION := 1.98.0
@@ -59,6 +59,7 @@ help:
 		'  make format                    Format Rust and Python sources' \
 		'  make lint                      Run static, docs, and schema checks' \
 		'  make test-profile              Run the decode-profiler tests' \
+		'  make analyze-profile           Compare three diagnostic profile captures' \
 		'' \
 		'Checked-in results (no model download):' \
 		'  make verify-g1-result          Recompute the Apple M4 kernel report' \
@@ -126,7 +127,15 @@ test: test-bridge-cdylib
 test-profile:
 	$(UV) run --frozen --extra g3-generation python -m pytest -q \
 		python/tests/test_decode_profile.py python/tests/test_qproj_profile.py \
-		python/tests/test_profile_capture.py
+		python/tests/test_profile_capture.py python/tests/test_profile_analysis.py \
+		python/tests/test_profile_analysis_cli.py
+
+analyze-profile:
+	@test -n "$${SESSION_1}" -a -n "$${SESSION_2}" -a -n "$${SESSION_3}" || { \
+		echo "analyze-profile: SESSION_1, SESSION_2, and SESSION_3 are required" >&2; exit 2; }
+	@test -n "$${OUTPUT}" || { echo "analyze-profile: OUTPUT=<new absolute JSON path> is required" >&2; exit 2; }
+	$(UV) run --frozen --extra g3-generation python scripts/analyze_profile_sessions.py \
+		--sessions "$${SESSION_1}" "$${SESSION_2}" "$${SESSION_3}" --output "$${OUTPUT}"
 
 check: lint test verify-g1-result
 	$(MAKE) verify-g3-result BUNDLE="$(G3_RESULT)"
